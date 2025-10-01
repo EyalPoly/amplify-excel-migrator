@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from amplify_client import AmplifyClient
 from mapper import observation_column_mapping
+from model_field_parser import ModelFieldParser
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class ExcelToAmplifyMigrator:
     def __init__(self, excel_file_path: str):
+        self.model_field_parser = ModelFieldParser()
         self.excel_file_path = excel_file_path
         self.amplify_client = None
         self.column_mapping = observation_column_mapping
@@ -44,27 +46,34 @@ class ExcelToAmplifyMigrator:
         all_sheets = self.read_excel()
 
         for sheet_name, df in all_sheets.items():
-            logger.info(f"\nProcessing sheet: {sheet_name} with {len(df)} rows")
+            logger.info(f"Processing sheet: {sheet_name} with {len(df)} rows")
             self.process_sheet(df, sheet_name)
+
+    def read_excel(self) -> Dict [str, Any]:
+        logger.info(f"Reading Excel file: {self.excel_file_path}")
+        all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
+
+        logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
+        return all_sheets
 
     def process_sheet(self, df: pd.DataFrame, sheet_name: str, batch_size: int = 10):
         records = []
-        model_info_structure = self.amplify_client.get_model_structure(sheet_name)
         df.columns = [self._to_camel_case(c) for c in df.columns]
+        parsed_model_structure = self.get_parsed_model_structure(sheet_name)
         try:
-            record = self.transform_row(row, model_info_structure)
-            records.append(record)
+            for idx, row in df.iterrows():
+                record = self.transform_row(row, parsed_model_structure)
+                records.append(record)
         except Exception as e:
             logger.error(f"Error transforming row {idx}: {e}")
 
-        logger.info(f"\nPrepared {len(records)} records for upload")
+        logger.info(f"Prepared {len(records)} records for upload")
 
         confirm = input(f"\nUpload {len(records)} records to Amplify? (yes/no): ")
         if confirm.lower() != 'yes':
             logger.info("Upload cancelled")
             return
 
-        # Upload in batches
         success_count = 0
         error_count = 0
 
@@ -80,44 +89,35 @@ class ExcelToAmplifyMigrator:
                     error_count += 1
                     logger.debug(f"✗ Failed: {obs['sequentialId']}")
 
-        # Summary
         logger.info("\n=== Upload Complete ===")
         logger.info(f"✅ Success: {success_count}")
         logger.info(f"❌ Failed: {error_count}")
         logger.info(f"📊 Total: {len(records)}")
 
-    def read_excel(self) -> Dict [str, Any]:
-        logger.info(f"Reading Excel file: {self.excel_file_path}")
-        all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
+    def get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
+        model_structure = self.amplify_client.get_model_structure(sheet_name)
+        return self.model_field_parser.parse_model_structure(model_structure)
 
-        logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
-        return all_sheets
-
-    def transform_row(self, row: pd.Series, model_info_structure: Dict[str, Any]) -> Dict[str, Any]:
+    def transform_row(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> Dict[str, Any]:
         """Transform a DataFrame row to Amplify model format"""
 
         model_record = {}
 
-        for field in model_info_structure.fields:
+        for field in parsed_model_structure['fields']:
             input = self._parse_input(row, field)
             model_record[field['name']] = input
 
         return model_record
 
     def _parse_input(self, row: pd.Series, field: Dict[str, Any]) -> Any:
-
         field_name = field['name']
-        if field['name'] not in row.index or pd.isna(row[field['name']]):
+        if field_name not in row.index or pd.isna(row[field_name]):
             if field['is_required']:
-                raise ValueError(f"Required field '{field['name']}' is missing in row {row.name}")
+                raise ValueError(f"Required field '{field_name}' is missing in row {row.name}")
             else:
                 return None
 
-
-        value = row.get(field['name'])
-
-        if pd.isna(value):
-            return None
+        value = row.get(field_name)
 
         if field['type'] == 'String':
             return str(value)
