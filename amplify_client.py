@@ -1,4 +1,5 @@
 import logging
+import sys
 from getpass import getpass
 from typing import Dict, Any
 
@@ -12,6 +13,7 @@ from pycognito.exceptions import ForceChangePasswordException
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 class AmplifyClient:
     """
     Client for Amplify GraphQL using ADMIN_USER_PASSWORD_AUTH flow
@@ -21,7 +23,8 @@ class AmplifyClient:
                  api_endpoint: str,
                  user_pool_id: str,
                  region: str = 'us-east-1',
-                 client_id: str = None):
+                 client_id: str = None,
+                 batch_size: int = 10):
         """
         Initialize the client
 
@@ -36,6 +39,7 @@ class AmplifyClient:
         self.user_pool_id = user_pool_id
         self.region = region
         self.client_id = client_id
+        self.batch_size = batch_size
 
         self.cognito_client = None
         self.boto_cognito_admin_client = None
@@ -148,16 +152,6 @@ class AmplifyClient:
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
-            error_msg = str(e)
-            if "UserNotFoundException" in error_msg:
-                logger.error("User not found")
-            elif "NotAuthorizedException" in error_msg:
-                logger.error("Invalid username or password")
-            elif "UserNotConfirmedException" in error_msg:
-                logger.error("User email/phone not confirmed")
-            elif "TooManyRequestsException" in error_msg:
-                logger.error("Too many failed attempts. Please wait and try again")
-
             return False
 
     def aws_admin_authenticate(self, username: str, password: str) -> bool:
@@ -181,7 +175,6 @@ class AmplifyClient:
             )
 
             self._check_for_mfa_challenges(response, username)
-
 
             if 'AuthenticationResult' in response:
                 self.id_token = response['AuthenticationResult']['IdToken']
@@ -265,7 +258,7 @@ class AmplifyClient:
 
             elif challenge == 'SMS_MFA' or challenge == 'SOFTWARE_TOKEN_MFA':
                 mfa_code = input("Enter MFA code: ")
-                response = self.cognito_client.admin_respond_to_auth_challenge(
+                _ = self.cognito_client.admin_respond_to_auth_challenge(
                     UserPoolId=self.user_pool_id,
                     ClientId=self.client_id,
                     ChallengeName=challenge,
@@ -278,7 +271,7 @@ class AmplifyClient:
 
             elif challenge == 'NEW_PASSWORD_REQUIRED':
                 new_password = getpass("Enter new password: ")
-                response = self.cognito_client.admin_respond_to_auth_challenge(
+                _ = self.cognito_client.admin_respond_to_auth_challenge(
                     UserPoolId=self.user_pool_id,
                     ClientId=self.client_id,
                     ChallengeName=challenge,
@@ -312,7 +305,7 @@ class AmplifyClient:
             Response data
         """
         if not self.id_token:
-            raise Exception("Not authenticated. Call admin_authenticate() first.")
+            raise Exception("Not authenticated. Call authenticate() first.")
 
         headers = {
             'Authorization': self.id_token,
@@ -335,21 +328,27 @@ class AmplifyClient:
                 result = response.json()
 
                 if 'errors' in result:
-                    print(f"GraphQL errors: {result['errors']}")
+                    logger.error(f"GraphQL errors: {result['errors']}")
+                    return None
 
                 return result
             else:
-                print(f"HTTP Error {response.status_code}: {response.text}")
+                logger.error(f"HTTP Error {response.status_code}: {response.text}")
                 return None
 
         except Exception as e:
-            print(f"Request error: {e}")
+            if 'NameResolutionError' in str(e):
+                logger.error(
+                    f"Connection error: Unable to resolve hostname. Check your internet connection and the API endpoint URL.")
+                sys.exit(1)
+            else:
+                logger.error(f"Request error: {e}")
             return None
 
-    def get_model_structure(self, model_name: str) -> Dict:
+    def get_model_structure(self, model_type: str) -> Dict:
         query = f"""
         query GetModelType {{
-          __type(name: "{model_name}") {{
+          __type(name: "{model_type}") {{
             name
             kind
             description
@@ -374,8 +373,153 @@ class AmplifyClient:
         """
 
         response = self.request(query)
-        if response and 'data' in response and  '__type' in response['data']:
-             return response['data']['__type']
+        if response and 'data' in response and '__type' in response['data']:
+            return response['data']['__type']
 
         return {}
 
+    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> (
+            tuple[str, bool]):
+        secondary_index = self.get_secondary_index(model_name)
+        if secondary_index:
+            return secondary_index, True
+
+        for field in parsed_model_structure['fields']:
+            if field['is_required'] and field['is_scalar'] and field['name'] != 'id':
+                return field['name'], False
+
+        logger.error('No suitable primary field found (required scalar field other than id)')
+        return '', False
+
+    def get_secondary_index(self, model_name: str) -> str:
+        query_structure = self.get_model_structure("Query")
+        if not query_structure:
+            logger.error("Query type not found in schema")
+            return ''
+
+        query_fields = query_structure['fields']
+
+        pattern = f"{model_name}By"
+
+        for query in query_fields:
+            query_name = query['name']
+            if pattern in query_name:
+                pattern_index = query_name.index(pattern)
+                field_name = query_name[pattern_index + len(pattern):]
+                return field_name[0].lower() + field_name[1:] if field_name else ''
+
+        return ''
+
+    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[int, int]:
+        logger.info("Uploading to Amplify backend...")
+
+        success_count = 0
+        error_count = 0
+
+        primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+        if not primary_field:
+            logger.error(f"No primary field found. Aborting upload for model {model_name}")
+            return 0, len(records)
+
+        for i in range(0, len(records), self.batch_size):
+            batch = records[i:i + self.batch_size]
+            logger.info(f"Uploading batch {i // self.batch_size + 1} ({len(batch)} items)...")
+
+            for record in batch:
+                result = self.create_record(record, model_name, primary_field, is_secondary_index)
+                if result:
+                    success_count += 1
+                    logger.debug(f"Created record: {record[{primary_field}]}")
+                else:
+                    error_count += 1
+
+            logger.info(f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
+
+        return success_count, error_count
+
+    def create_record(self, data: Dict, model_name: str, primary_field: str, is_secondary_index: bool) -> Dict | None:
+        if is_secondary_index:
+            existing = self.get_record_by_secondary_index(model_name, primary_field, data[primary_field])
+        else:
+            existing = self.get_record_by_field(model_name, primary_field, data[primary_field])
+
+        if existing:
+            logger.error(f'Record with {primary_field}="{data[primary_field]}" already exists in {model_name}')
+            return None
+
+        mutation = f"""
+        mutation Create{model_name}($input: Create{model_name}Input!)  {{
+            create{model_name}(input: $input) {{
+                id
+                {primary_field}
+            }}
+        }}
+        """
+
+        result = self.request(mutation, {'input': data})
+
+        if result and 'data' in result:
+            created = result['data'].get(f'create{model_name}')
+            if created:
+                logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
+            return created
+
+        return None
+
+    def get_record_by_secondary_index(self, model_name: str, secondary_index: str, value: str,
+                                      fields: list = None) -> Dict | None:
+        if fields is None:
+            fields = ['id', secondary_index]
+
+        fields_str = '\n'.join(fields)
+
+        query_name = f"list{model_name}By{secondary_index.capitalize()}"
+        query = f"""
+        query {query_name}(${secondary_index}: String!) {{
+          {query_name}({secondary_index}: ${secondary_index}) {{
+            items {{
+                {fields_str}
+            }}
+          }}
+        }}
+        """
+
+        result = self.request(query, {secondary_index: value})
+
+        if result and 'data' in result:
+            items = result['data'].get(query_name, {}).get('items', [])
+            return items[0] if items else None
+
+        return None
+
+    def get_record_by_field(self, model_name: str, field_name: str, value: str,
+                            fields: list = None) -> Dict | None:
+        if fields is None:
+            fields = ['id', field_name]
+
+        fields_str = '\n'.join(fields)
+
+        query_name = f"list{model_name}s"
+        query = f"""
+        query List{model_name}s($filter: Model{model_name}FilterInput) {{
+          {query_name}(filter: $filter) {{
+            items {{
+                {fields_str}
+            }}
+          }}
+        }}
+        """
+
+        filter_input = {
+            field_name: {
+                "eq": value
+            }
+        }
+
+        result = self.request(query, {"filter": filter_input})
+
+        if result and 'data' in result:
+            items = result['data'].get(query_name, {}).get('items', [])
+            return items[0] if items else None
+
+        return None

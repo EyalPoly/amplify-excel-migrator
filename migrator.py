@@ -56,60 +56,52 @@ class ExcelToAmplifyMigrator:
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 
-    def process_sheet(self, df: pd.DataFrame, sheet_name: str, batch_size: int = 10):
-        records = []
-        df.columns = [self._to_camel_case(c) for c in df.columns]
+    def process_sheet(self, df: pd.DataFrame, sheet_name: str):
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
-        try:
-            for idx, row in df.iterrows():
-                record = self.transform_row(row, parsed_model_structure)
-                records.append(record)
-        except Exception as e:
-            logger.error(f"Error transforming row {idx}: {e}")
-
-        logger.info(f"Prepared {len(records)} records for upload")
+        records = self.transform_rows_to_records(df, parsed_model_structure)
 
         confirm = input(f"\nUpload {len(records)} records to Amplify? (yes/no): ")
         if confirm.lower() != 'yes':
             logger.info("Upload cancelled")
             return
 
-        success_count = 0
-        error_count = 0
+        success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
 
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
-            logger.info(f"Uploading batch {i // batch_size + 1} ({len(batch)} items)...")
-
-            for obs in batch:
-                if self.upload_observation(obs):
-                    success_count += 1
-                    logger.debug(f"✓ Uploaded: {obs['sequentialId']}")
-                else:
-                    error_count += 1
-                    logger.debug(f"✗ Failed: {obs['sequentialId']}")
-
-        logger.info("\n=== Upload Complete ===")
+        logger.info(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
         logger.info(f"✅ Success: {success_count}")
         logger.info(f"❌ Failed: {error_count}")
         logger.info(f"📊 Total: {len(records)}")
+
+    def transform_rows_to_records(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> list[Any]:
+        records = []
+        df.columns = [self.to_camel_case(c) for c in df.columns]
+        try:
+            for idx, row in df.iterrows():
+                record = self.transform_row_to_record(row, parsed_model_structure)
+                records.append(record)
+        except Exception as e:
+            logger.error(f"Error transforming row {idx}: {e}")
+
+        logger.info(f"Prepared {len(records)} records for upload")
+
+        return records
 
     def get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
         return self.model_field_parser.parse_model_structure(model_structure)
 
-    def transform_row(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> Dict[str, Any]:
+    def transform_row_to_record(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> Dict[str, Any]:
         """Transform a DataFrame row to Amplify model format"""
 
         model_record = {}
 
         for field in parsed_model_structure['fields']:
-            input = self._parse_input(row, field)
+            input = self.parse_input(row, field)
             model_record[field['name']] = input
 
         return model_record
 
-    def _parse_input(self, row: pd.Series, field: Dict[str, Any]) -> Any:
+    def parse_input(self, row: pd.Series, field: Dict[str, Any]) -> Any:
         field_name = field['name']
         if field_name not in row.index or pd.isna(row[field_name]):
             if field['is_required']:
@@ -136,7 +128,7 @@ class ExcelToAmplifyMigrator:
             return value
 
     @staticmethod
-    def _to_camel_case(s: str) -> str:
+    def to_camel_case(s: str) -> str:
         parts = re.split(r'[\s_\-]+', s.strip())
         return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
 
@@ -161,11 +153,8 @@ def main():
 
     migrator = ExcelToAmplifyMigrator(excel_path)
 
-    # username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
-    # password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
-
-    username = "10eyal10@gmail.com"
-    password = "Eynavmil1!"
+    username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
+    password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
 
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
 
