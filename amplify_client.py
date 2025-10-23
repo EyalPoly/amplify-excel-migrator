@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import sys
 from getpass import getpass
 from typing import Dict, Any
 
+import aiohttp
 import boto3
 import requests
 import jwt
@@ -46,6 +48,8 @@ class AmplifyClient:
         self.id_token = None
         self.mfa_tokens = None
         self.admin_group_name = 'ADMINS'
+
+        self.records_cache = {}
 
     def init_cognito_client(self, is_aws_admin: bool, username: str = None, aws_profile: str = None):
         try:
@@ -293,7 +297,7 @@ class AmplifyClient:
         if self.admin_group_name not in groups:
             raise PermissionError("User is not in ADMINS group")
 
-    def request(self, query: str, variables: Dict = None) -> Any | None:
+    def _request(self, query: str, variables: Dict = None) -> Any | None:
         """
         Make a GraphQL request using the ID token
 
@@ -339,7 +343,7 @@ class AmplifyClient:
         except Exception as e:
             if 'NameResolutionError' in str(e):
                 logger.error(
-                    f"Connection error: Unable to resolve hostname. Check your internet connection and the API endpoint URL.")
+                    f"Connection error: Unable to resolve hostname. Check your internet connection or the API endpoint URL.")
                 sys.exit(1)
             else:
                 logger.error(f"Request error: {e}")
@@ -372,7 +376,7 @@ class AmplifyClient:
         }}
         """
 
-        response = self.request(query)
+        response = self._request(query)
         if response and 'data' in response and '__type' in response['data']:
             return response['data']['__type']
 
@@ -380,7 +384,7 @@ class AmplifyClient:
 
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> (
             tuple[str, bool]):
-        secondary_index = self.get_secondary_index(model_name)
+        secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
             return secondary_index, True
 
@@ -391,7 +395,7 @@ class AmplifyClient:
         logger.error('No suitable primary field found (required scalar field other than id)')
         return '', False
 
-    def get_secondary_index(self, model_name: str) -> str:
+    def _get_secondary_index(self, model_name: str) -> str:
         query_structure = self.get_model_structure("Query")
         if not query_structure:
             logger.error("Query type not found in schema")
@@ -410,6 +414,28 @@ class AmplifyClient:
 
         return ''
 
+    def _get_list_query_name(self, model_name: str) -> str | None:
+        """Get the correct list query name from the schema (handles pluralization)"""
+        query_structure = self.get_model_structure("Query")
+        if not query_structure:
+            logger.error("Query type not found in schema")
+            return f"list{model_name}s"
+
+        query_fields = query_structure['fields']
+        candidates = [
+            f"list{model_name}s",
+            f"list{model_name}es",
+            f"list{model_name[:-1]}ies",
+        ]
+
+        for query in query_fields:
+            query_name = query['name']
+            if query_name in candidates and 'By' not in query_name:
+                return query_name
+
+        logger.error(f"No list query found for model {model_name}, tried: {candidates}")
+        return None
+
     def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[int, int]:
         logger.info("Uploading to Amplify backend...")
 
@@ -418,7 +444,7 @@ class AmplifyClient:
 
         primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
         if not primary_field:
-            logger.error(f"No primary field found. Aborting upload for model {model_name}")
+            logger.error(f"Aborting upload for model {model_name}")
             return 0, len(records)
 
         for i in range(0, len(records), self.batch_size):
@@ -429,21 +455,20 @@ class AmplifyClient:
                 result = self.create_record(record, model_name, primary_field, is_secondary_index)
                 if result:
                     success_count += 1
-                    logger.debug(f"Created record: {record[{primary_field}]}")
+                    logger.debug(f"Created record: {record[primary_field]}")
                 else:
                     error_count += 1
 
-            logger.info(f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
+            logger.info(
+                f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
 
         return success_count, error_count
 
     def create_record(self, data: Dict, model_name: str, primary_field: str, is_secondary_index: bool) -> Dict | None:
-        if is_secondary_index:
-            existing = self.get_record_by_secondary_index(model_name, primary_field, data[primary_field])
-        else:
-            existing = self.get_record_by_field(model_name, primary_field, data[primary_field])
+        existing_record = self.get_record(model_name, value=data[primary_field], primary_field=primary_field,
+                                          is_secondary_index=is_secondary_index)
 
-        if existing:
+        if existing_record:
             logger.error(f'Record with {primary_field}="{data[primary_field]}" already exists in {model_name}')
             return None
 
@@ -456,7 +481,7 @@ class AmplifyClient:
         }}
         """
 
-        result = self.request(mutation, {'input': data})
+        result = self._request(mutation, {'input': data})
 
         if result and 'data' in result:
             created = result['data'].get(f'create{model_name}')
@@ -466,60 +491,138 @@ class AmplifyClient:
 
         return None
 
-    def get_record_by_secondary_index(self, model_name: str, secondary_index: str, value: str,
-                                      fields: list = None) -> Dict | None:
+    def list_records_by_secondary_index(self, model_name: str, secondary_index: str, value: str = None,
+                                        fields: list = None) -> Dict | None:
         if fields is None:
             fields = ['id', secondary_index]
 
         fields_str = '\n'.join(fields)
 
-        query_name = f"list{model_name}By{secondary_index.capitalize()}"
-        query = f"""
-        query {query_name}(${secondary_index}: String!) {{
-          {query_name}({secondary_index}: ${secondary_index}) {{
-            items {{
-                {fields_str}
+        if not value:
+            query_name = self._get_list_query_name(model_name)
+            query = f"""
+            query List{model_name}s {{
+              {query_name} {{
+                items {{
+                    {fields_str}
+                }}
+              }}
             }}
+            """
+            result = self._request(query)
+        else:
+            query_name = f"list{model_name}By{secondary_index.capitalize()}"
+            query = f"""
+            query {query_name}(${secondary_index}: String!) {{
+              {query_name}({secondary_index}: ${secondary_index}) {{
+                items {{
+                    {fields_str}
+                }}
+              }}
+            }}
+            """
+            result = self._request(query, {secondary_index: value})
+
+        if result and 'data' in result:
+            items = result['data'].get(query_name, {}).get('items', [])
+            return items if items else None
+
+        return None
+
+    def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
+        if fields is None:
+            fields = ['id']
+
+        fields_str = '\n'.join(fields)
+
+        query_name = f"get{model_name}"
+        query = f"""
+        query Get{model_name}($id: ID!) {{
+          {query_name}(id: $id) {{
+            {fields_str}
           }}
         }}
         """
 
-        result = self.request(query, {secondary_index: value})
+        result = self._request(query, {"id": record_id})
 
         if result and 'data' in result:
-            items = result['data'].get(query_name, {}).get('items', [])
-            return items[0] if items else None
+            return result['data'].get(query_name)
 
         return None
 
-    def get_record_by_field(self, model_name: str, field_name: str, value: str,
+    def get_records_by_field(self, model_name: str, field_name: str, value: str = None,
                             fields: list = None) -> Dict | None:
         if fields is None:
             fields = ['id', field_name]
 
         fields_str = '\n'.join(fields)
 
-        query_name = f"list{model_name}s"
-        query = f"""
-        query List{model_name}s($filter: Model{model_name}FilterInput) {{
-          {query_name}(filter: $filter) {{
-            items {{
-                {fields_str}
+        query_name = self._get_list_query_name(model_name)
+
+        if not value:
+            query = f"""
+            query List{model_name}s {{
+              {query_name} {{
+                items {{
+                    {fields_str}
+                }}
+              }}
             }}
-          }}
-        }}
-        """
-
-        filter_input = {
-            field_name: {
-                "eq": value
+            """
+            result = self._request(query)
+        else:
+            query = f"""
+            query List{model_name}s($filter: Model{model_name}FilterInput) {{
+              {query_name}(filter: $filter) {{
+                items {{
+                    {fields_str}
+                }}
+              }}
+            }}
+            """
+            filter_input = {
+                field_name: {
+                    "eq": value
+                }
             }
-        }
-
-        result = self.request(query, {"filter": filter_input})
+            result = self._request(query, {"filter": filter_input})
 
         if result and 'data' in result:
             items = result['data'].get(query_name, {}).get('items', [])
-            return items[0] if items else None
+            return items if items else None
 
         return None
+
+    def get_records(self, model_name: str, parsed_model_structure: Dict[str, Any] = None, primary_field: str = None,
+                    is_secondary_index: bool = None, fields: list = None) -> list | None:
+        if model_name in self.records_cache:
+            return self.records_cache[model_name]
+
+        if not primary_field:
+            if not parsed_model_structure:
+                logger.error("Parsed model structure required if primary_field not provided")
+                return None
+            primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+
+        if not primary_field:
+            return None
+        if is_secondary_index:
+            records = self.list_records_by_secondary_index(model_name, primary_field, fields=fields)
+        else:
+            records = self.get_records_by_field(model_name, primary_field, fields=fields)
+
+        if records:
+            self.records_cache[model_name] = records
+        return records
+
+    def get_record(self, model_name: str, parsed_model_structure: Dict[str, Any] = None, value: str = None,
+                   record_id: str = None, primary_field: str = None, is_secondary_index: bool = None,
+                   fields: list = None) -> Dict | None:
+        if record_id:
+            return self.get_record_by_id(model_name, record_id)
+
+        records = self.get_records(model_name, parsed_model_structure, primary_field, is_secondary_index, fields)
+        if not records:
+            return None
+        return next((record for record in records if record.get(primary_field) == value), None)
