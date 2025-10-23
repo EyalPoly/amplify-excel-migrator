@@ -349,6 +349,139 @@ class AmplifyClient:
                 logger.error(f"Request error: {e}")
             return None
 
+    async def _request_async(self, session: aiohttp.ClientSession, query: str, variables: Dict = None) -> Any | None:
+        """
+        Async version of _request for parallel GraphQL requests
+
+        Args:
+            session: aiohttp ClientSession
+            query: GraphQL query or mutation
+            variables: Variables for the query
+
+        Returns:
+            Response data
+        """
+        if not self.id_token:
+            raise Exception("Not authenticated. Call authenticate() first.")
+
+        headers = {
+            'Authorization': self.id_token,
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'query': query,
+            'variables': variables or {}
+        }
+
+        try:
+            async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    result = await response.json()
+
+                    if 'errors' in result:
+                        logger.error(f"GraphQL errors: {result['errors']}")
+                        return None
+
+                    return result
+                else:
+                    text = await response.text()
+                    logger.error(f"HTTP Error {response.status}: {text}")
+                    return None
+        except Exception as e:
+            logger.error(f"Request error: {e}")
+            return None
+
+    async def create_record_async(self, session: aiohttp.ClientSession, data: Dict, model_name: str,
+                                  primary_field: str) -> Dict | None:
+        mutation = f"""
+        mutation Create{model_name}($input: Create{model_name}Input!)  {{
+            create{model_name}(input: $input) {{
+                id
+                {primary_field}
+            }}
+        }}
+        """
+
+        result = await self._request_async(session, mutation, {'input': data})
+
+        if result and 'data' in result:
+            created = result['data'].get(f'create{model_name}')
+            if created:
+                logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
+            return created
+
+        return None
+
+    async def check_record_exists_async(self, session: aiohttp.ClientSession, model_name: str,
+                                       primary_field: str, value: str, is_secondary_index: bool) -> bool:
+        if is_secondary_index:
+            query_name = f"list{model_name}By{primary_field.capitalize()}"
+            query = f"""
+            query {query_name}(${primary_field}: String!) {{
+              {query_name}({primary_field}: ${primary_field}) {{
+                items {{
+                    id
+                }}
+              }}
+            }}
+            """
+            result = await self._request_async(session, query, {primary_field: value})
+            if result and 'data' in result:
+                items = result['data'].get(query_name, {}).get('items', [])
+                return len(items) > 0
+        else:
+            query_name = self._get_list_query_name(model_name)
+            query = f"""
+            query List{model_name}s($filter: Model{model_name}FilterInput) {{
+              {query_name}(filter: $filter) {{
+                items {{
+                    id
+                }}
+              }}
+            }}
+            """
+            filter_input = {primary_field: {"eq": value}}
+            result = await self._request_async(session, query, {"filter": filter_input})
+            if result and 'data' in result:
+                items = result['data'].get(query_name, {}).get('items', [])
+                return len(items) > 0
+
+        return False
+
+    async def upload_batch_async(self, batch: list, model_name: str, primary_field: str,
+                                 is_secondary_index: bool) -> tuple[int, int]:
+        async with aiohttp.ClientSession() as session:
+            duplicate_checks = [
+                self.check_record_exists_async(session, model_name, primary_field,
+                                              record[primary_field], is_secondary_index)
+                for record in batch
+            ]
+            exists_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
+
+            filtered_batch = []
+            for i, (record, exists) in enumerate(zip(batch, exists_results)):
+                if isinstance(exists, Exception):
+                    logger.error(f"Error checking duplicate for {record[primary_field]}: {exists}")
+                elif exists:
+                    logger.error(f'Record with {primary_field}="{record[primary_field]}" already exists in {model_name}')
+                else:
+                    filtered_batch.append(record)
+
+            if not filtered_batch:
+                return 0, len(batch)
+
+            create_tasks = [
+                self.create_record_async(session, record, model_name, primary_field)
+                for record in filtered_batch
+            ]
+            results = await asyncio.gather(*create_tasks, return_exceptions=True)
+
+            success_count = sum(1 for r in results if r and not isinstance(r, Exception))
+            error_count = len(batch) - success_count
+
+            return success_count, error_count
+
     def get_model_structure(self, model_type: str) -> Dict:
         query = f"""
         query GetModelType {{
@@ -436,7 +569,8 @@ class AmplifyClient:
         logger.error(f"No list query found for model {model_name}, tried: {candidates}")
         return None
 
-    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[int, int]:
+    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any],
+               use_async: bool = True) -> tuple[int, int]:
         logger.info("Uploading to Amplify backend...")
 
         success_count = 0
@@ -451,13 +585,20 @@ class AmplifyClient:
             batch = records[i:i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} ({len(batch)} items)...")
 
-            for record in batch:
-                result = self.create_record(record, model_name, primary_field, is_secondary_index)
-                if result:
-                    success_count += 1
-                    logger.debug(f"Created record: {record[primary_field]}")
-                else:
-                    error_count += 1
+            if use_async:
+                batch_success, batch_error = asyncio.run(
+                    self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)
+                )
+                success_count += batch_success
+                error_count += batch_error
+            else:
+                for record in batch:
+                    result = self.create_record(record, model_name, primary_field, is_secondary_index)
+                    if result:
+                        success_count += 1
+                        logger.debug(f"Created record: {record[primary_field]}")
+                    else:
+                        error_count += 1
 
             logger.info(
                 f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
