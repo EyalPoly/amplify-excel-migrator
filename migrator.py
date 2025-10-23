@@ -34,7 +34,8 @@ class ExcelToAmplifyMigrator:
         )
 
         try:
-            self.amplify_client.init_cognito_client(is_aws_admin=is_aws_admin, username=username, aws_profile=aws_profile)
+            self.amplify_client.init_cognito_client(is_aws_admin=is_aws_admin, username=username,
+                                                    aws_profile=aws_profile)
 
         except RuntimeError or Exception:
             sys.exit(1)
@@ -46,10 +47,10 @@ class ExcelToAmplifyMigrator:
         all_sheets = self.read_excel()
 
         for sheet_name, df in all_sheets.items():
-            logger.info(f"Processing sheet: {sheet_name} with {len(df)} rows")
+            logger.info(f"Processing {sheet_name} sheet with {len(df)} rows")
             self.process_sheet(df, sheet_name)
 
-    def read_excel(self) -> Dict [str, Any]:
+    def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
         all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
 
@@ -60,10 +61,10 @@ class ExcelToAmplifyMigrator:
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
         records = self.transform_rows_to_records(df, parsed_model_structure)
 
-        confirm = input(f"\nUpload {len(records)} records to Amplify? (yes/no): ")
-        if confirm.lower() != 'yes':
-            logger.info("Upload cancelled")
-            return
+        # confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
+        # if confirm.lower() != 'yes':
+        #     logger.info("Upload cancelled for {sheet_name} sheet")
+        #     return
 
         success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
 
@@ -75,12 +76,13 @@ class ExcelToAmplifyMigrator:
     def transform_rows_to_records(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> list[Any]:
         records = []
         df.columns = [self.to_camel_case(c) for c in df.columns]
-        try:
-            for idx, row in df.iterrows():
+        for idx, row in df.iterrows():
+            try:
                 record = self.transform_row_to_record(row, parsed_model_structure)
-                records.append(record)
-        except Exception as e:
-            logger.error(f"Error transforming row {idx}: {e}")
+                if record:
+                    records.append(record)
+            except Exception as e:
+                logger.error(f"Error transforming row {idx}: {e}")
 
         logger.info(f"Prepared {len(records)} records for upload")
 
@@ -90,48 +92,43 @@ class ExcelToAmplifyMigrator:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
         return self.model_field_parser.parse_model_structure(model_structure)
 
-    def transform_row_to_record(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> Dict[str, Any]:
+    def transform_row_to_record(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> dict[Any, Any] | None:
         """Transform a DataFrame row to Amplify model format"""
 
         model_record = {}
 
         for field in parsed_model_structure['fields']:
-            input = self.parse_input(row, field)
-            model_record[field['name']] = input
+            input = self.parse_input(row, field, parsed_model_structure)
+            if input:
+                model_record[field['name']] = input
 
         return model_record
 
-    def parse_input(self, row: pd.Series, field: Dict[str, Any]) -> Any:
-        field_name = field['name']
+    def parse_input(self, row: pd.Series, field: Dict[str, Any], parsed_model_structure: Dict[str, Any]) -> Any:
+        field_name = field['name'][:-2] if field['is_id'] else field['name']
         if field_name not in row.index or pd.isna(row[field_name]):
             if field['is_required']:
                 raise ValueError(f"Required field '{field_name}' is missing in row {row.name}")
             else:
                 return None
 
-        value = row.get(field_name)
-
-        if field['type'] == 'String':
-            return str(value)
-        elif field['type'] == 'Int':
-            return int(value)
-        elif field['type'] == 'Float':
-            return float(value)
-        elif field['type'] == 'Boolean':
-            return bool(value)
-        elif field['type'] == 'AWSDateTime':
-            if isinstance(value, pd.Timestamp):
-                return value.isoformat()
+            original_value = value
+            related_model = (temp := field['name'][:-2])[0].upper() + temp[1:]
+            records = self.amplify_client.get_records(related_model, parsed_model_structure=parsed_model_structure,
+                                                      fields=['id'])
+            if records:
+                value = next((record['id'] for record in records if record['name'] == original_value), None)
+                if value is None and field['is_required']:
+                    raise ValueError(f"{related_model}: {original_value} does not exist")
             else:
-                return str(value)
-        else:
-            return value
+                raise ValueError(f"Error fetching related record {related_model}: {original_value}")
+
+        return value
 
     @staticmethod
     def to_camel_case(s: str) -> str:
         parts = re.split(r'[\s_\-]+', s.strip())
         return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
-
 
 
 def main():
@@ -155,7 +152,6 @@ def main():
 
     username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
     password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
-
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
 
     if not migrator.authenticate(username, password):
