@@ -119,7 +119,7 @@ class ExcelToAmplifyMigrator:
             records = self.amplify_client.get_records(related_model, parsed_model_structure=parsed_model_structure,
                                                       fields=['id'])
             if records:
-                value = next((record['id'] for record in records if record['name'] == value), None)
+                value = next((record['id'] for record in records if record.get('name') == value), None)
                 if value is None and field['is_required']:
                     raise ValueError(f"{related_model}: {value} does not exist")
             else:
