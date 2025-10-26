@@ -414,7 +414,8 @@ class AmplifyClient:
         return None
 
     async def check_record_exists_async(self, session: aiohttp.ClientSession, model_name: str,
-                                       primary_field: str, value: str, is_secondary_index: bool) -> bool:
+                                        primary_field: str, value: str, is_secondary_index: bool,
+                                        record: Dict) -> Dict | None:
         if is_secondary_index:
             query_name = f"list{model_name}By{primary_field.capitalize()}"
             query = f"""
@@ -429,7 +430,10 @@ class AmplifyClient:
             result = await self._request_async(session, query, {primary_field: value})
             if result and 'data' in result:
                 items = result['data'].get(query_name, {}).get('items', [])
-                return len(items) > 0
+                if len(items) > 0:
+                    logger.error(
+                        f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    return None
         else:
             query_name = self._get_list_query_name(model_name)
             query = f"""
@@ -445,28 +449,29 @@ class AmplifyClient:
             result = await self._request_async(session, query, {"filter": filter_input})
             if result and 'data' in result:
                 items = result['data'].get(query_name, {}).get('items', [])
-                return len(items) > 0
+                if len(items) > 0:
+                    logger.error(
+                        f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    return None
 
-        return False
+        return record
 
     async def upload_batch_async(self, batch: list, model_name: str, primary_field: str,
                                  is_secondary_index: bool) -> tuple[int, int]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
                 self.check_record_exists_async(session, model_name, primary_field,
-                                              record[primary_field], is_secondary_index)
+                                               record[primary_field], is_secondary_index, record)
                 for record in batch
             ]
-            exists_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
+            check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
 
             filtered_batch = []
-            for i, (record, exists) in enumerate(zip(batch, exists_results)):
-                if isinstance(exists, Exception):
-                    logger.error(f"Error checking duplicate for {record[primary_field]}: {exists}")
-                elif exists:
-                    logger.error(f'Record with {primary_field}="{record[primary_field]}" already exists in {model_name}')
-                else:
-                    filtered_batch.append(record)
+            for result in check_results:
+                if isinstance(result, Exception):
+                    logger.error(f"Error checking duplicate: {result}")
+                elif result is not None:
+                    filtered_batch.append(result)
 
             if not filtered_batch:
                 return 0, len(batch)
@@ -569,8 +574,7 @@ class AmplifyClient:
         logger.error(f"No list query found for model {model_name}, tried: {candidates}")
         return None
 
-    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any],
-               use_async: bool = True) -> tuple[int, int]:
+    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[int, int]:
         logger.info("Uploading to Amplify backend...")
 
         success_count = 0
@@ -585,52 +589,16 @@ class AmplifyClient:
             batch = records[i:i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} ({len(batch)} items)...")
 
-            if use_async:
-                batch_success, batch_error = asyncio.run(
-                    self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)
-                )
-                success_count += batch_success
-                error_count += batch_error
-            else:
-                for record in batch:
-                    result = self.create_record(record, model_name, primary_field, is_secondary_index)
-                    if result:
-                        success_count += 1
-                        logger.debug(f"Created record: {record[primary_field]}")
-                    else:
-                        error_count += 1
+            batch_success, batch_error = asyncio.run(
+                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)
+            )
+            success_count += batch_success
+            error_count += batch_error
 
             logger.info(
                 f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
 
         return success_count, error_count
-
-    def create_record(self, data: Dict, model_name: str, primary_field: str, is_secondary_index: bool) -> Dict | None:
-        existing_record = self.get_record(model_name, value=data[primary_field], primary_field=primary_field,
-                                          is_secondary_index=is_secondary_index)
-
-        if existing_record:
-            logger.error(f'Record with {primary_field}="{data[primary_field]}" already exists in {model_name}')
-            return None
-
-        mutation = f"""
-        mutation Create{model_name}($input: Create{model_name}Input!)  {{
-            create{model_name}(input: $input) {{
-                id
-                {primary_field}
-            }}
-        }}
-        """
-
-        result = self._request(mutation, {'input': data})
-
-        if result and 'data' in result:
-            created = result['data'].get(f'create{model_name}')
-            if created:
-                logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
-            return created
-
-        return None
 
     def list_records_by_secondary_index(self, model_name: str, secondary_index: str, value: str = None,
                                         fields: list = None) -> Dict | None:
@@ -693,7 +661,7 @@ class AmplifyClient:
         return None
 
     def get_records_by_field(self, model_name: str, field_name: str, value: str = None,
-                            fields: list = None) -> Dict | None:
+                             fields: list = None) -> Dict | None:
         if fields is None:
             fields = ['id', field_name]
 

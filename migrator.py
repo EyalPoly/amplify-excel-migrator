@@ -152,10 +152,11 @@ def main():
 
     migrator = ExcelToAmplifyMigrator(excel_path)
 
-    username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
-    password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
+    # username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
+    # password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
+    username = '10eyal10@gmail.com'
+    password = 'Eynavmil1!'
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
-
     if not migrator.authenticate(username, password):
         return
 
