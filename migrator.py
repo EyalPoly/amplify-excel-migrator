@@ -24,13 +24,14 @@ class ExcelToAmplifyMigrator:
         self.column_mapping = observation_column_mapping
 
     def init_client(self, api_endpoint: str, region: str, user_pool_id: str, is_aws_admin: bool = False,
-                    client_id: str = None, username: str = None, aws_profile: str = None):
+                    client_id: str = None, username: str = None, aws_profile: str = None, batch_size: int = None):
 
         self.amplify_client = AmplifyClient(
             api_endpoint=api_endpoint,
             user_pool_id=user_pool_id,
             region=region,
             client_id=client_id,
+            batch_size=batch_size
         )
 
         try:
@@ -152,10 +153,9 @@ def main():
 
     migrator = ExcelToAmplifyMigrator(excel_path)
 
-    # username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
-    # password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
-    username = '10eyal10@gmail.com'
-    password = 'Eynavmil1!'
+    username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
+    password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
+
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
     if not migrator.authenticate(username, password):
         return
