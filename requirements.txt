@@ -1,3 +1,4 @@
+aiohttp==3.11.11
 botocore
 pandas==2.3.3
 openpyxl==3.1.5
@@ -7,3 +8,4 @@ boto3==1.40.46
 numpy==2.3.3
 pycognito==2024.5.1
 pyjwt==2.10.1
+certifi==2025.10.5

@@ -24,13 +24,14 @@ class ExcelToAmplifyMigrator:
         self.column_mapping = observation_column_mapping
 
     def init_client(self, api_endpoint: str, region: str, user_pool_id: str, is_aws_admin: bool = False,
-                    client_id: str = None, username: str = None, aws_profile: str = None):
+                    client_id: str = None, username: str = None, aws_profile: str = None, batch_size: int = None):
 
         self.amplify_client = AmplifyClient(
             api_endpoint=api_endpoint,
             user_pool_id=user_pool_id,
             region=region,
             client_id=client_id,
+            batch_size=batch_size
         )
 
         try:
@@ -112,16 +113,18 @@ class ExcelToAmplifyMigrator:
             else:
                 return None
 
-            original_value = value
+        value = row.get(field['name'])
+        if field['is_id']:
             related_model = (temp := field['name'][:-2])[0].upper() + temp[1:]
-            records = self.amplify_client.get_records(related_model, parsed_model_structure=parsed_model_structure,
-                                                      fields=['id'])
-            if records:
-                value = next((record['id'] for record in records if record['name'] == original_value), None)
-                if value is None and field['is_required']:
-                    raise ValueError(f"{related_model}: {original_value} does not exist")
+            record = self.amplify_client.get_record(related_model, parsed_model_structure=parsed_model_structure,
+                                                     value=value, fields=['id'])
+            if record:
+                if record['id'] is None and field['is_required']:
+                    raise ValueError(f"{related_model}: {value} does not exist")
+                else:
+                    value = record['id']
             else:
-                raise ValueError(f"Error fetching related record {related_model}: {original_value}")
+                raise ValueError(f"Error fetching related record {related_model}: {value}")
 
         return value
 
@@ -152,8 +155,8 @@ def main():
 
     username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
     password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
 
+    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
     if not migrator.authenticate(username, password):
         return
 
