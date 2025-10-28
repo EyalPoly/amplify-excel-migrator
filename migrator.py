@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 from getpass import getpass
@@ -16,7 +15,6 @@ from model_field_parser import ModelFieldParser
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Config cache location
 CONFIG_DIR = Path.home() / '.amplify-migrator'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
 
@@ -182,7 +180,6 @@ def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: st
 
 
 def cmd_show(args=None):
-    """Handle the 'show' subcommand"""
     print("""
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Current Configuration    ║
@@ -210,7 +207,6 @@ def cmd_show(args=None):
 
 
 def cmd_config(args=None):
-    """Handle the 'config' subcommand"""
     print("""
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Configuration Setup      ║
@@ -230,7 +226,6 @@ def cmd_config(args=None):
 
 
 def cmd_migrate(args=None):
-    """Handle the 'migrate' subcommand"""
     print("""
     ╔════════════════════════════════════════════════════╗
     ║             Migrator Tool for Amplify              ║
@@ -293,4 +288,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # For IDE debugging: set the command you want to test
+    # Uncomment and modify one of these lines:
+
+    # sys.argv = ['migrator.py', 'config']  # Test config command
+    # sys.argv = ['migrator.py', 'show']    # Test show command
+    sys.argv = ['migrator.py', 'migrate'] # Test migrate command
+
     main()
