@@ -24,9 +24,9 @@ class AmplifyClient:
     def __init__(self,
                  api_endpoint: str,
                  user_pool_id: str,
-                 region: str = 'us-east-1',
-                 client_id: str = None,
-                 batch_size: int = 10):
+                 region: str,
+                 batch_size: int,
+                 client_id: str = None):
         """
         Initialize the client
 

@@ -9,7 +9,6 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from amplify_client import AmplifyClient
-from mapper import observation_column_mapping
 from model_field_parser import ModelFieldParser
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,17 +20,16 @@ class ExcelToAmplifyMigrator:
         self.model_field_parser = ModelFieldParser()
         self.excel_file_path = excel_file_path
         self.amplify_client = None
-        self.column_mapping = observation_column_mapping
 
     def init_client(self, api_endpoint: str, region: str, user_pool_id: str, is_aws_admin: bool = False,
-                    client_id: str = None, username: str = None, aws_profile: str = None, batch_size: int = None):
+                    client_id: str = None, username: str = None, aws_profile: str = None, batch_size: int = 10):
 
         self.amplify_client = AmplifyClient(
             api_endpoint=api_endpoint,
             user_pool_id=user_pool_id,
             region=region,
+            batch_size=batch_size,
             client_id=client_id,
-            batch_size=batch_size
         )
 
         try:
@@ -134,6 +132,24 @@ class ExcelToAmplifyMigrator:
         return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
 
 
+def get_config_value(key: str, prompt: str, default: str = '', secret: bool = False) -> str:
+    env_value = os.getenv(key)
+    if env_value:
+        return env_value
+
+    if default:
+        prompt = f"{prompt} [{default}]: "
+    else:
+        prompt = f"{prompt}: "
+
+    if secret:
+        value = getpass(prompt)
+    else:
+        value = input(prompt)
+
+    return value.strip() if value.strip() else default
+
+
 def main():
     print("""
     ╔════════════════════════════════════════════════════╗
@@ -143,20 +159,29 @@ def main():
     ╚════════════════════════════════════════════════════╝
     """)
 
+    # Load .env if exists (for development only)
     load_dotenv()
 
-    excel_path = os.getenv('EXCEL_FILE_PATH', 'data.xlsx')
-    api_endpoint = os.getenv('API_ENDPOINT', '')
-    region = os.getenv('AWS_REGION', 'eu-north-1')
-    user_pool_id = os.getenv('USER_POOL_ID', '')
-    client_id = os.getenv('CLIENT_ID', None)
+    # Get configuration (interactively or from .env)
+    print("\n📋 Configuration Setup:")
+    print("-" * 54)
+
+    excel_path = get_config_value('EXCEL_FILE_PATH', 'Excel file path', 'data.xlsx')
+    api_endpoint = get_config_value('API_ENDPOINT', 'AWS Amplify API endpoint')
+    region = get_config_value('AWS_REGION', 'AWS Region', 'us-east-1')
+    user_pool_id = get_config_value('USER_POOL_ID', 'Cognito User Pool ID')
+    client_id = get_config_value('CLIENT_ID', 'Cognito Client ID (optional)', '')
+
+    print("\n🔐 Authentication:")
+    print("-" * 54)
+
+    username = get_config_value('ADMIN_USERNAME', 'Admin Username')
+    password = get_config_value('ADMIN_PASSWORD', 'Admin Password', secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
 
-    username = os.getenv('ADMIN_USERNAME', input("Admin Username: "))
-    password = os.getenv('ADMIN_PASSWORD', getpass("Admin Password: "))
-
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
+    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id or None,
+                        username=username)
     if not migrator.authenticate(username, password):
         return
 
