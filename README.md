@@ -13,7 +13,7 @@ pip install .
 
 ## Usage
 
-The tool has two subcommands:
+The tool has three subcommands:
 
 ### 1. Configure (First Time Setup)
 
@@ -33,7 +33,15 @@ This will prompt you for:
 
 Configuration is saved to `~/.amplify-migrator/config.json` (passwords are never saved).
 
-### 2. Run Migration
+### 2. Show Configuration
+
+View your current saved configuration:
+
+```bash
+amplify-migrator show
+```
+
+### 3. Run Migration
 
 Run the migration using your saved configuration:
 
@@ -48,6 +56,9 @@ You'll only be prompted for your password (for security, passwords are never cac
 ```bash
 # First time: configure the tool
 amplify-migrator config
+
+# View current configuration
+amplify-migrator show
 
 # Run migration (uses saved config)
 amplify-migrator migrate
