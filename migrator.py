@@ -274,15 +274,12 @@ def main():
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # Config subcommand
     config_parser = subparsers.add_parser('config', help='Configure the migration tool')
     config_parser.set_defaults(func=cmd_config)
 
-    # Show subcommand
     show_parser = subparsers.add_parser('show', help='Show current configuration')
     show_parser.set_defaults(func=cmd_show)
 
-    # Migrate subcommand
     migrate_parser = subparsers.add_parser('migrate', help='Run the migration')
     migrate_parser.set_defaults(func=cmd_migrate)
 
