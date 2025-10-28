@@ -25,7 +25,6 @@ class AmplifyClient:
                  api_endpoint: str,
                  user_pool_id: str,
                  region: str,
-                 batch_size: int,
                  client_id: str = None):
         """
         Initialize the client
@@ -41,8 +40,8 @@ class AmplifyClient:
         self.user_pool_id = user_pool_id
         self.region = region
         self.client_id = client_id
-        self.batch_size = batch_size
 
+        self.batch_size = 10
         self.cognito_client = None
         self.boto_cognito_admin_client = None
         self.id_token = None
