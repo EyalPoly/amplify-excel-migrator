@@ -28,7 +28,7 @@ This will prompt you for:
 - AWS Amplify API endpoint
 - AWS Region
 - Cognito User Pool ID
-- Cognito Client ID (optional)
+- Cognito Client ID
 - Admin username
 
 Configuration is saved to `~/.amplify-migrator/config.json` (passwords are never saved).
@@ -80,7 +80,7 @@ Excel file path [data.xlsx]: my-data.xlsx
 AWS Amplify API endpoint: https://xxx.appsync-api.us-east-1.amazonaws.com/graphql
 AWS Region [us-east-1]:
 Cognito User Pool ID: us-east-1_xxxxx
-Cognito Client ID (optional):
+Cognito Client ID: your-client-id
 Admin Username: admin@example.com
 
 ✅ Configuration saved successfully!

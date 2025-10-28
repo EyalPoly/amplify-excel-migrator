@@ -25,7 +25,7 @@ class AmplifyClient:
                  api_endpoint: str,
                  user_pool_id: str,
                  region: str,
-                 client_id: str = None):
+                 client_id: str):
         """
         Initialize the client
 
@@ -33,7 +33,7 @@ class AmplifyClient:
             api_endpoint: Amplify GraphQL endpoint
             user_pool_id: Cognito User Pool ID
             region: AWS region
-            client_id: Cognito App Client ID (optional, will be fetched if not provided)
+            client_id: Cognito App Client ID
         """
 
         self.api_endpoint = api_endpoint

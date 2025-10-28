@@ -221,8 +221,8 @@ def cmd_config(args=None):
               'api_endpoint': get_config_value('AWS Amplify API endpoint'),
               'region': get_config_value('AWS Region', 'us-east-1'),
               'user_pool_id': get_config_value('Cognito User Pool ID'),
-              'client_id': get_config_value( 'Cognito Client ID (optional)', ''),
-              'username': get_config_value( 'Admin Username')}
+              'client_id': get_config_value('Cognito Client ID'),
+              'username': get_config_value('Admin Username')}
 
     save_config(config)
     print("\n✅ Configuration saved successfully!")
@@ -250,7 +250,7 @@ def cmd_migrate(args=None):
     api_endpoint = get_cached_or_prompt('api_endpoint', 'AWS Amplify API endpoint', cached_config)
     region = get_cached_or_prompt('region', 'AWS Region', cached_config, 'us-east-1')
     user_pool_id = get_cached_or_prompt('user_pool_id', 'Cognito User Pool ID', cached_config)
-    client_id = get_cached_or_prompt('client_id', 'Cognito Client ID (optional)', cached_config, '')
+    client_id = get_cached_or_prompt('client_id', 'Cognito Client ID', cached_config)
     username = get_cached_or_prompt('username', 'Admin Username', cached_config)
 
     print("\n🔐 Authentication:")
@@ -258,7 +258,7 @@ def cmd_migrate(args=None):
     password = get_config_value('ADMIN_PASSWORD', 'Admin Password', secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id or None,
+    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id,
                          username=username)
     if not migrator.authenticate(username, password):
         return
