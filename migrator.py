@@ -131,7 +131,10 @@ class ExcelToAmplifyMigrator:
 
     @staticmethod
     def to_camel_case(s: str) -> str:
-        parts = re.split(r'[\s_\-]+', s.strip())
+        # Handle PascalCase
+        s_with_spaces = re.sub(r'(?<!^)(?=[A-Z])', ' ', s)
+
+        parts = re.split(r'[\s_\-]+', s_with_spaces.strip())
         return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
 
 

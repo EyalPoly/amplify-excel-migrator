@@ -10,3 +10,8 @@ pyjwt==2.10.1
 certifi==2025.10.5
 setuptools==80.9.0
 wheel==0.45.1
+
+# Testing
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
