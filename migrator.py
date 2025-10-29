@@ -293,6 +293,6 @@ if __name__ == "__main__":
 
     # sys.argv = ['migrator.py', 'config']  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    sys.argv = ['migrator.py', 'migrate'] # Test migrate command
+    # sys.argv = ['migrator.py', 'migrate'] # Test migrate command
 
     main()
