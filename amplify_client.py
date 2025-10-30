@@ -12,7 +12,7 @@ from botocore.exceptions import NoCredentialsError, ProfileNotFound, NoRegionErr
 from pycognito import Cognito, MFAChallengeException
 from pycognito.exceptions import ForceChangePasswordException
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -21,11 +21,7 @@ class AmplifyClient:
     Client for Amplify GraphQL using ADMIN_USER_PASSWORD_AUTH flow
     """
 
-    def __init__(self,
-                 api_endpoint: str,
-                 user_pool_id: str,
-                 region: str,
-                 client_id: str):
+    def __init__(self, api_endpoint: str, user_pool_id: str, region: str, client_id: str):
         """
         Initialize the client
 
@@ -46,7 +42,7 @@ class AmplifyClient:
         self.boto_cognito_admin_client = None
         self.id_token = None
         self.mfa_tokens = None
-        self.admin_group_name = 'ADMINS'
+        self.admin_group_name = "ADMINS"
 
         self.records_cache = {}
 
@@ -55,17 +51,17 @@ class AmplifyClient:
             if is_aws_admin:
                 if aws_profile:
                     session = boto3.Session(profile_name=aws_profile)
-                    self.boto_cognito_admin_client = session.client('cognito-idp', region_name=self.region)
+                    self.boto_cognito_admin_client = session.client("cognito-idp", region_name=self.region)
                 else:
                     # Use default AWS credentials (from ~/.aws/credentials, env vars, or IAM role)
-                    self.boto_cognito_admin_client = boto3.client('cognito-idp', region_name=self.region)
+                    self.boto_cognito_admin_client = boto3.client("cognito-idp", region_name=self.region)
 
             else:
                 self.cognito_client = Cognito(
                     user_pool_id=self.user_pool_id,
                     client_id=self.client_id,
                     user_pool_region=self.region,
-                    username=username
+                    username=username,
                 )
 
         except NoCredentialsError:
@@ -95,8 +91,8 @@ class AmplifyClient:
             raise
 
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            error_msg = e.response.get('Error', {}).get('Message', str(e))
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            error_msg = e.response.get("Error", {}).get("Message", str(e))
             logger.error(f"AWS Client Error [{error_code}]: {error_msg}")
             raise RuntimeError(f"Failed to initialize client: AWS error [{error_code}]: {error_msg}")
 
@@ -124,7 +120,7 @@ class AmplifyClient:
 
         except MFAChallengeException as e:
             logger.warning("MFA required")
-            if hasattr(e, 'get_tokens'):
+            if hasattr(e, "get_tokens"):
                 self.mfa_tokens = e.get_tokens()
 
                 mfa_code = input("Enter MFA code: ").strip()
@@ -170,17 +166,14 @@ class AmplifyClient:
             response = self.boto_cognito_admin_client.admin_initiate_auth(
                 UserPoolId=self.user_pool_id,
                 ClientId=self.client_id,
-                AuthFlow='ADMIN_USER_PASSWORD_AUTH',
-                AuthParameters={
-                    'USERNAME': username,
-                    'PASSWORD': password
-                }
+                AuthFlow="ADMIN_USER_PASSWORD_AUTH",
+                AuthParameters={"USERNAME": username, "PASSWORD": password},
             )
 
             self._check_for_mfa_challenges(response, username)
 
-            if 'AuthenticationResult' in response:
-                self.id_token = response['AuthenticationResult']['IdToken']
+            if "AuthenticationResult" in response:
+                self.id_token = response["AuthenticationResult"]["IdToken"]
             else:
                 logger.error("❌ Authentication failed: No AuthenticationResult in response")
                 return False
@@ -208,18 +201,12 @@ class AmplifyClient:
                 logger.error("No MFA session tokens available")
                 return False
 
-            challenge_name = self.mfa_tokens.get('ChallengeName', 'SMS_MFA')
+            challenge_name = self.mfa_tokens.get("ChallengeName", "SMS_MFA")
 
-            if 'SOFTWARE_TOKEN' in challenge_name:
-                self.cognito_client.respond_to_software_token_mfa_challenge(
-                    code=mfa_code,
-                    mfa_tokens=self.mfa_tokens
-                )
+            if "SOFTWARE_TOKEN" in challenge_name:
+                self.cognito_client.respond_to_software_token_mfa_challenge(code=mfa_code, mfa_tokens=self.mfa_tokens)
             else:
-                self.cognito_client.respond_to_sms_mfa_challenge(
-                    code=mfa_code,
-                    mfa_tokens=self.mfa_tokens
-                )
+                self.cognito_client.respond_to_sms_mfa_challenge(code=mfa_code, mfa_tokens=self.mfa_tokens)
 
             logger.info("✅ MFA challenge successful")
             return True
@@ -235,13 +222,10 @@ class AmplifyClient:
         try:
             if not self.boto_cognito_admin_client:
                 self.boto_cognito_admin_client(is_aws_admin=True)
-            response = self.boto_cognito_admin_client.list_user_pool_clients(
-                UserPoolId=self.user_pool_id,
-                MaxResults=1
-            )
+            response = self.boto_cognito_admin_client.list_user_pool_clients(UserPoolId=self.user_pool_id, MaxResults=1)
 
-            if response['UserPoolClients']:
-                client_id = response['UserPoolClients'][0]['ClientId']
+            if response["UserPoolClients"]:
+                client_id = response["UserPoolClients"][0]["ClientId"]
                 return client_id
 
             raise Exception("No User Pool clients found")
@@ -252,37 +236,34 @@ class AmplifyClient:
             raise Exception(f"Failed to get Client ID: {e}")
 
     def _check_for_mfa_challenges(self, response, username: str) -> bool:
-        if 'ChallengeName' in response:
-            challenge = response['ChallengeName']
+        if "ChallengeName" in response:
+            challenge = response["ChallengeName"]
 
-            if challenge == 'MFA_SETUP':
+            if challenge == "MFA_SETUP":
                 logger.error("MFA setup required")
                 return False
 
-            elif challenge == 'SMS_MFA' or challenge == 'SOFTWARE_TOKEN_MFA':
+            elif challenge == "SMS_MFA" or challenge == "SOFTWARE_TOKEN_MFA":
                 mfa_code = input("Enter MFA code: ")
                 _ = self.cognito_client.admin_respond_to_auth_challenge(
                     UserPoolId=self.user_pool_id,
                     ClientId=self.client_id,
                     ChallengeName=challenge,
-                    Session=response['Session'],
+                    Session=response["Session"],
                     ChallengeResponses={
-                        'USERNAME': username,
-                        'SMS_MFA_CODE' if challenge == 'SMS_MFA' else 'SOFTWARE_TOKEN_MFA_CODE': mfa_code
-                    }
+                        "USERNAME": username,
+                        "SMS_MFA_CODE" if challenge == "SMS_MFA" else "SOFTWARE_TOKEN_MFA_CODE": mfa_code,
+                    },
                 )
 
-            elif challenge == 'NEW_PASSWORD_REQUIRED':
+            elif challenge == "NEW_PASSWORD_REQUIRED":
                 new_password = getpass("Enter new password: ")
                 _ = self.cognito_client.admin_respond_to_auth_challenge(
                     UserPoolId=self.user_pool_id,
                     ClientId=self.client_id,
                     ChallengeName=challenge,
-                    Session=response['Session'],
-                    ChallengeResponses={
-                        'USERNAME': username,
-                        'NEW_PASSWORD': new_password
-                    }
+                    Session=response["Session"],
+                    ChallengeResponses={"USERNAME": username, "NEW_PASSWORD": new_password},
                 )
 
         return False
@@ -310,27 +291,17 @@ class AmplifyClient:
         if not self.id_token:
             raise Exception("Not authenticated. Call authenticate() first.")
 
-        headers = {
-            'Authorization': self.id_token,
-            'Content-Type': 'application/json'
-        }
+        headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
-        payload = {
-            'query': query,
-            'variables': variables or {}
-        }
+        payload = {"query": query, "variables": variables or {}}
 
         try:
-            response = requests.post(
-                self.api_endpoint,
-                headers=headers,
-                json=payload
-            )
+            response = requests.post(self.api_endpoint, headers=headers, json=payload)
 
             if response.status_code == 200:
                 result = response.json()
 
-                if 'errors' in result:
+                if "errors" in result:
                     logger.error(f"GraphQL errors: {result['errors']}")
                     return None
 
@@ -340,9 +311,10 @@ class AmplifyClient:
                 return None
 
         except Exception as e:
-            if 'NameResolutionError' in str(e):
+            if "NameResolutionError" in str(e):
                 logger.error(
-                    f"Connection error: Unable to resolve hostname. Check your internet connection or the API endpoint URL.")
+                    f"Connection error: Unable to resolve hostname. Check your internet connection or the API endpoint URL."
+                )
                 sys.exit(1)
             else:
                 logger.error(f"Request error: {e}")
@@ -363,22 +335,16 @@ class AmplifyClient:
         if not self.id_token:
             raise Exception("Not authenticated. Call authenticate() first.")
 
-        headers = {
-            'Authorization': self.id_token,
-            'Content-Type': 'application/json'
-        }
+        headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
-        payload = {
-            'query': query,
-            'variables': variables or {}
-        }
+        payload = {"query": query, "variables": variables or {}}
 
         try:
             async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
                 if response.status == 200:
                     result = await response.json()
 
-                    if 'errors' in result:
+                    if "errors" in result:
                         logger.error(f"GraphQL errors: {result['errors']}")
                         return None
 
@@ -391,8 +357,9 @@ class AmplifyClient:
             logger.error(f"Request error: {e}")
             return None
 
-    async def create_record_async(self, session: aiohttp.ClientSession, data: Dict, model_name: str,
-                                  primary_field: str) -> Dict | None:
+    async def create_record_async(
+        self, session: aiohttp.ClientSession, data: Dict, model_name: str, primary_field: str
+    ) -> Dict | None:
         mutation = f"""
         mutation Create{model_name}($input: Create{model_name}Input!)  {{
             create{model_name}(input: $input) {{
@@ -402,19 +369,25 @@ class AmplifyClient:
         }}
         """
 
-        result = await self._request_async(session, mutation, {'input': data})
+        result = await self._request_async(session, mutation, {"input": data})
 
-        if result and 'data' in result:
-            created = result['data'].get(f'create{model_name}')
+        if result and "data" in result:
+            created = result["data"].get(f"create{model_name}")
             if created:
                 logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
             return created
 
         return None
 
-    async def check_record_exists_async(self, session: aiohttp.ClientSession, model_name: str,
-                                        primary_field: str, value: str, is_secondary_index: bool,
-                                        record: Dict) -> Dict | None:
+    async def check_record_exists_async(
+        self,
+        session: aiohttp.ClientSession,
+        model_name: str,
+        primary_field: str,
+        value: str,
+        is_secondary_index: bool,
+        record: Dict,
+    ) -> Dict | None:
         if is_secondary_index:
             query_name = f"list{model_name}By{primary_field.capitalize()}"
             query = f"""
@@ -427,11 +400,10 @@ class AmplifyClient:
             }}
             """
             result = await self._request_async(session, query, {primary_field: value})
-            if result and 'data' in result:
-                items = result['data'].get(query_name, {}).get('items', [])
+            if result and "data" in result:
+                items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
-                    logger.error(
-                        f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    logger.error(f'Record with {primary_field}="{value}" already exists in {model_name}')
                     return None
         else:
             query_name = self._get_list_query_name(model_name)
@@ -446,21 +418,22 @@ class AmplifyClient:
             """
             filter_input = {primary_field: {"eq": value}}
             result = await self._request_async(session, query, {"filter": filter_input})
-            if result and 'data' in result:
-                items = result['data'].get(query_name, {}).get('items', [])
+            if result and "data" in result:
+                items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
-                    logger.error(
-                        f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    logger.error(f'Record with {primary_field}="{value}" already exists in {model_name}')
                     return None
 
         return record
 
-    async def upload_batch_async(self, batch: list, model_name: str, primary_field: str,
-                                 is_secondary_index: bool) -> tuple[int, int]:
+    async def upload_batch_async(
+        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool
+    ) -> tuple[int, int]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
-                self.check_record_exists_async(session, model_name, primary_field,
-                                               record[primary_field], is_secondary_index, record)
+                self.check_record_exists_async(
+                    session, model_name, primary_field, record[primary_field], is_secondary_index, record
+                )
                 for record in batch
             ]
             check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
@@ -476,8 +449,7 @@ class AmplifyClient:
                 return 0, len(batch)
 
             create_tasks = [
-                self.create_record_async(session, record, model_name, primary_field)
-                for record in filtered_batch
+                self.create_record_async(session, record, model_name, primary_field) for record in filtered_batch
             ]
             results = await asyncio.gather(*create_tasks, return_exceptions=True)
 
@@ -514,42 +486,41 @@ class AmplifyClient:
         """
 
         response = self._request(query)
-        if response and 'data' in response and '__type' in response['data']:
-            return response['data']['__type']
+        if response and "data" in response and "__type" in response["data"]:
+            return response["data"]["__type"]
 
         return {}
 
-    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> (
-            tuple[str, bool]):
+    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool]:
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
             return secondary_index, True
 
-        for field in parsed_model_structure['fields']:
-            if field['is_required'] and field['is_scalar'] and field['name'] != 'id':
-                return field['name'], False
+        for field in parsed_model_structure["fields"]:
+            if field["is_required"] and field["is_scalar"] and field["name"] != "id":
+                return field["name"], False
 
-        logger.error('No suitable primary field found (required scalar field other than id)')
-        return '', False
+        logger.error("No suitable primary field found (required scalar field other than id)")
+        return "", False
 
     def _get_secondary_index(self, model_name: str) -> str:
         query_structure = self.get_model_structure("Query")
         if not query_structure:
             logger.error("Query type not found in schema")
-            return ''
+            return ""
 
-        query_fields = query_structure['fields']
+        query_fields = query_structure["fields"]
 
         pattern = f"{model_name}By"
 
         for query in query_fields:
-            query_name = query['name']
+            query_name = query["name"]
             if pattern in query_name:
                 pattern_index = query_name.index(pattern)
-                field_name = query_name[pattern_index + len(pattern):]
-                return field_name[0].lower() + field_name[1:] if field_name else ''
+                field_name = query_name[pattern_index + len(pattern) :]
+                return field_name[0].lower() + field_name[1:] if field_name else ""
 
-        return ''
+        return ""
 
     def _get_list_query_name(self, model_name: str) -> str | None:
         """Get the correct list query name from the schema (handles pluralization)"""
@@ -558,7 +529,7 @@ class AmplifyClient:
             logger.error("Query type not found in schema")
             return f"list{model_name}s"
 
-        query_fields = query_structure['fields']
+        query_fields = query_structure["fields"]
         candidates = [
             f"list{model_name}s",
             f"list{model_name}es",
@@ -566,8 +537,8 @@ class AmplifyClient:
         ]
 
         for query in query_fields:
-            query_name = query['name']
-            if query_name in candidates and 'By' not in query_name:
+            query_name = query["name"]
+            if query_name in candidates and "By" not in query_name:
                 return query_name
 
         logger.error(f"No list query found for model {model_name}, tried: {candidates}")
@@ -585,7 +556,7 @@ class AmplifyClient:
             return 0, len(records)
 
         for i in range(0, len(records), self.batch_size):
-            batch = records[i:i + self.batch_size]
+            batch = records[i : i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} ({len(batch)} items)...")
 
             batch_success, batch_error = asyncio.run(
@@ -595,16 +566,18 @@ class AmplifyClient:
             error_count += batch_error
 
             logger.info(
-                f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors")
+                f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors"
+            )
 
         return success_count, error_count
 
-    def list_records_by_secondary_index(self, model_name: str, secondary_index: str, value: str = None,
-                                        fields: list = None) -> Dict | None:
+    def list_records_by_secondary_index(
+        self, model_name: str, secondary_index: str, value: str = None, fields: list = None
+    ) -> Dict | None:
         if fields is None:
-            fields = ['id', secondary_index]
+            fields = ["id", secondary_index]
 
-        fields_str = '\n'.join(fields)
+        fields_str = "\n".join(fields)
 
         if not value:
             query_name = self._get_list_query_name(model_name)
@@ -631,17 +604,17 @@ class AmplifyClient:
             """
             result = self._request(query, {secondary_index: value})
 
-        if result and 'data' in result:
-            items = result['data'].get(query_name, {}).get('items', [])
+        if result and "data" in result:
+            items = result["data"].get(query_name, {}).get("items", [])
             return items if items else None
 
         return None
 
     def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
         if fields is None:
-            fields = ['id']
+            fields = ["id"]
 
-        fields_str = '\n'.join(fields)
+        fields_str = "\n".join(fields)
 
         query_name = f"get{model_name}"
         query = f"""
@@ -654,17 +627,18 @@ class AmplifyClient:
 
         result = self._request(query, {"id": record_id})
 
-        if result and 'data' in result:
-            return result['data'].get(query_name)
+        if result and "data" in result:
+            return result["data"].get(query_name)
 
         return None
 
-    def get_records_by_field(self, model_name: str, field_name: str, value: str = None,
-                             fields: list = None) -> Dict | None:
+    def get_records_by_field(
+        self, model_name: str, field_name: str, value: str = None, fields: list = None
+    ) -> Dict | None:
         if fields is None:
-            fields = ['id', field_name]
+            fields = ["id", field_name]
 
-        fields_str = '\n'.join(fields)
+        fields_str = "\n".join(fields)
 
         query_name = self._get_list_query_name(model_name)
 
@@ -689,21 +663,23 @@ class AmplifyClient:
               }}
             }}
             """
-            filter_input = {
-                field_name: {
-                    "eq": value
-                }
-            }
+            filter_input = {field_name: {"eq": value}}
             result = self._request(query, {"filter": filter_input})
 
-        if result and 'data' in result:
-            items = result['data'].get(query_name, {}).get('items', [])
+        if result and "data" in result:
+            items = result["data"].get(query_name, {}).get("items", [])
             return items if items else None
 
         return None
 
-    def get_records(self, model_name: str, parsed_model_structure: Dict[str, Any] = None, primary_field: str = None,
-                    is_secondary_index: bool = None, fields: list = None) -> list | None:
+    def get_records(
+        self,
+        model_name: str,
+        parsed_model_structure: Dict[str, Any] = None,
+        primary_field: str = None,
+        is_secondary_index: bool = None,
+        fields: list = None,
+    ) -> list | None:
         if model_name in self.records_cache:
             return self.records_cache[model_name]
 
@@ -724,9 +700,16 @@ class AmplifyClient:
             self.records_cache[model_name] = records
         return records
 
-    def get_record(self, model_name: str, parsed_model_structure: Dict[str, Any] = None, value: str = None,
-                   record_id: str = None, primary_field: str = None, is_secondary_index: bool = None,
-                   fields: list = None) -> Dict | None:
+    def get_record(
+        self,
+        model_name: str,
+        parsed_model_structure: Dict[str, Any] = None,
+        value: str = None,
+        record_id: str = None,
+        primary_field: str = None,
+        is_secondary_index: bool = None,
+        fields: list = None,
+    ) -> Dict | None:
         if record_id:
             return self.get_record_by_id(model_name, record_id)
 

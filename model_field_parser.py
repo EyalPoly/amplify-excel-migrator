@@ -6,47 +6,60 @@ class ModelFieldParser:
 
     def __init__(self):
         self.scalar_types = {
-            'String', 'Int', 'Float', 'Boolean',
-            'AWSDate', 'AWSTime', 'AWSDateTime', 'AWSTimestamp',
-            'AWSEmail', 'AWSJSON', 'AWSURL', 'AWSPhone', 'AWSIPAddress'
+            "String",
+            "Int",
+            "Float",
+            "Boolean",
+            "AWSDate",
+            "AWSTime",
+            "AWSDateTime",
+            "AWSTimestamp",
+            "AWSEmail",
+            "AWSJSON",
+            "AWSURL",
+            "AWSPhone",
+            "AWSIPAddress",
         }
-        self.metadata_fields = {'id', 'createdAt', 'updatedAt', 'owner'}
+        self.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
 
     def parse_model_structure(self, introspection_result: Dict) -> Dict[str, Any]:
-        if 'data' in introspection_result and '__type' in introspection_result['data']:
-            type_data = introspection_result['data']['__type']
+        if "data" in introspection_result and "__type" in introspection_result["data"]:
+            type_data = introspection_result["data"]["__type"]
         else:
             type_data = introspection_result
 
         model_info = {
-            'name': type_data.get('name'),
-            'kind': type_data.get('kind'),
-            'description': type_data.get('description'),
-            'fields': []
+            "name": type_data.get("name"),
+            "kind": type_data.get("kind"),
+            "description": type_data.get("description"),
+            "fields": [],
         }
 
-        if type_data.get('fields'):
-            for field in type_data['fields']:
+        if type_data.get("fields"):
+            for field in type_data["fields"]:
                 parsed_field = self._parse_field(field)
-                model_info['fields'].append(parsed_field) if parsed_field else None
+                model_info["fields"].append(parsed_field) if parsed_field else None
 
         return model_info
 
     def _parse_field(self, field: Dict) -> Dict[str, Any]:
-        base_type = self._get_base_type_name(field.get('type', {}))
-        if 'Connection' in base_type or field.get('name') in self.metadata_fields or self._get_type_kind(
-                field.get('type', {})) in ['OBJECT', 'INTERFACE']:
+        base_type = self._get_base_type_name(field.get("type", {}))
+        if (
+            "Connection" in base_type
+            or field.get("name") in self.metadata_fields
+            or self._get_type_kind(field.get("type", {})) in ["OBJECT", "INTERFACE"]
+        ):
             return {}
 
         field_info = {
-            'name': field.get('name'),
-            'description': field.get('description'),
-            'type': base_type,
-            'is_required': self._is_required_field(field.get('type', {})),
-            'is_list': self._is_list_type(field.get('type', {})),
-            'is_scalar': base_type in self.scalar_types,
-            'is_id': base_type == 'ID',
-            'is_enum': field.get('type', {}).get('kind') == 'ENUM',
+            "name": field.get("name"),
+            "description": field.get("description"),
+            "type": base_type,
+            "is_required": self._is_required_field(field.get("type", {})),
+            "is_list": self._is_list_type(field.get("type", {})),
+            "is_scalar": base_type in self.scalar_types,
+            "is_id": base_type == "ID",
+            "is_enum": field.get("type", {}).get("kind") == "ENUM",
         }
 
         return field_info
@@ -57,17 +70,17 @@ class ModelFieldParser:
         """
 
         if not type_obj:
-            return {'name': 'Unknown', 'kind': 'UNKNOWN'}
+            return {"name": "Unknown", "kind": "UNKNOWN"}
 
         type_info = {
-            'name': type_obj.get('name'),
-            'kind': type_obj.get('kind'),
-            'full_type': self._get_full_type_string(type_obj)
+            "name": type_obj.get("name"),
+            "kind": type_obj.get("kind"),
+            "full_type": self._get_full_type_string(type_obj),
         }
 
         # If there's nested type info (NON_NULL, LIST), include it
-        if type_obj.get('ofType'):
-            type_info['of_type'] = self._parse_type(type_obj['ofType'])
+        if type_obj.get("ofType"):
+            type_info["of_type"] = self._parse_type(type_obj["ofType"])
 
         return type_info
 
@@ -77,20 +90,20 @@ class ModelFieldParser:
         """
 
         if not type_obj:
-            return 'Unknown'
+            return "Unknown"
 
-        if type_obj.get('name'):
-            return type_obj['name']
+        if type_obj.get("name"):
+            return type_obj["name"]
 
-        if type_obj['kind'] == 'NON_NULL':
-            inner = self._get_full_type_string(type_obj.get('ofType', {}))
+        if type_obj["kind"] == "NON_NULL":
+            inner = self._get_full_type_string(type_obj.get("ofType", {}))
             return f"{inner}!"
 
-        if type_obj['kind'] == 'LIST':
-            inner = self._get_full_type_string(type_obj.get('ofType', {}))
+        if type_obj["kind"] == "LIST":
+            inner = self._get_full_type_string(type_obj.get("ofType", {}))
             return f"[{inner}]"
 
-        return type_obj.get('kind', 'Unknown')
+        return type_obj.get("kind", "Unknown")
 
     def _get_base_type_name(self, type_obj: Dict) -> str:
         """
@@ -98,37 +111,37 @@ class ModelFieldParser:
         """
 
         if not type_obj:
-            return 'Unknown'
+            return "Unknown"
 
-        if type_obj.get('name'):
-            return type_obj['name']
+        if type_obj.get("name"):
+            return type_obj["name"]
 
-        if type_obj.get('ofType'):
-            return self._get_base_type_name(type_obj['ofType'])
+        if type_obj.get("ofType"):
+            return self._get_base_type_name(type_obj["ofType"])
 
-        return 'Unknown'
+        return "Unknown"
 
     def _get_type_kind(self, type_obj: Dict) -> str:
         if not type_obj:
-            return 'UNKNOWN'
+            return "UNKNOWN"
 
-        if type_obj['kind'] in ['NON_NULL', 'LIST'] and type_obj.get('ofType'):
-            return self._get_type_kind(type_obj['ofType'])
+        if type_obj["kind"] in ["NON_NULL", "LIST"] and type_obj.get("ofType"):
+            return self._get_type_kind(type_obj["ofType"])
 
-        return type_obj.get('kind', 'UNKNOWN')
+        return type_obj.get("kind", "UNKNOWN")
 
     @staticmethod
     def _is_required_field(type_obj: Dict) -> bool:
-        return type_obj and type_obj.get('kind') == 'NON_NULL'
+        return type_obj and type_obj.get("kind") == "NON_NULL"
 
     def _is_list_type(self, type_obj: Dict) -> bool:
         if not type_obj:
             return False
 
-        if type_obj['kind'] == 'LIST':
+        if type_obj["kind"] == "LIST":
             return True
 
-        if type_obj.get('ofType'):
-            return self._is_list_type(type_obj['ofType'])
+        if type_obj.get("ofType"):
+            return self._is_list_type(type_obj["ofType"])
 
         return False
