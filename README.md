@@ -5,11 +5,41 @@ Developed for the MECO project - https://github.com/sworgkh/meco-observations-am
 
 ## Installation
 
-Install the package:
+### From PyPI (Recommended)
+
+Install the latest stable version from PyPI:
 
 ```bash
+pip install amplify-excel-migrator
+```
+
+### From GitHub
+
+Install directly from GitHub:
+
+```bash
+pip install git+https://github.com/EyalPoly/amplify-excel-migrator.git
+```
+
+### From Source
+
+Clone the repository and install:
+
+```bash
+git clone https://github.com/EyalPoly/amplify-excel-migrator.git
+cd amplify-excel-migrator
 pip install .
 ```
+
+### For Development
+
+Install with development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+This installs the package in editable mode with pytest and other development tools.
 
 ## Usage
 
