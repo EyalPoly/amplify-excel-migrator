@@ -1,18 +1,22 @@
+import argparse
+import json
 import logging
-import os
 import re
 import sys
 from getpass import getpass
+from pathlib import Path
 from typing import Dict, Any
 
 import pandas as pd
-from dotenv import load_dotenv
 
 from amplify_client import AmplifyClient
 from model_field_parser import ModelFieldParser
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+CONFIG_DIR = Path.home() / '.amplify-migrator'
+CONFIG_FILE = CONFIG_DIR / 'config.json'
 
 
 class ExcelToAmplifyMigrator:
@@ -22,13 +26,12 @@ class ExcelToAmplifyMigrator:
         self.amplify_client = None
 
     def init_client(self, api_endpoint: str, region: str, user_pool_id: str, is_aws_admin: bool = False,
-                    client_id: str = None, username: str = None, aws_profile: str = None, batch_size: int = 10):
+                    client_id: str = None, username: str = None, aws_profile: str = None):
 
         self.amplify_client = AmplifyClient(
             api_endpoint=api_endpoint,
             user_pool_id=user_pool_id,
             region=region,
-            batch_size=batch_size,
             client_id=client_id,
         )
 
@@ -115,7 +118,7 @@ class ExcelToAmplifyMigrator:
         if field['is_id']:
             related_model = (temp := field['name'][:-2])[0].upper() + temp[1:]
             record = self.amplify_client.get_record(related_model, parsed_model_structure=parsed_model_structure,
-                                                     value=value, fields=['id'])
+                                                    value=value, fields=['id'])
             if record:
                 if record['id'] is None and field['is_required']:
                     raise ValueError(f"{related_model}: {value} does not exist")
@@ -128,15 +131,14 @@ class ExcelToAmplifyMigrator:
 
     @staticmethod
     def to_camel_case(s: str) -> str:
-        parts = re.split(r'[\s_\-]+', s.strip())
+        # Handle PascalCase
+        s_with_spaces = re.sub(r'(?<!^)(?=[A-Z])', ' ', s)
+
+        parts = re.split(r'[\s_\-]+', s_with_spaces.strip())
         return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
 
 
-def get_config_value(key: str, prompt: str, default: str = '', secret: bool = False) -> str:
-    env_value = os.getenv(key)
-    if env_value:
-        return env_value
-
+def get_config_value(prompt: str, default: str = '', secret: bool = False) -> str:
     if default:
         prompt = f"{prompt} [{default}]: "
     else:
@@ -150,7 +152,83 @@ def get_config_value(key: str, prompt: str, default: str = '', secret: bool = Fa
     return value.strip() if value.strip() else default
 
 
-def main():
+def save_config(config: Dict[str, str]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    cache_config = {k: v for k, v in config.items() if k not in ['password', 'ADMIN_PASSWORD']}
+
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(cache_config, f, indent=2)
+
+    logger.info(f"✅ Configuration saved to {CONFIG_FILE}")
+
+
+def load_cached_config() -> Dict[str, str]:
+    if not CONFIG_FILE.exists():
+        return {}
+
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load cached config: {e}")
+        return {}
+
+
+def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: str = '', secret: bool = False) -> str:
+    if key in cached_config:
+        return cached_config[key]
+
+    return get_config_value(prompt, default, secret)
+
+
+def cmd_show(args=None):
+    print("""
+    ╔════════════════════════════════════════════════════╗
+    ║        Amplify Migrator - Current Configuration    ║
+    ╚════════════════════════════════════════════════════╝
+    """)
+
+    cached_config = load_cached_config()
+
+    if not cached_config:
+        print("\n❌ No configuration found!")
+        print("💡 Run 'amplify-migrator config' first to set up your configuration.")
+        return
+
+    print("\n📋 Cached Configuration:")
+    print("-" * 54)
+    print(f"Excel file path:      {cached_config.get('excel_path', 'N/A')}")
+    print(f"API endpoint:         {cached_config.get('api_endpoint', 'N/A')}")
+    print(f"AWS Region:           {cached_config.get('region', 'N/A')}")
+    print(f"User Pool ID:         {cached_config.get('user_pool_id', 'N/A')}")
+    print(f"Client ID:            {cached_config.get('client_id', 'N/A')}")
+    print(f"Admin Username:       {cached_config.get('username', 'N/A')}")
+    print("-" * 54)
+    print(f"\n📍 Config location: {CONFIG_FILE}")
+    print(f"💡 Run 'amplify-migrator config' to update configuration.")
+
+
+def cmd_config(args=None):
+    print("""
+    ╔════════════════════════════════════════════════════╗
+    ║        Amplify Migrator - Configuration Setup      ║
+    ╚════════════════════════════════════════════════════╝
+    """)
+
+    config = {'excel_path': get_config_value('Excel file path', 'data.xlsx'),
+              'api_endpoint': get_config_value('AWS Amplify API endpoint'),
+              'region': get_config_value('AWS Region', 'us-east-1'),
+              'user_pool_id': get_config_value('Cognito User Pool ID'),
+              'client_id': get_config_value('Cognito Client ID'),
+              'username': get_config_value('Admin Username')}
+
+    save_config(config)
+    print("\n✅ Configuration saved successfully!")
+    print(f"💡 You can now run 'amplify-migrator migrate' to start the migration.")
+
+
+def cmd_migrate(args=None):
     print("""
     ╔════════════════════════════════════════════════════╗
     ║             Migrator Tool for Amplify              ║
@@ -159,34 +237,65 @@ def main():
     ╚════════════════════════════════════════════════════╝
     """)
 
-    # Load .env if exists (for development only)
-    load_dotenv()
+    cached_config = load_cached_config()
 
-    # Get configuration (interactively or from .env)
-    print("\n📋 Configuration Setup:")
-    print("-" * 54)
+    if not cached_config:
+        print("\n❌ No configuration found!")
+        print("💡 Run 'amplify-migrator config' first to set up your configuration.")
+        sys.exit(1)
 
-    excel_path = get_config_value('EXCEL_FILE_PATH', 'Excel file path', 'data.xlsx')
-    api_endpoint = get_config_value('API_ENDPOINT', 'AWS Amplify API endpoint')
-    region = get_config_value('AWS_REGION', 'AWS Region', 'us-east-1')
-    user_pool_id = get_config_value('USER_POOL_ID', 'Cognito User Pool ID')
-    client_id = get_config_value('CLIENT_ID', 'Cognito Client ID (optional)', '')
+    excel_path = get_cached_or_prompt('excel_path', 'Excel file path', cached_config, 'data.xlsx')
+    api_endpoint = get_cached_or_prompt('api_endpoint', 'AWS Amplify API endpoint', cached_config)
+    region = get_cached_or_prompt('region', 'AWS Region', cached_config, 'us-east-1')
+    user_pool_id = get_cached_or_prompt('user_pool_id', 'Cognito User Pool ID', cached_config)
+    client_id = get_cached_or_prompt('client_id', 'Cognito Client ID', cached_config)
+    username = get_cached_or_prompt('username', 'Admin Username', cached_config)
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-
-    username = get_config_value('ADMIN_USERNAME', 'Admin Username')
     password = get_config_value('ADMIN_PASSWORD', 'Admin Password', secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
-
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id or None,
-                        username=username)
+    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id,
+                         username=username)
     if not migrator.authenticate(username, password):
         return
 
     migrator.run()
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description='Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    config_parser = subparsers.add_parser('config', help='Configure the migration tool')
+    config_parser.set_defaults(func=cmd_config)
+
+    show_parser = subparsers.add_parser('show', help='Show current configuration')
+    show_parser.set_defaults(func=cmd_show)
+
+    migrate_parser = subparsers.add_parser('migrate', help='Run the migration')
+    migrate_parser.set_defaults(func=cmd_migrate)
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+
+    args.func(args)
+
+
 if __name__ == "__main__":
+    # For IDE debugging: set the command you want to test
+    # Uncomment and modify one of these lines:
+
+    # sys.argv = ['migrator.py', 'config']  # Test config command
+    # sys.argv = ['migrator.py', 'show']    # Test show command
+    # sys.argv = ['migrator.py', 'migrate'] # Test migrate command
+
     main()

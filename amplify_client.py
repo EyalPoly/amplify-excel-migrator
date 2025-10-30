@@ -25,8 +25,7 @@ class AmplifyClient:
                  api_endpoint: str,
                  user_pool_id: str,
                  region: str,
-                 batch_size: int,
-                 client_id: str = None):
+                 client_id: str):
         """
         Initialize the client
 
@@ -34,15 +33,15 @@ class AmplifyClient:
             api_endpoint: Amplify GraphQL endpoint
             user_pool_id: Cognito User Pool ID
             region: AWS region
-            client_id: Cognito App Client ID (optional, will be fetched if not provided)
+            client_id: Cognito App Client ID
         """
 
         self.api_endpoint = api_endpoint
         self.user_pool_id = user_pool_id
         self.region = region
         self.client_id = client_id
-        self.batch_size = batch_size
 
+        self.batch_size = 10
         self.cognito_client = None
         self.boto_cognito_admin_client = None
         self.id_token = None
