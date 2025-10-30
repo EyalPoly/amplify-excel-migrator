@@ -18,7 +18,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         ref: main
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PAT_TOKEN }}
         fetch-depth: 0
 
     - name: Set up Python
@@ -50,7 +50,7 @@ jobs:
     - name: Push changes
       uses: ad-m/github-push-action@master
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        github_token: ${{ secrets.PAT_TOKEN }}
         branch: main
         tags: true
 
