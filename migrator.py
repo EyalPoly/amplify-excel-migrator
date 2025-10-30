@@ -12,11 +12,11 @@ import pandas as pd
 from amplify_client import AmplifyClient
 from model_field_parser import ModelFieldParser
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-CONFIG_DIR = Path.home() / '.amplify-migrator'
-CONFIG_FILE = CONFIG_DIR / 'config.json'
+CONFIG_DIR = Path.home() / ".amplify-migrator"
+CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 class ExcelToAmplifyMigrator:
@@ -25,8 +25,16 @@ class ExcelToAmplifyMigrator:
         self.excel_file_path = excel_file_path
         self.amplify_client = None
 
-    def init_client(self, api_endpoint: str, region: str, user_pool_id: str, is_aws_admin: bool = False,
-                    client_id: str = None, username: str = None, aws_profile: str = None):
+    def init_client(
+        self,
+        api_endpoint: str,
+        region: str,
+        user_pool_id: str,
+        is_aws_admin: bool = False,
+        client_id: str = None,
+        username: str = None,
+        aws_profile: str = None,
+    ):
 
         self.amplify_client = AmplifyClient(
             api_endpoint=api_endpoint,
@@ -36,8 +44,9 @@ class ExcelToAmplifyMigrator:
         )
 
         try:
-            self.amplify_client.init_cognito_client(is_aws_admin=is_aws_admin, username=username,
-                                                    aws_profile=aws_profile)
+            self.amplify_client.init_cognito_client(
+                is_aws_admin=is_aws_admin, username=username, aws_profile=aws_profile
+            )
 
         except RuntimeError or Exception:
             sys.exit(1)
@@ -99,31 +108,32 @@ class ExcelToAmplifyMigrator:
 
         model_record = {}
 
-        for field in parsed_model_structure['fields']:
+        for field in parsed_model_structure["fields"]:
             input = self.parse_input(row, field, parsed_model_structure)
             if input:
-                model_record[field['name']] = input
+                model_record[field["name"]] = input
 
         return model_record
 
     def parse_input(self, row: pd.Series, field: Dict[str, Any], parsed_model_structure: Dict[str, Any]) -> Any:
-        field_name = field['name'][:-2] if field['is_id'] else field['name']
+        field_name = field["name"][:-2] if field["is_id"] else field["name"]
         if field_name not in row.index or pd.isna(row[field_name]):
-            if field['is_required']:
+            if field["is_required"]:
                 raise ValueError(f"Required field '{field_name}' is missing in row {row.name}")
             else:
                 return None
 
-        value = row.get(field['name'])
-        if field['is_id']:
-            related_model = (temp := field['name'][:-2])[0].upper() + temp[1:]
-            record = self.amplify_client.get_record(related_model, parsed_model_structure=parsed_model_structure,
-                                                    value=value, fields=['id'])
+        value = row.get(field["name"])
+        if field["is_id"]:
+            related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
+            record = self.amplify_client.get_record(
+                related_model, parsed_model_structure=parsed_model_structure, value=value, fields=["id"]
+            )
             if record:
-                if record['id'] is None and field['is_required']:
+                if record["id"] is None and field["is_required"]:
                     raise ValueError(f"{related_model}: {value} does not exist")
                 else:
-                    value = record['id']
+                    value = record["id"]
             else:
                 raise ValueError(f"Error fetching related record {related_model}: {value}")
 
@@ -132,13 +142,13 @@ class ExcelToAmplifyMigrator:
     @staticmethod
     def to_camel_case(s: str) -> str:
         # Handle PascalCase
-        s_with_spaces = re.sub(r'(?<!^)(?=[A-Z])', ' ', s)
+        s_with_spaces = re.sub(r"(?<!^)(?=[A-Z])", " ", s)
 
-        parts = re.split(r'[\s_\-]+', s_with_spaces.strip())
-        return parts[0].lower() + ''.join(word.capitalize() for word in parts[1:])
+        parts = re.split(r"[\s_\-]+", s_with_spaces.strip())
+        return parts[0].lower() + "".join(word.capitalize() for word in parts[1:])
 
 
-def get_config_value(prompt: str, default: str = '', secret: bool = False) -> str:
+def get_config_value(prompt: str, default: str = "", secret: bool = False) -> str:
     if default:
         prompt = f"{prompt} [{default}]: "
     else:
@@ -155,9 +165,9 @@ def get_config_value(prompt: str, default: str = '', secret: bool = False) -> st
 def save_config(config: Dict[str, str]) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    cache_config = {k: v for k, v in config.items() if k not in ['password', 'ADMIN_PASSWORD']}
+    cache_config = {k: v for k, v in config.items() if k not in ["password", "ADMIN_PASSWORD"]}
 
-    with open(CONFIG_FILE, 'w') as f:
+    with open(CONFIG_FILE, "w") as f:
         json.dump(cache_config, f, indent=2)
 
     logger.info(f"✅ Configuration saved to {CONFIG_FILE}")
@@ -168,14 +178,14 @@ def load_cached_config() -> Dict[str, str]:
         return {}
 
     try:
-        with open(CONFIG_FILE, 'r') as f:
+        with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     except Exception as e:
         logger.warning(f"Failed to load cached config: {e}")
         return {}
 
 
-def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: str = '', secret: bool = False) -> str:
+def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: str = "", secret: bool = False) -> str:
     if key in cached_config:
         return cached_config[key]
 
@@ -183,11 +193,13 @@ def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: st
 
 
 def cmd_show(args=None):
-    print("""
+    print(
+        """
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Current Configuration    ║
     ╚════════════════════════════════════════════════════╝
-    """)
+    """
+    )
 
     cached_config = load_cached_config()
 
@@ -210,18 +222,22 @@ def cmd_show(args=None):
 
 
 def cmd_config(args=None):
-    print("""
+    print(
+        """
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Configuration Setup      ║
     ╚════════════════════════════════════════════════════╝
-    """)
+    """
+    )
 
-    config = {'excel_path': get_config_value('Excel file path', 'data.xlsx'),
-              'api_endpoint': get_config_value('AWS Amplify API endpoint'),
-              'region': get_config_value('AWS Region', 'us-east-1'),
-              'user_pool_id': get_config_value('Cognito User Pool ID'),
-              'client_id': get_config_value('Cognito Client ID'),
-              'username': get_config_value('Admin Username')}
+    config = {
+        "excel_path": get_config_value("Excel file path", "data.xlsx"),
+        "api_endpoint": get_config_value("AWS Amplify API endpoint"),
+        "region": get_config_value("AWS Region", "us-east-1"),
+        "user_pool_id": get_config_value("Cognito User Pool ID"),
+        "client_id": get_config_value("Cognito Client ID"),
+        "username": get_config_value("Admin Username"),
+    }
 
     save_config(config)
     print("\n✅ Configuration saved successfully!")
@@ -229,13 +245,15 @@ def cmd_config(args=None):
 
 
 def cmd_migrate(args=None):
-    print("""
+    print(
+        """
     ╔════════════════════════════════════════════════════╗
     ║             Migrator Tool for Amplify              ║
     ╠════════════════════════════════════════════════════╣
     ║   This tool requires admin privileges to execute   ║
     ╚════════════════════════════════════════════════════╝
-    """)
+    """
+    )
 
     cached_config = load_cached_config()
 
@@ -244,20 +262,19 @@ def cmd_migrate(args=None):
         print("💡 Run 'amplify-migrator config' first to set up your configuration.")
         sys.exit(1)
 
-    excel_path = get_cached_or_prompt('excel_path', 'Excel file path', cached_config, 'data.xlsx')
-    api_endpoint = get_cached_or_prompt('api_endpoint', 'AWS Amplify API endpoint', cached_config)
-    region = get_cached_or_prompt('region', 'AWS Region', cached_config, 'us-east-1')
-    user_pool_id = get_cached_or_prompt('user_pool_id', 'Cognito User Pool ID', cached_config)
-    client_id = get_cached_or_prompt('client_id', 'Cognito Client ID', cached_config)
-    username = get_cached_or_prompt('username', 'Admin Username', cached_config)
+    excel_path = get_cached_or_prompt("excel_path", "Excel file path", cached_config, "data.xlsx")
+    api_endpoint = get_cached_or_prompt("api_endpoint", "AWS Amplify API endpoint", cached_config)
+    region = get_cached_or_prompt("region", "AWS Region", cached_config, "us-east-1")
+    user_pool_id = get_cached_or_prompt("user_pool_id", "Cognito User Pool ID", cached_config)
+    client_id = get_cached_or_prompt("client_id", "Cognito Client ID", cached_config)
+    username = get_cached_or_prompt("username", "Admin Username", cached_config)
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    password = get_config_value('ADMIN_PASSWORD', 'Admin Password', secret=True)
+    password = get_config_value("ADMIN_PASSWORD", "Admin Password", secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id,
-                         username=username)
+    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
     if not migrator.authenticate(username, password):
         return
 
@@ -266,19 +283,19 @@ def cmd_migrate(args=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    config_parser = subparsers.add_parser('config', help='Configure the migration tool')
+    config_parser = subparsers.add_parser("config", help="Configure the migration tool")
     config_parser.set_defaults(func=cmd_config)
 
-    show_parser = subparsers.add_parser('show', help='Show current configuration')
+    show_parser = subparsers.add_parser("show", help="Show current configuration")
     show_parser.set_defaults(func=cmd_show)
 
-    migrate_parser = subparsers.add_parser('migrate', help='Run the migration')
+    migrate_parser = subparsers.add_parser("migrate", help="Run the migration")
     migrate_parser.set_defaults(func=cmd_migrate)
 
     args = parser.parse_args()
