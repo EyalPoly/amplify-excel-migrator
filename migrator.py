@@ -297,8 +297,7 @@ def cmd_migrate(args=None):
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    # password = get_config_value("ADMIN_PASSWORD", "Admin Password", secret=True)
-    password = 'Eynavmil1!'
+    password = get_config_value("ADMIN_PASSWORD", "Admin Password", secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
