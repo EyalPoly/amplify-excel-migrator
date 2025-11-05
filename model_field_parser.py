@@ -1,4 +1,9 @@
 from typing import Dict, Any
+import logging
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 
 class ModelFieldParser:
@@ -35,19 +40,40 @@ class ModelFieldParser:
             "fields": [],
         }
 
+        relationships = {}
         if type_data.get("fields"):
             for field in type_data["fields"]:
+                rel_info = self._extract_relationship_info(field)
+                if rel_info:
+                    relationships[rel_info["foreign_key"]] = rel_info["target_model"]
+
+            for field in type_data["fields"]:
                 parsed_field = self._parse_field(field)
-                model_info["fields"].append(parsed_field) if parsed_field else None
+                if parsed_field:
+                    if parsed_field["name"] in relationships:
+                        parsed_field["related_model"] = relationships[parsed_field["name"]]
+                    model_info["fields"].append(parsed_field)
 
         return model_info
 
+    def _extract_relationship_info(self, field: Dict) -> Dict[str, str] | None:
+        base_type = self._get_base_type_name(field.get("type", {}))
+        field_name = field.get("name", "")
+
+        inferred_foreign_key = f"{field_name}Id"
+        return {
+            "target_model": base_type,
+            "foreign_key": inferred_foreign_key
+        }
+
     def _parse_field(self, field: Dict) -> Dict[str, Any]:
         base_type = self._get_base_type_name(field.get("type", {}))
+        type_kind = self._get_type_kind(field.get("type", {}))
+
         if (
-            "Connection" in base_type
-            or field.get("name") in self.metadata_fields
-            or self._get_type_kind(field.get("type", {})) in ["OBJECT", "INTERFACE"]
+                "Connection" in base_type
+                or field.get("name") in self.metadata_fields
+                or type_kind == "INTERFACE"
         ):
             return {}
 
@@ -60,50 +86,10 @@ class ModelFieldParser:
             "is_scalar": base_type in self.scalar_types,
             "is_id": base_type == "ID",
             "is_enum": field.get("type", {}).get("kind") == "ENUM",
+            "is_custom_type": type_kind == "OBJECT",
         }
 
         return field_info
-
-    def _parse_type(self, type_obj: Dict) -> Dict[str, Any]:
-        """
-        Recursively parse type information
-        """
-
-        if not type_obj:
-            return {"name": "Unknown", "kind": "UNKNOWN"}
-
-        type_info = {
-            "name": type_obj.get("name"),
-            "kind": type_obj.get("kind"),
-            "full_type": self._get_full_type_string(type_obj),
-        }
-
-        # If there's nested type info (NON_NULL, LIST), include it
-        if type_obj.get("ofType"):
-            type_info["of_type"] = self._parse_type(type_obj["ofType"])
-
-        return type_info
-
-    def _get_full_type_string(self, type_obj: Dict) -> str:
-        """
-        Get human-readable type string (e.g., '[String!]!')
-        """
-
-        if not type_obj:
-            return "Unknown"
-
-        if type_obj.get("name"):
-            return type_obj["name"]
-
-        if type_obj["kind"] == "NON_NULL":
-            inner = self._get_full_type_string(type_obj.get("ofType", {}))
-            return f"{inner}!"
-
-        if type_obj["kind"] == "LIST":
-            inner = self._get_full_type_string(type_obj.get("ofType", {}))
-            return f"[{inner}]"
-
-        return type_obj.get("kind", "Unknown")
 
     def _get_base_type_name(self, type_obj: Dict) -> str:
         """
@@ -145,3 +131,111 @@ class ModelFieldParser:
             return self._is_list_type(type_obj["ofType"])
 
         return False
+
+    def build_custom_type_from_columns(self, row: pd.Series, custom_type_fields: list, custom_type_name: str) -> list:
+        """Build custom type objects from Excel columns, handling multi-value fields"""
+
+        field_values, max_count = self._collect_custom_type_fields_values(row, custom_type_fields)
+
+        custom_type_objects = self._build_custom_type_objects(row, custom_type_fields, custom_type_name, field_values,
+                                                              max_count)
+
+        return custom_type_objects if custom_type_objects else None
+
+    @staticmethod
+    def _collect_custom_type_fields_values(row: pd.Series, custom_type_fields: list) -> tuple[
+        Dict[str, list], int]:
+        field_values = {}
+        max_count = 1
+
+        for custom_field in custom_type_fields:
+            custom_field_name = custom_field["name"]
+            if custom_field_name in row.index and pd.notna(row[custom_field_name]):
+                value = row[custom_field_name]
+
+                if isinstance(value, str) and '-' in str(value):
+                    parts = [p.strip() for p in str(value).split('-') if p.strip()]
+                    if len(parts) > 1:
+                        field_values[custom_field_name] = parts
+                        max_count = max(max_count, len(parts))
+                    else:
+                        field_values[custom_field_name] = [None]
+                else:
+                    field_values[custom_field_name] = [value]
+            else:
+                field_values[custom_field_name] = [None]
+
+        return field_values, max_count
+
+    def _build_custom_type_objects(self, row: pd.Series, custom_type_fields: list, custom_type_name: str,
+                                   field_values: Dict[str, list], max_count: int) -> list:
+        custom_type_objects = []
+
+        for i in range(max_count):
+            obj = {}
+
+            for custom_field in custom_type_fields:
+                custom_field_name = custom_field["name"]
+                values_list = field_values.get(custom_field_name, [None])
+
+                if i < len(values_list):
+                    value = values_list[i]
+                elif len(values_list) == 1:
+                    value = values_list[0]
+                else:
+                    value = None
+
+                if value is None or pd.isna(value):
+                    if custom_field["is_required"]:
+                        raise ValueError(
+                            f"Required field '{custom_field_name}' is missing in custom type '{custom_type_name}' "
+                            f"for row {row.name}, group {i + 1}"
+                        )
+                    continue
+
+                parsed_value = self.parse_field_input(custom_field, custom_field_name, value)
+                if parsed_value is not None:
+                    obj[custom_field_name] = parsed_value
+
+            if obj:
+                custom_type_objects.append(obj)
+
+        return custom_type_objects
+
+    def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
+        try:
+            if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
+                if isinstance(input_value, str) and '-' in str(input_value):
+                    input_value = sum([p.strip() for p in str(input_value).split('-') if p.strip()])
+                return int(input_value) if field["type"] in ["Int", "Integer"] else float(input_value)
+            elif field["type"] == "Float":
+                return float(input_value)
+            elif field["type"] == "Boolean":
+                if isinstance(input_value, bool):
+                    return input_value
+                if str(input_value).strip().lower() in ["true", "1", "v", "y", "yes"]:
+                    return True
+                elif str(input_value).strip().lower() in ["false", "0", "n", "x", "no"]:
+                    return False
+                else:
+                    logger.error(f"Invalid Boolean value for field '{field_name}': {input_value}")
+                    return None
+            elif field["is_enum"] and " " in str(input_value):
+                return str(input_value).strip().replace(" ", "_").upper()
+            elif field["type"] == "AWSDate" or field["type"] == "AWSDateTime":
+                return self.parse_date(input_value)
+            else:
+                return str(input_value).strip()
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse value '{input_value}' for field type '{field["type"]}': {e}")
+            return None
+
+    @staticmethod
+    def parse_date(input: Any) -> str:
+        try:
+            return pd.to_datetime(input, format="%d/%m/%Y").date().isoformat()
+        except ValueError:
+            try:
+                return pd.to_datetime(input, format="%d-%m-%Y").date().isoformat()
+            except ValueError:
+                return pd.to_datetime(input).date().isoformat()

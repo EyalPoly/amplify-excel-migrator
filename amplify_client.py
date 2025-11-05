@@ -8,6 +8,7 @@ import aiohttp
 import boto3
 import requests
 import jwt
+import inflect
 from botocore.exceptions import NoCredentialsError, ProfileNotFound, NoRegionError, ClientError
 from pycognito import Cognito, MFAChallengeException
 from pycognito.exceptions import ForceChangePasswordException
@@ -389,7 +390,7 @@ class AmplifyClient:
         record: Dict,
     ) -> Dict | None:
         if is_secondary_index:
-            query_name = f"list{model_name}By{primary_field.capitalize()}"
+            query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
             query = f"""
             query {query_name}(${primary_field}: String!) {{
               {query_name}({primary_field}: ${primary_field}) {{
@@ -523,17 +524,18 @@ class AmplifyClient:
         return ""
 
     def _get_list_query_name(self, model_name: str) -> str | None:
-        """Get the correct list query name from the schema (handles pluralization)"""
         query_structure = self.get_model_structure("Query")
         if not query_structure:
             logger.error("Query type not found in schema")
             return f"list{model_name}s"
 
         query_fields = query_structure["fields"]
+
+        p = inflect.engine()
+        plural_form = p.plural(model_name.lower()).capitalize()
         candidates = [
-            f"list{model_name}s",
-            f"list{model_name}es",
-            f"list{model_name[:-1]}ies",
+            f"list{model_name}",
+            f"list{plural_form}",
         ]
 
         for query in query_fields:
@@ -592,7 +594,7 @@ class AmplifyClient:
             """
             result = self._request(query)
         else:
-            query_name = f"list{model_name}By{secondary_index.capitalize()}"
+            query_name = f"list{model_name}By{secondary_index[0].upper() + secondary_index[1:]}"
             query = f"""
             query {query_name}(${secondary_index}: String!) {{
               {query_name}({secondary_index}: ${secondary_index}) {{
@@ -610,29 +612,7 @@ class AmplifyClient:
 
         return None
 
-    def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
-        if fields is None:
-            fields = ["id"]
-
-        fields_str = "\n".join(fields)
-
-        query_name = f"get{model_name}"
-        query = f"""
-        query Get{model_name}($id: ID!) {{
-          {query_name}(id: $id) {{
-            {fields_str}
-          }}
-        }}
-        """
-
-        result = self._request(query, {"id": record_id})
-
-        if result and "data" in result:
-            return result["data"].get(query_name)
-
-        return None
-
-    def get_records_by_field(
+    def list_records_by_field(
         self, model_name: str, field_name: str, value: str = None, fields: list = None
     ) -> Dict | None:
         if fields is None:
@@ -672,10 +652,31 @@ class AmplifyClient:
 
         return None
 
+    def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
+        if fields is None:
+            fields = ["id"]
+
+        fields_str = "\n".join(fields)
+
+        query_name = f"get{model_name}"
+        query = f"""
+        query Get{model_name}($id: ID!) {{
+          {query_name}(id: $id) {{
+            {fields_str}
+          }}
+        }}
+        """
+
+        result = self._request(query, {"id": record_id})
+
+        if result and "data" in result:
+            return result["data"].get(query_name)
+
+        return None
+
     def get_records(
         self,
         model_name: str,
-        parsed_model_structure: Dict[str, Any] = None,
         primary_field: str = None,
         is_secondary_index: bool = None,
         fields: list = None,
@@ -684,17 +685,11 @@ class AmplifyClient:
             return self.records_cache[model_name]
 
         if not primary_field:
-            if not parsed_model_structure:
-                logger.error("Parsed model structure required if primary_field not provided")
-                return None
-            primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
-
-        if not primary_field:
             return None
         if is_secondary_index:
             records = self.list_records_by_secondary_index(model_name, primary_field, fields=fields)
         else:
-            records = self.get_records_by_field(model_name, primary_field, fields=fields)
+            records = self.list_records_by_field(model_name, primary_field, fields=fields)
 
         if records:
             self.records_cache[model_name] = records
@@ -713,7 +708,12 @@ class AmplifyClient:
         if record_id:
             return self.get_record_by_id(model_name, record_id)
 
-        records = self.get_records(model_name, parsed_model_structure, primary_field, is_secondary_index, fields)
+        if not primary_field:
+            if not parsed_model_structure:
+                logger.error("Parsed model structure required if primary_field not provided")
+                return None
+            primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+        records = self.get_records(model_name, primary_field, is_secondary_index, fields)
         if not records:
             return None
         return next((record for record in records if record.get(primary_field) == value), None)
