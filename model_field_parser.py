@@ -28,6 +28,10 @@ class ModelFieldParser:
         self.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
 
     def parse_model_structure(self, introspection_result: Dict) -> Dict[str, Any]:
+        if not introspection_result:
+            logger.error("Empty introspection result received")
+            return {"name": None, "kind": None, "description": None, "fields": []}
+
         if "data" in introspection_result and "__type" in introspection_result["data"]:
             type_data = introspection_result["data"]["__type"]
         else:
@@ -41,13 +45,22 @@ class ModelFieldParser:
         }
 
         relationships = {}
+        relationship_field_names = set()
+
         if type_data.get("fields"):
+            all_field_names = {field.get("name") for field in type_data["fields"]}
+
             for field in type_data["fields"]:
                 rel_info = self._extract_relationship_info(field)
                 if rel_info:
                     relationships[rel_info["foreign_key"]] = rel_info["target_model"]
+                    if rel_info["foreign_key"] in all_field_names:
+                        relationship_field_names.add(field.get("name"))
 
             for field in type_data["fields"]:
+                if field.get("name") in relationship_field_names:
+                    continue
+
                 parsed_field = self._parse_field(field)
                 if parsed_field:
                     if parsed_field["name"] in relationships:
@@ -58,7 +71,11 @@ class ModelFieldParser:
 
     def _extract_relationship_info(self, field: Dict) -> Dict[str, str] | None:
         base_type = self._get_base_type_name(field.get("type", {}))
+        type_kind = self._get_type_kind(field.get("type", {}))
         field_name = field.get("name", "")
+
+        if type_kind != "OBJECT" or "Connection" in base_type or field_name in self.metadata_fields:
+            return None
 
         inferred_foreign_key = f"{field_name}Id"
         return {"target_model": base_type, "foreign_key": inferred_foreign_key}

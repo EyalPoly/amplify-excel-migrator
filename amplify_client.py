@@ -530,13 +530,25 @@ class AmplifyClient:
             return f"list{model_name}s"
 
         query_fields = query_structure["fields"]
-
         p = inflect.engine()
-        plural_form = p.plural(model_name.lower()).capitalize()
-        candidates = [
-            f"list{model_name}",
-            f"list{plural_form}",
-        ]
+
+        candidates = [f"list{model_name}"]
+        capitals = [i for i, c in enumerate(model_name) if c.isupper()]
+
+        if len(capitals) > 1:
+            last_word_start = capitals[-1]
+            prefix = model_name[:last_word_start]
+            last_word = model_name[last_word_start:]
+
+            last_word_plural = str(p.plural(last_word.lower()))  # type: ignore[arg-type]
+            last_word_plural_cap = last_word_plural[0].upper() + last_word_plural[1:] if last_word_plural else ""
+
+            pascal_plural = f"{prefix}{last_word_plural_cap}"
+            candidates.append(f"list{pascal_plural}")
+
+        full_plural = str(p.plural(model_name.lower()))  # type: ignore[arg-type]
+        full_plural_cap = full_plural[0].upper() + full_plural[1:] if full_plural else ""
+        candidates.append(f"list{full_plural_cap}")
 
         for query in query_fields:
             query_name = query["name"]
