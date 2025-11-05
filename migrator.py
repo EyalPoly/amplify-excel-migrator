@@ -153,7 +153,7 @@ class ExcelToAmplifyMigrator:
 
         if field_name in row.index and pd.notna(row[field_name]):
             value = row[field_name]
-            if isinstance(value, str) and value.strip().startswith(('[', '{')):
+            if isinstance(value, str) and value.strip().startswith(("[", "{")):
                 try:
                     return json.loads(value)
                 except json.JSONDecodeError:
@@ -339,6 +339,6 @@ if __name__ == "__main__":
 
     # sys.argv = ['migrator.py', 'config']  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    sys.argv = ['migrator.py', 'migrate'] # Test migrate command
+    sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
     main()

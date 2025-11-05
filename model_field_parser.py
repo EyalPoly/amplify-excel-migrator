@@ -61,20 +61,13 @@ class ModelFieldParser:
         field_name = field.get("name", "")
 
         inferred_foreign_key = f"{field_name}Id"
-        return {
-            "target_model": base_type,
-            "foreign_key": inferred_foreign_key
-        }
+        return {"target_model": base_type, "foreign_key": inferred_foreign_key}
 
     def _parse_field(self, field: Dict) -> Dict[str, Any]:
         base_type = self._get_base_type_name(field.get("type", {}))
         type_kind = self._get_type_kind(field.get("type", {}))
 
-        if (
-                "Connection" in base_type
-                or field.get("name") in self.metadata_fields
-                or type_kind == "INTERFACE"
-        ):
+        if "Connection" in base_type or field.get("name") in self.metadata_fields or type_kind == "INTERFACE":
             return {}
 
         field_info = {
@@ -137,14 +130,14 @@ class ModelFieldParser:
 
         field_values, max_count = self._collect_custom_type_fields_values(row, custom_type_fields)
 
-        custom_type_objects = self._build_custom_type_objects(row, custom_type_fields, custom_type_name, field_values,
-                                                              max_count)
+        custom_type_objects = self._build_custom_type_objects(
+            row, custom_type_fields, custom_type_name, field_values, max_count
+        )
 
         return custom_type_objects if custom_type_objects else None
 
     @staticmethod
-    def _collect_custom_type_fields_values(row: pd.Series, custom_type_fields: list) -> tuple[
-        Dict[str, list], int]:
+    def _collect_custom_type_fields_values(row: pd.Series, custom_type_fields: list) -> tuple[Dict[str, list], int]:
         field_values = {}
         max_count = 1
 
@@ -153,8 +146,8 @@ class ModelFieldParser:
             if custom_field_name in row.index and pd.notna(row[custom_field_name]):
                 value = row[custom_field_name]
 
-                if isinstance(value, str) and '-' in str(value):
-                    parts = [p.strip() for p in str(value).split('-') if p.strip()]
+                if isinstance(value, str) and "-" in str(value):
+                    parts = [p.strip() for p in str(value).split("-") if p.strip()]
                     if len(parts) > 1:
                         field_values[custom_field_name] = parts
                         max_count = max(max_count, len(parts))
@@ -167,8 +160,14 @@ class ModelFieldParser:
 
         return field_values, max_count
 
-    def _build_custom_type_objects(self, row: pd.Series, custom_type_fields: list, custom_type_name: str,
-                                   field_values: Dict[str, list], max_count: int) -> list:
+    def _build_custom_type_objects(
+        self,
+        row: pd.Series,
+        custom_type_fields: list,
+        custom_type_name: str,
+        field_values: Dict[str, list],
+        max_count: int,
+    ) -> list:
         custom_type_objects = []
 
         for i in range(max_count):
@@ -205,8 +204,8 @@ class ModelFieldParser:
     def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
         try:
             if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
-                if isinstance(input_value, str) and '-' in str(input_value):
-                    input_value = sum([p.strip() for p in str(input_value).split('-') if p.strip()])
+                if isinstance(input_value, str) and "-" in str(input_value):
+                    input_value = sum([p.strip() for p in str(input_value).split("-") if p.strip()])
                 return int(input_value) if field["type"] in ["Int", "Integer"] else float(input_value)
             elif field["type"] == "Float":
                 return float(input_value)
