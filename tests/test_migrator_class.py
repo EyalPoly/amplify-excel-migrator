@@ -234,3 +234,146 @@ class TestReadExcel:
         assert len(sheets) == 2
         assert "Users" in sheets
         assert "Posts" in sheets
+
+
+class TestParseInputWithRelationships:
+    """Test parse_input method with belongsTo relationships"""
+
+    def test_uses_related_model_when_present(self):
+        """Test that parse_input uses related_model from field metadata"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = {"id": "reporter-123"}
+        migrator.amplify_client = mock_client
+
+        row = pd.Series({"photographer": "John Doe"})
+        field = {
+            "name": "photographerId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Reporter",  # This should be used instead of inferring "Photographer"
+        }
+        parsed_model_structure = {"fields": []}
+
+        result = migrator.parse_input(row, field, parsed_model_structure)
+
+        # Should have called get_record with "Reporter", not "Photographer"
+        mock_client.get_record.assert_called_once_with(
+            "Reporter", parsed_model_structure=parsed_model_structure, value="John Doe"
+        )
+        assert result == "reporter-123"
+
+    def test_falls_back_to_field_name_inference(self):
+        """Test that parse_input falls back to field name inference when related_model absent"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = {"id": "user-456"}
+        migrator.amplify_client = mock_client
+
+        row = pd.Series({"author": "Jane Smith"})
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": False,
+            # No related_model property - should infer "Author" from "authorId"
+        }
+        parsed_model_structure = {"fields": []}
+
+        result = migrator.parse_input(row, field, parsed_model_structure)
+
+        # Should infer "Author" from "authorId"
+        mock_client.get_record.assert_called_once_with(
+            "Author", parsed_model_structure=parsed_model_structure, value="Jane Smith"
+        )
+        assert result == "user-456"
+
+    def test_handles_missing_related_record(self):
+        """Test handling when related record is not found"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client to return None
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = None
+        migrator.amplify_client = mock_client
+
+        row = pd.Series({"photographer": "Unknown Person"})
+        field = {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
+        parsed_model_structure = {"fields": []}
+
+        result = migrator.parse_input(row, field, parsed_model_structure)
+
+        assert result is None
+
+    def test_handles_related_record_with_null_id(self):
+        """Test handling when related record exists but has null ID"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client to return record with null id
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = {"id": None}
+        migrator.amplify_client = mock_client
+
+        row = pd.Series({"photographer": "John Doe"})
+        field = {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
+        parsed_model_structure = {"fields": []}
+
+        # Should raise ValueError because field is required and ID is None
+        with pytest.raises(ValueError, match="Reporter: John Doe does not exist"):
+            migrator.parse_input(row, field, parsed_model_structure)
+
+    def test_handles_optional_id_field_with_null(self):
+        """Test handling optional ID field when related record ID is null"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client to return record with null id
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = {"id": None}
+        migrator.amplify_client = mock_client
+
+        row = pd.Series({"photographer": "John Doe"})
+        field = {
+            "name": "photographerId",
+            "is_id": True,
+            "is_required": False,  # Optional field
+            "related_model": "Reporter",
+        }
+        parsed_model_structure = {"fields": []}
+
+        result = migrator.parse_input(row, field, parsed_model_structure)
+
+        # Should return None without raising error for optional field
+        assert result is None
+
+    def test_integration_with_real_scenario(self):
+        """Test full integration with Story -> Reporter relationship"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock amplify_client
+        mock_client = MagicMock()
+        mock_client.get_record.return_value = {"id": "reporter-abc-123"}
+        migrator.amplify_client = mock_client
+
+        # Simulate Excel row
+        row = pd.Series({"title": "Breaking News", "photographer": "Alice Johnson", "content": "Story content here"})
+
+        # Field definition with related_model
+        photographer_id_field = {
+            "name": "photographerId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Reporter",  # Comes from: photographer: a.belongsTo("Reporter", "photographerId")
+        }
+
+        parsed_model_structure = {"fields": []}
+
+        result = migrator.parse_input(row, photographer_id_field, parsed_model_structure)
+
+        # Should query Reporter model (not Photographer)
+        mock_client.get_record.assert_called_once_with(
+            "Reporter", parsed_model_structure=parsed_model_structure, value="Alice Johnson"
+        )
+        assert result == "reporter-abc-123"
