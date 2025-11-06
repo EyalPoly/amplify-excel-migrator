@@ -749,3 +749,58 @@ class AmplifyClient:
         if not records:
             return None
         return next((record for record in records if record.get(primary_field) == value), None)
+
+    def build_foreign_key_lookups(
+        self, df, parsed_model_structure: Dict[str, Any]
+    ) -> Dict[str, Dict[str, str]]:
+        """
+        Build a cache of foreign key lookups for all ID fields in the DataFrame.
+
+        This pre-fetches all related records to avoid N+1 query problems during row processing.
+
+        Args:
+            df: pandas DataFrame containing the data to be processed
+            parsed_model_structure: Parsed model structure containing field information
+
+        Returns:
+            Dictionary mapping model names to lookup dictionaries and primary fields
+        """
+        import pandas as pd
+
+        fk_lookup_cache = {}
+
+        for field in parsed_model_structure["fields"]:
+            if not field["is_id"]:
+                continue
+
+            field_name = field["name"][:-2]
+
+            if field_name not in df.columns:
+                continue
+
+            if "related_model" in field:
+                related_model = field["related_model"]
+            else:
+                related_model = field_name[0].upper() + field_name[1:]
+
+            if related_model in fk_lookup_cache:
+                continue
+
+            try:
+                primary_field, is_secondary_index = self.get_primary_field_name(
+                    related_model, parsed_model_structure
+                )
+                records = self.get_records(related_model, primary_field, is_secondary_index)
+
+                if records:
+                    lookup = {
+                        str(record.get(primary_field)): record.get("id")
+                        for record in records
+                        if record.get(primary_field)
+                    }
+                    fk_lookup_cache[related_model] = {"lookup": lookup, "primary_field": primary_field}
+                    logger.debug(f"  📦 Cached {len(lookup)} {related_model} records")
+            except Exception as e:
+                logger.warning(f"  ⚠️  Could not pre-fetch {related_model}: {e}")
+
+        return fk_lookup_cache

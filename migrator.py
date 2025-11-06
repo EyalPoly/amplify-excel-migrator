@@ -72,10 +72,10 @@ class ExcelToAmplifyMigrator:
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
         records = self.transform_rows_to_records(df, parsed_model_structure)
 
-        # confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
-        # if confirm.lower() != 'yes':
-        #     logger.info("Upload cancelled for {sheet_name} sheet")
-        #     return
+        confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
+        if confirm.lower() != 'yes':
+            logger.info("Upload cancelled for {sheet_name} sheet")
+            return
 
         success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
 
@@ -92,7 +92,7 @@ class ExcelToAmplifyMigrator:
         fk_lookup_cache = {}
         if self.amplify_client:
             logger.info("🚀 Pre-fetching foreign key lookups...")
-            fk_lookup_cache = self._build_foreign_key_lookups(df, parsed_model_structure)
+            fk_lookup_cache = self.amplify_client.build_foreign_key_lookups(df, parsed_model_structure)
 
         for row_tuple in df.itertuples(index=False, name='Row'):
             row_count += 1
@@ -180,41 +180,6 @@ class ExcelToAmplifyMigrator:
         custom_type_fields = parsed_custom_type["fields"]
 
         return self.model_field_parser.build_custom_type_from_columns(row, custom_type_fields, custom_type_name)
-
-    def _build_foreign_key_lookups(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-        fk_lookup_cache = {}
-
-        for field in parsed_model_structure["fields"]:
-            if not field["is_id"]:
-                continue
-
-            field_name = field["name"][:-2]
-
-            if field_name not in df.columns:
-                continue
-
-            if "related_model" in field:
-                related_model = field["related_model"]
-            else:
-                related_model = field_name[0].upper() + field_name[1:]
-
-            if related_model in fk_lookup_cache:
-                continue
-
-            try:
-                primary_field, is_secondary_index = self.amplify_client.get_primary_field_name(
-                    related_model, parsed_model_structure
-                )
-                records = self.amplify_client.get_records(related_model, primary_field, is_secondary_index)
-
-                if records:
-                    lookup = {str(record.get(primary_field)): record.get("id") for record in records if record.get(primary_field)}
-                    fk_lookup_cache[related_model] = {"lookup": lookup, "primary_field": primary_field}
-                    logger.debug(f"  📦 Cached {len(lookup)} {related_model} records")
-            except Exception as e:
-                logger.warning(f"  ⚠️  Could not pre-fetch {related_model}: {e}")
-
-        return fk_lookup_cache
 
     @staticmethod
     def to_camel_case(s: str) -> str:
@@ -348,8 +313,7 @@ def cmd_migrate(args=None):
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    # password = get_config_value("Admin Password", secret=True)
-    password = 'Eynavmil1!'
+    password = get_config_value("Admin Password", secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)

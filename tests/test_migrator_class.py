@@ -96,14 +96,14 @@ class TestTransformRowToRecord:
         migrator = ExcelToAmplifyMigrator("test.xlsx")
 
         # Mock the parse_input method
-        migrator.parse_input = MagicMock(side_effect=lambda row, field, _: row.get(field["name"]))
+        migrator.parse_input = MagicMock(side_effect=lambda row, field, _, fk_cache: row.get(field["name"]))
 
-        row = pd.Series({"name": "John", "email": "john@example.com"})
+        row_dict = {"name": "John", "email": "john@example.com"}
         parsed_model_structure = {
             "fields": [{"name": "name", "is_required": True}, {"name": "email", "is_required": True}]
         }
 
-        result = migrator.transform_row_to_record(row, parsed_model_structure)
+        result = migrator.transform_row_to_record(row_dict, parsed_model_structure, {})
 
         assert result == {"name": "John", "email": "john@example.com"}
 
@@ -112,19 +112,19 @@ class TestTransformRowToRecord:
         migrator = ExcelToAmplifyMigrator("test.xlsx")
 
         # Mock parse_input to return None for some fields
-        def mock_parse_input(row, field, _):
+        def mock_parse_input(row, field, _, fk_cache):
             if field["name"] == "optional":
                 return None
             return row.get(field["name"])
 
         migrator.parse_input = MagicMock(side_effect=mock_parse_input)
 
-        row = pd.Series({"name": "John", "optional": None})
+        row_dict = {"name": "John", "optional": None}
         parsed_model_structure = {
             "fields": [{"name": "name", "is_required": True}, {"name": "optional", "is_required": False}]
         }
 
-        result = migrator.transform_row_to_record(row, parsed_model_structure)
+        result = migrator.transform_row_to_record(row_dict, parsed_model_structure, {})
 
         assert result == {"name": "John"}
         assert "optional" not in result
@@ -159,7 +159,7 @@ class TestTransformRowsToRecords:
         # Mock transform_row_to_record to capture the row
         captured_rows = []
 
-        def capture_row(row, _):
+        def capture_row(row, _, fk_cache):
             captured_rows.append(row)
             return {"test": "value"}
 
@@ -172,16 +172,18 @@ class TestTransformRowsToRecords:
         migrator.transform_rows_to_records(df, parsed_model_structure)
 
         # Check that columns were converted to camelCase
-        assert "userName" in captured_rows[0].index
-        assert "emailAddress" in captured_rows[0].index
+        assert "userName" in captured_rows[0]
+        assert "emailAddress" in captured_rows[0]
 
     def test_handles_errors_in_rows(self):
         """Test that errors in individual rows don't stop processing"""
         migrator = ExcelToAmplifyMigrator("test.xlsx")
 
         # Mock to raise error for second row
-        def mock_transform(row, _):
-            if row.name == 1:  # Second row
+        call_count = [0]
+        def mock_transform(row, _, fk_cache):
+            call_count[0] += 1
+            if call_count[0] == 2:  # Second call
                 raise ValueError("Test error")
             return {"name": row["name"]}
 
@@ -248,7 +250,7 @@ class TestParseInputWithRelationships:
         mock_client.get_record.return_value = {"id": "reporter-123"}
         migrator.amplify_client = mock_client
 
-        row = pd.Series({"photographer": "John Doe"})
+        row_dict = {"photographer": "John Doe"}
         field = {
             "name": "photographerId",
             "is_id": True,
@@ -256,13 +258,11 @@ class TestParseInputWithRelationships:
             "related_model": "Reporter",  # This should be used instead of inferring "Photographer"
         }
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Reporter": {"lookup": {"John Doe": "reporter-123"}}}
 
-        result = migrator.parse_input(row, field, parsed_model_structure)
+        result = migrator.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
 
-        # Should have called get_record with "Reporter", not "Photographer"
-        mock_client.get_record.assert_called_once_with(
-            "Reporter", parsed_model_structure=parsed_model_structure, value="John Doe"
-        )
+        # Should use the lookup cache
         assert result == "reporter-123"
 
     def test_falls_back_to_field_name_inference(self):
@@ -274,7 +274,7 @@ class TestParseInputWithRelationships:
         mock_client.get_record.return_value = {"id": "user-456"}
         migrator.amplify_client = mock_client
 
-        row = pd.Series({"author": "Jane Smith"})
+        row_dict = {"author": "Jane Smith"}
         field = {
             "name": "authorId",
             "is_id": True,
@@ -282,13 +282,11 @@ class TestParseInputWithRelationships:
             # No related_model property - should infer "Author" from "authorId"
         }
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Author": {"lookup": {"Jane Smith": "user-456"}}}
 
-        result = migrator.parse_input(row, field, parsed_model_structure)
+        result = migrator.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
 
-        # Should infer "Author" from "authorId"
-        mock_client.get_record.assert_called_once_with(
-            "Author", parsed_model_structure=parsed_model_structure, value="Jane Smith"
-        )
+        # Should use the lookup cache
         assert result == "user-456"
 
     def test_handles_missing_related_record(self):
@@ -300,13 +298,13 @@ class TestParseInputWithRelationships:
         mock_client.get_record.return_value = None
         migrator.amplify_client = mock_client
 
-        row = pd.Series({"photographer": "Unknown Person"})
+        row_dict = {"photographer": "Unknown Person"}
         field = {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Reporter": {"lookup": {}}}  # Empty lookup - record not found
 
-        result = migrator.parse_input(row, field, parsed_model_structure)
-
-        assert result is None
+        with pytest.raises(ValueError, match="Reporter: Unknown Person does not exist"):
+            migrator.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
 
     def test_handles_related_record_with_null_id(self):
         """Test handling when related record exists but has null ID"""
@@ -317,13 +315,14 @@ class TestParseInputWithRelationships:
         mock_client.get_record.return_value = {"id": None}
         migrator.amplify_client = mock_client
 
-        row = pd.Series({"photographer": "John Doe"})
+        row_dict = {"photographer": "John Doe"}
         field = {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Reporter": {"lookup": {}}}  # Empty lookup
 
-        # Should raise ValueError because field is required and ID is None
+        # Should raise ValueError because field is required and ID is not in cache
         with pytest.raises(ValueError, match="Reporter: John Doe does not exist"):
-            migrator.parse_input(row, field, parsed_model_structure)
+            migrator.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
 
     def test_handles_optional_id_field_with_null(self):
         """Test handling optional ID field when related record ID is null"""
@@ -334,7 +333,7 @@ class TestParseInputWithRelationships:
         mock_client.get_record.return_value = {"id": None}
         migrator.amplify_client = mock_client
 
-        row = pd.Series({"photographer": "John Doe"})
+        row_dict = {"photographer": "John Doe"}
         field = {
             "name": "photographerId",
             "is_id": True,
@@ -342,8 +341,9 @@ class TestParseInputWithRelationships:
             "related_model": "Reporter",
         }
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Reporter": {"lookup": {}}}  # Empty lookup
 
-        result = migrator.parse_input(row, field, parsed_model_structure)
+        result = migrator.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
 
         # Should return None without raising error for optional field
         assert result is None
@@ -358,7 +358,7 @@ class TestParseInputWithRelationships:
         migrator.amplify_client = mock_client
 
         # Simulate Excel row
-        row = pd.Series({"title": "Breaking News", "photographer": "Alice Johnson", "content": "Story content here"})
+        row_dict = {"title": "Breaking News", "photographer": "Alice Johnson", "content": "Story content here"}
 
         # Field definition with related_model
         photographer_id_field = {
@@ -369,11 +369,9 @@ class TestParseInputWithRelationships:
         }
 
         parsed_model_structure = {"fields": []}
+        fk_lookup_cache = {"Reporter": {"lookup": {"Alice Johnson": "reporter-abc-123"}}}
 
-        result = migrator.parse_input(row, photographer_id_field, parsed_model_structure)
+        result = migrator.parse_input(row_dict, photographer_id_field, parsed_model_structure, fk_lookup_cache)
 
-        # Should query Reporter model (not Photographer)
-        mock_client.get_record.assert_called_once_with(
-            "Reporter", parsed_model_structure=parsed_model_structure, value="Alice Johnson"
-        )
+        # Should use the lookup cache
         assert result == "reporter-abc-123"
