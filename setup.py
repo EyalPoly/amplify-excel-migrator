@@ -27,6 +27,7 @@ setup(
         "PyJWT>=2.0.0",
         "aiohttp>=3.8.0",
         "openpyxl>=3.0.0",
+        "inflect>=7.0.0",
     ],
     extras_require={
         "dev": [

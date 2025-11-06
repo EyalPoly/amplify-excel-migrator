@@ -24,3 +24,5 @@ ENV/
 eggs/
 sdist/
 var/
+
+*.xls;xlsx;csv

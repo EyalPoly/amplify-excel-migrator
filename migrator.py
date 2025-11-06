@@ -117,27 +117,53 @@ class ExcelToAmplifyMigrator:
 
     def parse_input(self, row: pd.Series, field: Dict[str, Any], parsed_model_structure: Dict[str, Any]) -> Any:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
+
         if field_name not in row.index or pd.isna(row[field_name]):
             if field["is_required"]:
                 raise ValueError(f"Required field '{field_name}' is missing in row {row.name}")
             else:
                 return None
 
-        value = row.get(field["name"])
+        if field.get("is_custom_type") and field.get("is_list"):
+            return self._parse_custom_type_array(row, field)
+
+        value = row.get(field_name)
         if field["is_id"]:
-            related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
+            if "related_model" in field:
+                related_model = field["related_model"]
+            else:
+                related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
+
             record = self.amplify_client.get_record(
-                related_model, parsed_model_structure=parsed_model_structure, value=value, fields=["id"]
+                related_model, parsed_model_structure=parsed_model_structure, value=value
             )
             if record:
                 if record["id"] is None and field["is_required"]:
                     raise ValueError(f"{related_model}: {value} does not exist")
                 else:
-                    value = record["id"]
+                    return record["id"]
             else:
-                raise ValueError(f"Error fetching related record {related_model}: {value}")
+                logger.error(f"Error fetching related record {related_model}: {value}")
+                return None
+        else:
+            return self.model_field_parser.parse_field_input(field, field_name, value)
 
-        return value
+    def _parse_custom_type_array(self, row: pd.Series, field: Dict[str, Any]) -> Any:
+        field_name = field["name"]
+
+        if field_name in row.index and pd.notna(row[field_name]):
+            value = row[field_name]
+            if isinstance(value, str) and value.strip().startswith(("[", "{")):
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse JSON for '{field_name}', trying column-based parsing")
+
+        custom_type_name = field["type"]
+        parsed_custom_type = self.get_parsed_model_structure(custom_type_name)
+        custom_type_fields = parsed_custom_type["fields"]
+
+        return self.model_field_parser.build_custom_type_from_columns(row, custom_type_fields, custom_type_name)
 
     @staticmethod
     def to_camel_case(s: str) -> str:
@@ -271,7 +297,7 @@ def cmd_migrate(args=None):
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    password = get_config_value("ADMIN_PASSWORD", "Admin Password", secret=True)
+    password = get_config_value("Admin Password", secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
@@ -313,6 +339,6 @@ if __name__ == "__main__":
 
     # sys.argv = ['migrator.py', 'config']  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    # sys.argv = ['migrator.py', 'migrate'] # Test migrate command
+    sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
     main()
