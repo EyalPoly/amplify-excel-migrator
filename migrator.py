@@ -86,14 +86,23 @@ class ExcelToAmplifyMigrator:
 
     def transform_rows_to_records(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> list[Any]:
         records = []
+        row_count = 0
         df.columns = [self.to_camel_case(c) for c in df.columns]
-        for idx, row in df.iterrows():
+
+        fk_lookup_cache = {}
+        if self.amplify_client:
+            logger.info("🚀 Pre-fetching foreign key lookups...")
+            fk_lookup_cache = self._build_foreign_key_lookups(df, parsed_model_structure)
+
+        for row_tuple in df.itertuples(index=False, name='Row'):
+            row_count += 1
             try:
-                record = self.transform_row_to_record(row, parsed_model_structure)
+                row_dict = {col: getattr(row_tuple, col) for col in df.columns}
+                record = self.transform_row_to_record(row_dict, parsed_model_structure, fk_lookup_cache)
                 if record:
                     records.append(record)
             except Exception as e:
-                logger.error(f"Error transforming row {idx}: {e}")
+                logger.error(f"Error transforming row {row_count}: {e}")
 
         logger.info(f"Prepared {len(records)} records for upload")
 
@@ -103,47 +112,54 @@ class ExcelToAmplifyMigrator:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
         return self.model_field_parser.parse_model_structure(model_structure)
 
-    def transform_row_to_record(self, row: pd.Series, parsed_model_structure: Dict[str, Any]) -> dict[Any, Any] | None:
+    def transform_row_to_record(self, row_dict: Dict, parsed_model_structure: Dict[str, Any],
+                                          fk_lookup_cache: Dict[str, Dict[str, str]]) -> dict[Any, Any] | None:
         """Transform a DataFrame row to Amplify model format"""
 
         model_record = {}
 
         for field in parsed_model_structure["fields"]:
-            input = self.parse_input(row, field, parsed_model_structure)
+            input = self.parse_input(row_dict, field, parsed_model_structure, fk_lookup_cache)
             if input:
                 model_record[field["name"]] = input
 
         return model_record
 
-    def parse_input(self, row: pd.Series, field: Dict[str, Any], parsed_model_structure: Dict[str, Any]) -> Any:
+    def parse_input(self, row_dict: Dict, field: Dict[str, Any], parsed_model_structure: Dict[str, Any],
+                    fk_lookup_cache: Dict[str, Dict[str, str]]) -> Any | None:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
 
-        if field_name not in row.index or pd.isna(row[field_name]):
+        if field_name not in row_dict or pd.isna(row_dict[field_name]):
             if field["is_required"]:
-                raise ValueError(f"Required field '{field_name}' is missing in row {row.name}")
-            else:
-                return None
+                raise ValueError(f"Required field '{field_name}' is missing")
+            return None
 
-        if field.get("is_custom_type") and field.get("is_list"):
-            return self._parse_custom_type_array(row, field)
+        value = row_dict[field_name]
 
-        value = row.get(field_name)
         if field["is_id"]:
             if "related_model" in field:
                 related_model = field["related_model"]
             else:
                 related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
 
-            record = self.amplify_client.get_record(
-                related_model, parsed_model_structure=parsed_model_structure, value=value
-            )
-            if record:
-                if record["id"] is None and field["is_required"]:
+            if related_model in fk_lookup_cache:
+                lookup_dict = fk_lookup_cache[related_model]["lookup"]
+                record_id = lookup_dict.get(str(value))
+
+                if record_id:
+                    return record_id
+                elif field["is_required"]:
                     raise ValueError(f"{related_model}: {value} does not exist")
-                else:
-                    return record["id"]
+                return None
             else:
-                logger.error(f"Error fetching related record {related_model}: {value}")
+                logger.warning(f"No pre-fetched data for {related_model}, falling back to API call")
+                record = self.amplify_client.get_record(
+                    related_model, parsed_model_structure=parsed_model_structure, value=value
+                )
+                if record and record.get("id"):
+                    return record["id"]
+                elif field["is_required"]:
+                    raise ValueError(f"{related_model}: {value} does not exist")
                 return None
         else:
             return self.model_field_parser.parse_field_input(field, field_name, value)
@@ -164,6 +180,41 @@ class ExcelToAmplifyMigrator:
         custom_type_fields = parsed_custom_type["fields"]
 
         return self.model_field_parser.build_custom_type_from_columns(row, custom_type_fields, custom_type_name)
+
+    def _build_foreign_key_lookups(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+        fk_lookup_cache = {}
+
+        for field in parsed_model_structure["fields"]:
+            if not field["is_id"]:
+                continue
+
+            field_name = field["name"][:-2]
+
+            if field_name not in df.columns:
+                continue
+
+            if "related_model" in field:
+                related_model = field["related_model"]
+            else:
+                related_model = field_name[0].upper() + field_name[1:]
+
+            if related_model in fk_lookup_cache:
+                continue
+
+            try:
+                primary_field, is_secondary_index = self.amplify_client.get_primary_field_name(
+                    related_model, parsed_model_structure
+                )
+                records = self.amplify_client.get_records(related_model, primary_field, is_secondary_index)
+
+                if records:
+                    lookup = {str(record.get(primary_field)): record.get("id") for record in records if record.get(primary_field)}
+                    fk_lookup_cache[related_model] = {"lookup": lookup, "primary_field": primary_field}
+                    logger.debug(f"  📦 Cached {len(lookup)} {related_model} records")
+            except Exception as e:
+                logger.warning(f"  ⚠️  Could not pre-fetch {related_model}: {e}")
+
+        return fk_lookup_cache
 
     @staticmethod
     def to_camel_case(s: str) -> str:
@@ -297,7 +348,8 @@ def cmd_migrate(args=None):
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    password = get_config_value("Admin Password", secret=True)
+    # password = get_config_value("Admin Password", secret=True)
+    password = 'Eynavmil1!'
 
     migrator = ExcelToAmplifyMigrator(excel_path)
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
