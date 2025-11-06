@@ -36,26 +36,23 @@ class TestExtractRelationshipInfo:
         assert result["foreign_key"] == "authorId"
 
     def test_extracts_from_all_fields(self):
-        """Test that _extract_relationship_info extracts from all fields"""
+        """Test that _extract_relationship_info filters out Connection types"""
         parser = ModelFieldParser()
 
-        # Even non-relationship fields get relationship info extracted
-        # The filtering happens later in _parse_field
+        # Connection types should be filtered out by _extract_relationship_info
         field = {"name": "posts", "type": {"kind": "OBJECT", "name": "ModelPostConnection", "ofType": None}, "args": []}
 
         result = parser._extract_relationship_info(field)
 
-        # It extracts info, but parse_field will filter it out later
-        assert result is not None
-        assert result["target_model"] == "ModelPostConnection"
-        assert result["foreign_key"] == "postsId"
+        # Connection types are filtered, so result should be None
+        assert result is None
 
 
 class TestParseModelStructure:
     """Test parse_model_structure method with belongsTo relationships"""
 
     def test_includes_all_fields_except_metadata(self):
-        """Test that all fields except metadata are included"""
+        """Test that all fields except metadata and relationship objects are included"""
         parser = ModelFieldParser()
 
         introspection_result = {
@@ -87,9 +84,9 @@ class TestParseModelStructure:
 
         field_names = [f["name"] for f in result["fields"]]
 
-        # Should include all fields except metadata (id)
+        # Should include all fields except metadata (id) and relationship objects (photographer)
         assert "photographerId" in field_names
-        assert "photographer" in field_names  # OBJECT fields are included
+        assert "photographer" not in field_names  # Relationship OBJECT fields are filtered
         assert "title" in field_names
         assert "id" not in field_names  # metadata filtered
 
@@ -153,11 +150,11 @@ class TestParseModelStructure:
 
         field_names = [f["name"] for f in result["fields"]]
 
-        # All fields are included
+        # ID fields are included, relationship objects are filtered
         assert "authorId" in field_names
-        assert "author" in field_names
+        assert "author" not in field_names  # Relationship objects are filtered
         assert "editorId" in field_names
-        assert "editor" in field_names
+        assert "editor" not in field_names  # Relationship objects are filtered
 
         # Check related_model properties on ID fields
         author_id_field = next(f for f in result["fields"] if f["name"] == "authorId")
@@ -323,10 +320,10 @@ class TestIntegrationBelongsToFlow:
         # Get field names
         field_names = [f["name"] for f in result["fields"]]
 
-        # Should include regular fields, foreign key, and relationship field
+        # Should include regular fields and foreign key, but not relationship object fields
         assert "title" in field_names
         assert "photographerId" in field_names
-        assert "photographer" in field_names  # OBJECT fields are included
+        assert "photographer" not in field_names  # Relationship OBJECT fields are filtered
 
         # Should NOT include metadata fields
         assert "id" not in field_names
