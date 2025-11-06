@@ -18,8 +18,16 @@ from getpass import getpass
 from migrator import ExcelToAmplifyMigrator, load_cached_config, get_cached_or_prompt, get_config_value
 
 
-def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool_id: str,
-                     client_id: str, username: str, password: str, top_n: int = 20):
+def profile_migration(
+    excel_path: str,
+    api_endpoint: str,
+    region: str,
+    user_pool_id: str,
+    client_id: str,
+    username: str,
+    password: str,
+    top_n: int = 20,
+):
     """
     Profile the migration process and print statistics.
 
@@ -34,9 +42,9 @@ def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool
         top_n: Number of top functions to display
     """
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STARTING PERFORMANCE PROFILING")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Create profiler
     profiler = cProfile.Profile()
@@ -59,15 +67,15 @@ def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool
         # Stop profiling
         profiler.disable()
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PROFILING RESULTS")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Create stats object
     stats = pstats.Stats(profiler)
 
     # Sort by cumulative time
-    stats.sort_stats('cumulative')
+    stats.sort_stats("cumulative")
 
     # Print top N functions by cumulative time
     print(f"\n{'='*80}")
@@ -76,7 +84,7 @@ def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool
     stats.print_stats(top_n)
 
     # Sort by total time (time spent in function itself, not including calls)
-    stats.sort_stats('tottime')
+    stats.sort_stats("tottime")
 
     print(f"\n{'='*80}")
     print(f"TOP {top_n} FUNCTIONS BY TOTAL TIME (EXCLUDING SUBCALLS)")
@@ -85,9 +93,9 @@ def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool
 
     # Save detailed stats to file
     output_file = "profile_output.txt"
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         stats = pstats.Stats(profiler, stream=f)
-        stats.sort_stats('cumulative')
+        stats.sort_stats("cumulative")
         stats.print_stats()
 
     print(f"\n{'='*80}")
@@ -98,10 +106,10 @@ def profile_migration(excel_path: str, api_endpoint: str, region: str, user_pool
 def main():
     parser = argparse.ArgumentParser(
         description="Profile performance of Amplify Excel Migrator",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument("excel_path", nargs='?', help="Path to Excel file (optional, will use cached config)")
+    parser.add_argument("excel_path", nargs="?", help="Path to Excel file (optional, will use cached config)")
     parser.add_argument("--api-endpoint", help="AWS Amplify API endpoint")
     parser.add_argument("--region", help="AWS region")
     parser.add_argument("--user-pool-id", help="Cognito User Pool ID")
@@ -143,18 +151,9 @@ def main():
         print("\n🔐 Authentication:")
         print("-" * 54)
         # password = get_config_value("Admin Password", secret=True)
-        password = 'Eynavmil1!'
+        password = "Eynavmil1!"
 
-    profile_migration(
-        excel_path,
-        api_endpoint,
-        region,
-        user_pool_id,
-        client_id,
-        username,
-        password,
-        args.top
-    )
+    profile_migration(excel_path, api_endpoint, region, user_pool_id, client_id, username, password, args.top)
 
 
 if __name__ == "__main__":

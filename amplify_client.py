@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Performance timing decorator
 def timing_decorator(func):
     """Decorator to measure and log function execution time"""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         start = time.perf_counter()
@@ -30,6 +31,7 @@ def timing_decorator(func):
         elapsed = end - start
         logger.info(f"⏱️  {func.__name__} took {elapsed:.4f}s")
         return result
+
     return wrapper
 
 
@@ -750,9 +752,7 @@ class AmplifyClient:
             return None
         return next((record for record in records if record.get(primary_field) == value), None)
 
-    def build_foreign_key_lookups(
-        self, df, parsed_model_structure: Dict[str, Any]
-    ) -> Dict[str, Dict[str, str]]:
+    def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
         """
         Build a cache of foreign key lookups for all ID fields in the DataFrame.
 
@@ -787,9 +787,7 @@ class AmplifyClient:
                 continue
 
             try:
-                primary_field, is_secondary_index = self.get_primary_field_name(
-                    related_model, parsed_model_structure
-                )
+                primary_field, is_secondary_index = self.get_primary_field_name(related_model, parsed_model_structure)
                 records = self.get_records(related_model, primary_field, is_secondary_index)
 
                 if records:

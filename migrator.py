@@ -73,7 +73,7 @@ class ExcelToAmplifyMigrator:
         records = self.transform_rows_to_records(df, parsed_model_structure)
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
-        if confirm.lower() != 'yes':
+        if confirm.lower() != "yes":
             logger.info("Upload cancelled for {sheet_name} sheet")
             return
 
@@ -94,7 +94,7 @@ class ExcelToAmplifyMigrator:
             logger.info("🚀 Pre-fetching foreign key lookups...")
             fk_lookup_cache = self.amplify_client.build_foreign_key_lookups(df, parsed_model_structure)
 
-        for row_tuple in df.itertuples(index=False, name='Row'):
+        for row_tuple in df.itertuples(index=False, name="Row"):
             row_count += 1
             try:
                 row_dict = {col: getattr(row_tuple, col) for col in df.columns}
@@ -112,8 +112,9 @@ class ExcelToAmplifyMigrator:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
         return self.model_field_parser.parse_model_structure(model_structure)
 
-    def transform_row_to_record(self, row_dict: Dict, parsed_model_structure: Dict[str, Any],
-                                          fk_lookup_cache: Dict[str, Dict[str, str]]) -> dict[Any, Any] | None:
+    def transform_row_to_record(
+        self, row_dict: Dict, parsed_model_structure: Dict[str, Any], fk_lookup_cache: Dict[str, Dict[str, str]]
+    ) -> dict[Any, Any] | None:
         """Transform a DataFrame row to Amplify model format"""
 
         model_record = {}
@@ -125,8 +126,13 @@ class ExcelToAmplifyMigrator:
 
         return model_record
 
-    def parse_input(self, row_dict: Dict, field: Dict[str, Any], parsed_model_structure: Dict[str, Any],
-                    fk_lookup_cache: Dict[str, Dict[str, str]]) -> Any | None:
+    def parse_input(
+        self,
+        row_dict: Dict,
+        field: Dict[str, Any],
+        parsed_model_structure: Dict[str, Any],
+        fk_lookup_cache: Dict[str, Dict[str, str]],
+    ) -> Any | None:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
 
         if field_name not in row_dict or pd.isna(row_dict[field_name]):

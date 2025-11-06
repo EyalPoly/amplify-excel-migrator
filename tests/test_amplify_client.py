@@ -12,24 +12,21 @@ class TestBuildForeignKeyLookups:
     def test_builds_lookup_cache_for_related_models(self):
         """Test that FK lookup cache is built correctly"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         # Mock methods
         client.get_primary_field_name = MagicMock(return_value=("name", False))
-        client.get_records = MagicMock(return_value=[
-            {"id": "reporter-1", "name": "John Doe"},
-            {"id": "reporter-2", "name": "Jane Smith"},
-        ])
+        client.get_records = MagicMock(
+            return_value=[
+                {"id": "reporter-1", "name": "John Doe"},
+                {"id": "reporter-2", "name": "Jane Smith"},
+            ]
+        )
 
         df = pd.DataFrame({"photographer": ["John Doe", "Jane Smith"]})
         parsed_model_structure = {
-            "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
-            ]
+            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -47,10 +44,7 @@ class TestBuildForeignKeyLookups:
     def test_skips_non_id_fields(self):
         """Test that non-ID fields are skipped"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock()
@@ -74,19 +68,14 @@ class TestBuildForeignKeyLookups:
     def test_skips_fields_not_in_dataframe(self):
         """Test that fields not in DataFrame columns are skipped"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock()
 
         df = pd.DataFrame({"title": ["Story 1"]})
         parsed_model_structure = {
-            "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
-            ]
+            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -98,10 +87,7 @@ class TestBuildForeignKeyLookups:
     def test_infers_related_model_from_field_name(self):
         """Test that related model is inferred when not explicitly provided"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock(return_value=("name", False))
@@ -127,19 +113,14 @@ class TestBuildForeignKeyLookups:
     def test_handles_errors_gracefully(self):
         """Test that errors in fetching don't crash the whole process"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock(side_effect=Exception("API Error"))
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
-            "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
-            ]
+            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
         }
 
         # Should not raise exception
@@ -151,10 +132,7 @@ class TestBuildForeignKeyLookups:
     def test_deduplicates_same_related_model(self):
         """Test that the same related model is only fetched once"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock(return_value=("name", False))
@@ -181,10 +159,7 @@ class TestBuildForeignKeyLookups:
     def test_handles_empty_records_response(self):
         """Test that empty records from API don't break the cache"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock(return_value=("name", False))
@@ -192,9 +167,7 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
-            "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
-            ]
+            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -205,25 +178,22 @@ class TestBuildForeignKeyLookups:
     def test_filters_out_records_without_primary_field(self):
         """Test that records without the primary field are filtered out"""
         client = AmplifyClient(
-            api_endpoint="https://test.com",
-            user_pool_id="pool-id",
-            region="us-east-1",
-            client_id="client-id"
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
         client.get_primary_field_name = MagicMock(return_value=("name", False))
-        client.get_records = MagicMock(return_value=[
-            {"id": "reporter-1", "name": "John Doe"},
-            {"id": "reporter-2"},  # Missing name
-            {"id": "reporter-3", "name": None},  # None name
-            {"id": "reporter-4", "name": "Jane Smith"},
-        ])
+        client.get_records = MagicMock(
+            return_value=[
+                {"id": "reporter-1", "name": "John Doe"},
+                {"id": "reporter-2"},  # Missing name
+                {"id": "reporter-3", "name": None},  # None name
+                {"id": "reporter-4", "name": "Jane Smith"},
+            ]
+        )
 
         df = pd.DataFrame({"photographer": ["John Doe", "Jane Smith"]})
         parsed_model_structure = {
-            "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}
-            ]
+            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)

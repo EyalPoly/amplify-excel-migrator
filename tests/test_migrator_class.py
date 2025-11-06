@@ -181,6 +181,7 @@ class TestTransformRowsToRecords:
 
         # Mock to raise error for second row
         call_count = [0]
+
         def mock_transform(row, _, fk_cache):
             call_count[0] += 1
             if call_count[0] == 2:  # Second call
