@@ -243,7 +243,7 @@ class ModelFieldParser:
             else:
                 return str(input_value).strip()
         except (ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse value '{input_value}' for field type '{field["type"]}': {e}")
+            logger.warning(f"Failed to parse value '{input_value}' for field type '{field['type']}': {e}")
             return None
 
     @staticmethod
