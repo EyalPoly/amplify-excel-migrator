@@ -131,14 +131,14 @@ class TestCmdConfig:
         monkeypatch.setattr("migrator.CONFIG_DIR", test_config_dir)
         monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
 
-        # Empty strings for prompts with defaults, values for those without
+        # When no cached config exists, all fields need values
         inputs = [
-            "",  # excel_path (use default 'data.xlsx')
-            "https://test.com",  # api_endpoint (required)
-            "",  # region (use default 'us-east-1')
-            "pool-id",  # user_pool_id (required)
-            "client-id",  # client_id (required)
-            "admin@test.com",  # username (required)
+            "data.xlsx",  # excel_path
+            "https://test.com",  # api_endpoint
+            "us-east-1",  # region
+            "pool-id",  # user_pool_id
+            "client-id",  # client_id
+            "admin@test.com",  # username
         ]
 
         with patch("builtins.input", side_effect=inputs):
@@ -146,8 +146,8 @@ class TestCmdConfig:
 
         with open(test_config_file) as f:
             saved_config = json.load(f)
-            assert saved_config["excel_path"] == "data.xlsx"  # Default used
-            assert saved_config["region"] == "us-east-1"  # Default used
+            assert saved_config["excel_path"] == "data.xlsx"
+            assert saved_config["region"] == "us-east-1"
 
 
 class TestCmdMigrate:
