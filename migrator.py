@@ -57,9 +57,27 @@ class ExcelToAmplifyMigrator:
     def run(self):
         all_sheets = self.read_excel()
 
+        total_success = 0
+        total_failed = 0
+
         for sheet_name, df in all_sheets.items():
             logger.info(f"Processing {sheet_name} sheet with {len(df)} rows")
-            self.process_sheet(df, sheet_name)
+            success, failed = self.process_sheet(df, sheet_name)
+            total_success += success
+            total_failed += failed
+
+        logger.info("\n" + "=" * 60)
+        logger.info("MIGRATION SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"📊 Sheets processed: {len(all_sheets)}")
+        logger.info(f"✅ Total successful: {total_success}")
+        logger.info(f"❌ Total failed: {total_failed}")
+        logger.info(
+            f"📈 Success rate: {(total_success / (total_success + total_failed) * 100):.1f}%"
+            if (total_success + total_failed) > 0
+            else "📈 Success rate: N/A"
+        )
+        logger.info("=" * 60)
 
     def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
@@ -68,14 +86,14 @@ class ExcelToAmplifyMigrator:
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 
-    def process_sheet(self, df: pd.DataFrame, sheet_name: str):
+    def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> tuple[int, int]:
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
         records = self.transform_rows_to_records(df, parsed_model_structure)
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
         if confirm.lower() != "yes":
             logger.info("Upload cancelled for {sheet_name} sheet")
-            return
+            return 0, 0
 
         success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
 
@@ -83,6 +101,8 @@ class ExcelToAmplifyMigrator:
         logger.info(f"✅ Success: {success_count}")
         logger.info(f"❌ Failed: {error_count}")
         logger.info(f"📊 Total: {len(records)}")
+
+        return success_count, error_count
 
     def transform_rows_to_records(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> list[Any]:
         records = []
