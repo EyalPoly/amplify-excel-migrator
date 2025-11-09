@@ -1,8 +1,6 @@
 import asyncio
 import logging
 import sys
-import time
-from functools import wraps
 from getpass import getpass
 from typing import Dict, Any
 
@@ -17,22 +15,6 @@ from pycognito.exceptions import ForceChangePasswordException
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-
-# Performance timing decorator
-def timing_decorator(func):
-    """Decorator to measure and log function execution time"""
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        end = time.perf_counter()
-        elapsed = end - start
-        logger.info(f"⏱️  {func.__name__} took {elapsed:.4f}s")
-        return result
-
-    return wrapper
 
 
 class AmplifyClient:
@@ -704,7 +686,6 @@ class AmplifyClient:
 
         return None
 
-    @timing_decorator
     def get_records(
         self,
         model_name: str,
@@ -713,10 +694,8 @@ class AmplifyClient:
         fields: list = None,
     ) -> list | None:
         if model_name in self.records_cache:
-            logger.info(f"💾 Cache hit for {model_name}")
             return self.records_cache[model_name]
 
-        logger.info(f"🌐 Fetching {model_name} records from API")
         if not primary_field:
             return None
         if is_secondary_index:
@@ -726,7 +705,7 @@ class AmplifyClient:
 
         if records:
             self.records_cache[model_name] = records
-            logger.info(f"💾 Cached {len(records)} records for {model_name}")
+            logger.debug(f"💾 Cached {len(records)} records for {model_name}")
         return records
 
     def get_record(
@@ -765,7 +744,6 @@ class AmplifyClient:
         Returns:
             Dictionary mapping model names to lookup dictionaries and primary fields
         """
-        import pandas as pd
 
         fk_lookup_cache = {}
 
