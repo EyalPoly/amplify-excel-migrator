@@ -278,13 +278,15 @@ def cmd_config(args=None):
     """
     )
 
+    cached_config = load_cached_config()
+
     config = {
-        "excel_path": get_config_value("Excel file path", "data.xlsx"),
-        "api_endpoint": get_config_value("AWS Amplify API endpoint"),
-        "region": get_config_value("AWS Region", "us-east-1"),
-        "user_pool_id": get_config_value("Cognito User Pool ID"),
-        "client_id": get_config_value("Cognito Client ID"),
-        "username": get_config_value("Admin Username"),
+        "excel_path": get_config_value("Excel file path", cached_config.get("excel_path")),
+        "api_endpoint": get_config_value("AWS Amplify API endpoint", cached_config.get("api_endpoint")),
+        "region": get_config_value("AWS Region", cached_config.get("region")),
+        "user_pool_id": get_config_value("Cognito User Pool ID", cached_config.get("user_pool_id")),
+        "client_id": get_config_value("Cognito Client ID", cached_config.get("client_id")),
+        "username": get_config_value("Admin Username", cached_config.get("username")),
     }
 
     save_config(config)
@@ -359,7 +361,7 @@ if __name__ == "__main__":
     # For IDE debugging: set the command you want to test
     # Uncomment and modify one of these lines:
 
-    # sys.argv = ['migrator.py', 'config']  # Test config command
+    # sys.argv = ["migrator.py", "config"]  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
     # sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
