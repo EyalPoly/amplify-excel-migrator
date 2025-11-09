@@ -563,6 +563,7 @@ class AmplifyClient:
 
         success_count = 0
         error_count = 0
+        num_of_batches = (len(records) + self.batch_size - 1) // self.batch_size
 
         primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
         if not primary_field:
@@ -571,7 +572,7 @@ class AmplifyClient:
 
         for i in range(0, len(records), self.batch_size):
             batch = records[i : i + self.batch_size]
-            logger.info(f"Uploading batch {i // self.batch_size + 1} ({len(batch)} items)...")
+            logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
             batch_success, batch_error = asyncio.run(
                 self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)

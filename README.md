@@ -1,5 +1,10 @@
 # Amplify Excel Migrator
 
+[![PyPI version](https://badge.fury.io/py/amplify-excel-migrator.svg)](https://badge.fury.io/py/amplify-excel-migrator)
+[![Python versions](https://img.shields.io/pypi/pyversions/amplify-excel-migrator.svg)](https://pypi.org/project/amplify-excel-migrator/)
+[![Downloads](https://pepy.tech/badge/amplify-excel-migrator)](https://pepy.tech/project/amplify-excel-migrator)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A CLI tool to migrate data from Excel files to AWS Amplify GraphQL API.
 Developed for the MECO project - https://github.com/sworgkh/meco-observations-amplify
 
