@@ -72,7 +72,11 @@ class ExcelToAmplifyMigrator:
         logger.info(f"📊 Sheets processed: {len(all_sheets)}")
         logger.info(f"✅ Total successful: {total_success}")
         logger.info(f"❌ Total failed: {total_failed}")
-        logger.info(f"📈 Success rate: {(total_success / (total_success + total_failed) * 100):.1f}%" if (total_success + total_failed) > 0 else "📈 Success rate: N/A")
+        logger.info(
+            f"📈 Success rate: {(total_success / (total_success + total_failed) * 100):.1f}%"
+            if (total_success + total_failed) > 0
+            else "📈 Success rate: N/A"
+        )
         logger.info("=" * 60)
 
     def read_excel(self) -> Dict[str, Any]:
