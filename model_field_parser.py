@@ -30,7 +30,7 @@ class ModelFieldParser:
     def parse_model_structure(self, introspection_result: Dict) -> Dict[str, Any]:
         if not introspection_result:
             logger.error("Empty introspection result received")
-            return {"name": None, "kind": None, "description": None, "fields": []}
+            raise ValueError("Introspection result cannot be empty")
 
         if "data" in introspection_result and "__type" in introspection_result["data"]:
             type_data = introspection_result["data"]["__type"]
