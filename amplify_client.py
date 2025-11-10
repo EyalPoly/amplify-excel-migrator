@@ -388,11 +388,12 @@ class AmplifyClient:
         value: str,
         is_secondary_index: bool,
         record: Dict,
+        field_type: str = "String",
     ) -> Dict | None:
         if is_secondary_index:
             query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
             query = f"""
-            query {query_name}(${primary_field}: String!) {{
+            query {query_name}(${primary_field}: {field_type}!) {{
               {query_name}({primary_field}: ${primary_field}) {{
                 items {{
                     id
@@ -428,12 +429,12 @@ class AmplifyClient:
         return record
 
     async def upload_batch_async(
-        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool
+        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool, field_type: str = "String"
     ) -> tuple[int, int]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
                 self.check_record_exists_async(
-                    session, model_name, primary_field, record[primary_field], is_secondary_index, record
+                    session, model_name, primary_field, record[primary_field], is_secondary_index, record, field_type
                 )
                 for record in batch
             ]
@@ -492,17 +493,26 @@ class AmplifyClient:
 
         return {}
 
-    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool]:
+    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
+        """
+        Returns: (field_name, is_secondary_index, field_type)
+        """
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
-            return secondary_index, True
+            # Find the field type in parsed_model_structure
+            field_type = "String"
+            for field in parsed_model_structure["fields"]:
+                if field["name"] == secondary_index:
+                    field_type = field["type"]
+                    break
+            return secondary_index, True, field_type
 
         for field in parsed_model_structure["fields"]:
             if field["is_required"] and field["is_scalar"] and field["name"] != "id":
-                return field["name"], False
+                return field["name"], False, field["type"]
 
         logger.error("No suitable primary field found (required scalar field other than id)")
-        return "", False
+        return "", False, "String"
 
     def _get_secondary_index(self, model_name: str) -> str:
         query_structure = self.get_model_structure("Query")
@@ -565,7 +575,7 @@ class AmplifyClient:
         error_count = 0
         num_of_batches = (len(records) + self.batch_size - 1) // self.batch_size
 
-        primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+        primary_field, is_secondary_index, field_type = self.get_primary_field_name(model_name, parsed_model_structure)
         if not primary_field:
             logger.error(f"Aborting upload for model {model_name}")
             return 0, len(records)
@@ -575,7 +585,7 @@ class AmplifyClient:
             logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
             batch_success, batch_error = asyncio.run(
-                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)
+                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
             )
             success_count += batch_success
             error_count += batch_error
@@ -587,7 +597,7 @@ class AmplifyClient:
         return success_count, error_count
 
     def list_records_by_secondary_index(
-        self, model_name: str, secondary_index: str, value: str = None, fields: list = None
+        self, model_name: str, secondary_index: str, value: str = None, fields: list = None, field_type: str = "String"
     ) -> Dict | None:
         if fields is None:
             fields = ["id", secondary_index]
@@ -628,7 +638,7 @@ class AmplifyClient:
 
             while True:
                 query = f"""
-                query {query_name}(${secondary_index}: String!, $limit: Int, $nextToken: String) {{
+                query {query_name}(${secondary_index}: {field_type}!, $limit: Int, $nextToken: String) {{
                   {query_name}({secondary_index}: ${secondary_index}, limit: $limit, nextToken: $nextToken) {{
                     items {{
                         {fields_str}
@@ -780,7 +790,7 @@ class AmplifyClient:
             if not parsed_model_structure:
                 logger.error("Parsed model structure required if primary_field not provided")
                 return None
-            primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+            primary_field, is_secondary_index, _ = self.get_primary_field_name(model_name, parsed_model_structure)
         records = self.get_records(model_name, primary_field, is_secondary_index, fields)
         if not records:
             return None
@@ -820,7 +830,9 @@ class AmplifyClient:
                 continue
 
             try:
-                primary_field, is_secondary_index = self.get_primary_field_name(related_model, parsed_model_structure)
+                primary_field, is_secondary_index, _ = self.get_primary_field_name(
+                    related_model, parsed_model_structure
+                )
                 records = self.get_records(related_model, primary_field, is_secondary_index)
 
                 if records:
