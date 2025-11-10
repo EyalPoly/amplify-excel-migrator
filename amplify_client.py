@@ -593,37 +593,65 @@ class AmplifyClient:
             fields = ["id", secondary_index]
 
         fields_str = "\n".join(fields)
+        all_items = []
+        next_token = None
 
         if not value:
             query_name = self._get_list_query_name(model_name)
-            query = f"""
-            query List{model_name}s {{
-              {query_name} {{
-                items {{
-                    {fields_str}
+
+            while True:
+                query = f"""
+                query List{model_name}s($limit: Int, $nextToken: String) {{
+                  {query_name}(limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query)
+                """
+                variables = {"limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
+
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
+
+                    if not next_token:
+                        break
+                else:
+                    break
         else:
             query_name = f"list{model_name}By{secondary_index[0].upper() + secondary_index[1:]}"
-            query = f"""
-            query {query_name}(${secondary_index}: String!) {{
-              {query_name}({secondary_index}: ${secondary_index}) {{
-                items {{
-                    {fields_str}
+
+            while True:
+                query = f"""
+                query {query_name}(${secondary_index}: String!, $limit: Int, $nextToken: String) {{
+                  {query_name}({secondary_index}: ${secondary_index}, limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query, {secondary_index: value})
+                """
+                variables = {secondary_index: value, "limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
 
-        if result and "data" in result:
-            items = result["data"].get(query_name, {}).get("items", [])
-            return items if items else None
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
 
-        return None
+                    if not next_token:
+                        break
+                else:
+                    break
+
+        return all_items if all_items else None
 
     def list_records_by_field(
         self, model_name: str, field_name: str, value: str = None, fields: list = None
@@ -632,38 +660,64 @@ class AmplifyClient:
             fields = ["id", field_name]
 
         fields_str = "\n".join(fields)
+        all_items = []
+        next_token = None
 
         query_name = self._get_list_query_name(model_name)
 
         if not value:
-            query = f"""
-            query List{model_name}s {{
-              {query_name} {{
-                items {{
-                    {fields_str}
+            while True:
+                query = f"""
+                query List{model_name}s($limit: Int, $nextToken: String) {{
+                  {query_name}(limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query)
+                """
+                variables = {"limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
+
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
+
+                    if not next_token:
+                        break
+                else:
+                    break
         else:
-            query = f"""
-            query List{model_name}s($filter: Model{model_name}FilterInput) {{
-              {query_name}(filter: $filter) {{
-                items {{
-                    {fields_str}
+            while True:
+                query = f"""
+                query List{model_name}s($filter: Model{model_name}FilterInput, $limit: Int, $nextToken: String) {{
+                  {query_name}(filter: $filter, limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            filter_input = {field_name: {"eq": value}}
-            result = self._request(query, {"filter": filter_input})
+                """
+                filter_input = {field_name: {"eq": value}}
+                variables = {"filter": filter_input, "limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
 
-        if result and "data" in result:
-            items = result["data"].get(query_name, {}).get("items", [])
-            return items if items else None
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
 
-        return None
+                    if not next_token:
+                        break
+                else:
+                    break
+
+        return all_items if all_items else None
 
     def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
         if fields is None:
