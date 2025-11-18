@@ -1,6 +1,7 @@
 from typing import Dict, Any
 import logging
 import pandas as pd
+import unicodedata
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -220,6 +221,14 @@ class ModelFieldParser:
 
     def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
         try:
+            # Clean invisible Unicode control and format characters from string values
+            if isinstance(input_value, str):
+                input_value = "".join(
+                    char
+                    for char in input_value
+                    if unicodedata.category(char) not in ("Cf", "Cc") or char in ("\n", "\r", "\t")
+                )
+
             if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
                 if isinstance(input_value, str) and "-" in str(input_value):
                     input_value = sum([p.strip() for p in str(input_value).split("-") if p.strip()])
@@ -236,7 +245,7 @@ class ModelFieldParser:
                 else:
                     logger.error(f"Invalid Boolean value for field '{field_name}': {input_value}")
                     return None
-            elif field["is_enum"] and " " in str(input_value):
+            elif field["is_enum"]:
                 return str(input_value).strip().replace(" ", "_").upper()
             elif field["type"] == "AWSDate" or field["type"] == "AWSDateTime":
                 return self.parse_date(input_value)

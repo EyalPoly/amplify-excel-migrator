@@ -405,7 +405,7 @@ class AmplifyClient:
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
-                    logger.error(f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
                     return None
         else:
             query_name = self._get_list_query_name(model_name)

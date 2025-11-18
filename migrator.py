@@ -92,7 +92,7 @@ class ExcelToAmplifyMigrator:
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
         if confirm.lower() != "yes":
-            logger.info("Upload cancelled for {sheet_name} sheet")
+            logger.info(f"Upload cancelled for {sheet_name} sheet")
             return 0, 0
 
         success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
@@ -160,7 +160,7 @@ class ExcelToAmplifyMigrator:
                 raise ValueError(f"Required field '{field_name}' is missing")
             return None
 
-        value = row_dict[field_name]
+        value = row_dict[field_name].strip() if isinstance(row_dict[field_name], str) else row_dict[field_name]
 
         if field["is_id"]:
             if "related_model" in field:
