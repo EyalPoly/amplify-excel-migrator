@@ -221,14 +221,6 @@ class ModelFieldParser:
 
     def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
         try:
-            # Clean invisible Unicode control and format characters from string values
-            if isinstance(input_value, str):
-                input_value = "".join(
-                    char
-                    for char in input_value
-                    if unicodedata.category(char) not in ("Cf", "Cc") or char in ("\n", "\r", "\t")
-                )
-
             if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
                 if isinstance(input_value, str) and "-" in str(input_value):
                     input_value = sum([p.strip() for p in str(input_value).split("-") if p.strip()])
@@ -254,6 +246,20 @@ class ModelFieldParser:
         except (ValueError, TypeError) as e:
             logger.warning(f"Failed to parse value '{input_value}' for field type '{field['type']}': {e}")
             return None
+
+    @staticmethod
+    def clean_input(input_value: Any) -> Any:
+        if isinstance(input_value, str):
+            input_value = input_value.strip()
+
+            # Clean invisible Unicode control and format characters from string values
+            input_value = "".join(
+                char
+                for char in input_value
+                if unicodedata.category(char) not in ("Cf", "Cc") or char in ("\n", "\r", "\t")
+            )
+
+        return input_value
 
     @staticmethod
     def parse_date(input: Any) -> str:

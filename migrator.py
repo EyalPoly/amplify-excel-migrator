@@ -160,7 +160,7 @@ class ExcelToAmplifyMigrator:
                 raise ValueError(f"Required field '{field_name}' is missing")
             return None
 
-        value = row_dict[field_name].strip() if isinstance(row_dict[field_name], str) else row_dict[field_name]
+        value = self.model_field_parser.clean_input(row_dict[field_name])
 
         if field["is_id"]:
             if "related_model" in field:
@@ -383,6 +383,6 @@ if __name__ == "__main__":
 
     # sys.argv = ["migrator.py", "config"]  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    # sys.argv = ["migrator.py", "migrate"]  # Test migrate command
+    sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
     main()
