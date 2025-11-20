@@ -82,7 +82,6 @@ class ExcelToAmplifyMigrator:
     def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
         all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
-
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 
@@ -92,7 +91,7 @@ class ExcelToAmplifyMigrator:
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
         if confirm.lower() != "yes":
-            logger.info("Upload cancelled for {sheet_name} sheet")
+            logger.info(f"Upload cancelled for {sheet_name} sheet")
             return 0, 0
 
         success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
@@ -160,7 +159,7 @@ class ExcelToAmplifyMigrator:
                 raise ValueError(f"Required field '{field_name}' is missing")
             return None
 
-        value = row_dict[field_name]
+        value = self.model_field_parser.clean_input(row_dict[field_name])
 
         if field["is_id"]:
             if "related_model" in field:
@@ -383,6 +382,6 @@ if __name__ == "__main__":
 
     # sys.argv = ["migrator.py", "config"]  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    # sys.argv = ["migrator.py", "migrate"]  # Test migrate command
+    sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
     main()

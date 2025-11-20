@@ -17,6 +17,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+class AuthenticationError(Exception):
+    """Raised when authentication is required but not completed"""
+
+    pass
+
+
+class GraphQLError(Exception):
+    """Raised when GraphQL query returns errors"""
+
+    pass
+
+
 class AmplifyClient:
     """
     Client for Amplify GraphQL using ADMIN_USER_PASSWORD_AUTH flow
@@ -278,23 +290,26 @@ class AmplifyClient:
         if self.admin_group_name not in groups:
             raise PermissionError("User is not in ADMINS group")
 
-    def _request(self, query: str, variables: Dict = None) -> Any | None:
+    def _request(self, query: str, variables: Dict = None, context: str = None) -> Any | None:
         """
         Make a GraphQL request using the ID token
 
         Args:
             query: GraphQL query or mutation
             variables: Variables for the query
+            context: Optional context string to include in error messages (e.g., row identifier)
 
         Returns:
             Response data
         """
         if not self.id_token:
-            raise Exception("Not authenticated. Call authenticate() first.")
+            raise AuthenticationError("Not authenticated. Call authenticate() first.")
 
         headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
         payload = {"query": query, "variables": variables or {}}
+
+        context_msg = f" [{context}]" if context else ""
 
         try:
             response = requests.post(self.api_endpoint, headers=headers, json=payload)
@@ -303,25 +318,38 @@ class AmplifyClient:
                 result = response.json()
 
                 if "errors" in result:
-                    logger.error(f"GraphQL errors: {result['errors']}")
-                    return None
+                    raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
 
                 return result
             else:
-                logger.error(f"HTTP Error {response.status_code}: {response.text}")
+                logger.error(f"HTTP Error {response.status_code}{context_msg}: {response.text}")
                 return None
 
-        except Exception as e:
-            if "NameResolutionError" in str(e):
-                logger.error(
-                    f"Connection error: Unable to resolve hostname. Check your internet connection or the API endpoint URL."
-                )
-                sys.exit(1)
-            else:
-                logger.error(f"Request error: {e}")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"Connection error{context_msg}: Unable to connect to API endpoint. Check your internet connection or the API endpoint URL."
+            )
+            sys.exit(1)
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Request timeout{context_msg}: {e}")
             return None
 
-    async def _request_async(self, session: aiohttp.ClientSession, query: str, variables: Dict = None) -> Any | None:
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error{context_msg}: {e}")
+            return None
+
+        except GraphQLError as e:
+            logger.error(str(e))
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error{context_msg}: {e}")
+            return None
+
+    async def _request_async(
+        self, session: aiohttp.ClientSession, query: str, variables: Dict = None, context: str = None
+    ) -> Any | None:
         """
         Async version of _request for parallel GraphQL requests
 
@@ -329,16 +357,19 @@ class AmplifyClient:
             session: aiohttp ClientSession
             query: GraphQL query or mutation
             variables: Variables for the query
+            context: Optional context string to include in error messages (e.g., row identifier)
 
         Returns:
             Response data
         """
         if not self.id_token:
-            raise Exception("Not authenticated. Call authenticate() first.")
+            raise AuthenticationError("Not authenticated. Call authenticate() first.")
 
         headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
         payload = {"query": query, "variables": variables or {}}
+
+        context_msg = f" [{context}]" if context else ""
 
         try:
             async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
@@ -346,16 +377,32 @@ class AmplifyClient:
                     result = await response.json()
 
                     if "errors" in result:
-                        logger.error(f"GraphQL errors: {result['errors']}")
-                        return None
+                        raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
 
                     return result
                 else:
                     text = await response.text()
-                    logger.error(f"HTTP Error {response.status}: {text}")
+                    logger.error(f"HTTP Error {response.status}{context_msg}: {text}")
                     return None
-        except Exception as e:
-            logger.error(f"Request error: {e}")
+
+        except aiohttp.ClientConnectionError as e:
+            logger.error(f"Connection error{context_msg}: Unable to connect to API endpoint. {e}")
+            return None
+
+        except aiohttp.ServerTimeoutError as e:
+            logger.error(f"Request timeout{context_msg}: {e}")
+            return None
+
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"HTTP response error{context_msg}: {e}")
+            return None
+
+        except GraphQLError as e:
+            logger.error(str(e))
+            return None
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Client error{context_msg}: {e}")
             return None
 
     async def create_record_async(
@@ -370,13 +417,16 @@ class AmplifyClient:
         }}
         """
 
-        result = await self._request_async(session, mutation, {"input": data})
+        context = f"{model_name}: {primary_field}={data.get(primary_field)}"
+        result = await self._request_async(session, mutation, {"input": data}, context)
 
         if result and "data" in result:
             created = result["data"].get(f"create{model_name}")
             if created:
                 logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
             return created
+        else:
+            logger.error(f'Failed to create {model_name} with {primary_field}="{data[primary_field]}"')
 
         return None
 
@@ -388,11 +438,14 @@ class AmplifyClient:
         value: str,
         is_secondary_index: bool,
         record: Dict,
+        field_type: str = "String",
     ) -> Dict | None:
+        context = f"{model_name}: {primary_field}={value}"
+
         if is_secondary_index:
             query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
             query = f"""
-            query {query_name}(${primary_field}: String!) {{
+            query {query_name}(${primary_field}: {field_type}!) {{
               {query_name}({primary_field}: ${primary_field}) {{
                 items {{
                     id
@@ -400,11 +453,11 @@ class AmplifyClient:
               }}
             }}
             """
-            result = await self._request_async(session, query, {primary_field: value})
+            result = await self._request_async(session, query, {primary_field: value}, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
-                    logger.error(f'Record with {primary_field}="{value}" already exists in {model_name}')
+                    logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
                     return None
         else:
             query_name = self._get_list_query_name(model_name)
@@ -418,7 +471,7 @@ class AmplifyClient:
             }}
             """
             filter_input = {primary_field: {"eq": value}}
-            result = await self._request_async(session, query, {"filter": filter_input})
+            result = await self._request_async(session, query, {"filter": filter_input}, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
@@ -428,12 +481,12 @@ class AmplifyClient:
         return record
 
     async def upload_batch_async(
-        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool
+        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool, field_type: str = "String"
     ) -> tuple[int, int]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
                 self.check_record_exists_async(
-                    session, model_name, primary_field, record[primary_field], is_secondary_index, record
+                    session, model_name, primary_field, record[primary_field], is_secondary_index, record, field_type
                 )
                 for record in batch
             ]
@@ -492,17 +545,26 @@ class AmplifyClient:
 
         return {}
 
-    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool]:
+    def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
+        """
+        Returns: (field_name, is_secondary_index, field_type)
+        """
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
-            return secondary_index, True
+            # Find the field type in parsed_model_structure
+            field_type = "String"
+            for field in parsed_model_structure["fields"]:
+                if field["name"] == secondary_index:
+                    field_type = field["type"]
+                    break
+            return secondary_index, True, field_type
 
         for field in parsed_model_structure["fields"]:
             if field["is_required"] and field["is_scalar"] and field["name"] != "id":
-                return field["name"], False
+                return field["name"], False, field["type"]
 
         logger.error("No suitable primary field found (required scalar field other than id)")
-        return "", False
+        return "", False, "String"
 
     def _get_secondary_index(self, model_name: str) -> str:
         query_structure = self.get_model_structure("Query")
@@ -565,7 +627,7 @@ class AmplifyClient:
         error_count = 0
         num_of_batches = (len(records) + self.batch_size - 1) // self.batch_size
 
-        primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+        primary_field, is_secondary_index, field_type = self.get_primary_field_name(model_name, parsed_model_structure)
         if not primary_field:
             logger.error(f"Aborting upload for model {model_name}")
             return 0, len(records)
@@ -575,7 +637,7 @@ class AmplifyClient:
             logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
             batch_success, batch_error = asyncio.run(
-                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index)
+                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
             )
             success_count += batch_success
             error_count += batch_error
@@ -587,43 +649,71 @@ class AmplifyClient:
         return success_count, error_count
 
     def list_records_by_secondary_index(
-        self, model_name: str, secondary_index: str, value: str = None, fields: list = None
+        self, model_name: str, secondary_index: str, value: str = None, fields: list = None, field_type: str = "String"
     ) -> Dict | None:
         if fields is None:
             fields = ["id", secondary_index]
 
         fields_str = "\n".join(fields)
+        all_items = []
+        next_token = None
 
         if not value:
             query_name = self._get_list_query_name(model_name)
-            query = f"""
-            query List{model_name}s {{
-              {query_name} {{
-                items {{
-                    {fields_str}
+
+            while True:
+                query = f"""
+                query List{model_name}s($limit: Int, $nextToken: String) {{
+                  {query_name}(limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query)
+                """
+                variables = {"limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
+
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
+
+                    if not next_token:
+                        break
+                else:
+                    break
         else:
             query_name = f"list{model_name}By{secondary_index[0].upper() + secondary_index[1:]}"
-            query = f"""
-            query {query_name}(${secondary_index}: String!) {{
-              {query_name}({secondary_index}: ${secondary_index}) {{
-                items {{
-                    {fields_str}
+
+            while True:
+                query = f"""
+                query {query_name}(${secondary_index}: {field_type}!, $limit: Int, $nextToken: String) {{
+                  {query_name}({secondary_index}: ${secondary_index}, limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query, {secondary_index: value})
+                """
+                variables = {secondary_index: value, "limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
 
-        if result and "data" in result:
-            items = result["data"].get(query_name, {}).get("items", [])
-            return items if items else None
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
 
-        return None
+                    if not next_token:
+                        break
+                else:
+                    break
+
+        return all_items if all_items else None
 
     def list_records_by_field(
         self, model_name: str, field_name: str, value: str = None, fields: list = None
@@ -632,38 +722,64 @@ class AmplifyClient:
             fields = ["id", field_name]
 
         fields_str = "\n".join(fields)
+        all_items = []
+        next_token = None
 
         query_name = self._get_list_query_name(model_name)
 
         if not value:
-            query = f"""
-            query List{model_name}s {{
-              {query_name} {{
-                items {{
-                    {fields_str}
+            while True:
+                query = f"""
+                query List{model_name}s($limit: Int, $nextToken: String) {{
+                  {query_name}(limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            result = self._request(query)
+                """
+                variables = {"limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
+
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
+
+                    if not next_token:
+                        break
+                else:
+                    break
         else:
-            query = f"""
-            query List{model_name}s($filter: Model{model_name}FilterInput) {{
-              {query_name}(filter: $filter) {{
-                items {{
-                    {fields_str}
+            while True:
+                query = f"""
+                query List{model_name}s($filter: Model{model_name}FilterInput, $limit: Int, $nextToken: String) {{
+                  {query_name}(filter: $filter, limit: $limit, nextToken: $nextToken) {{
+                    items {{
+                        {fields_str}
+                    }}
+                    nextToken
+                  }}
                 }}
-              }}
-            }}
-            """
-            filter_input = {field_name: {"eq": value}}
-            result = self._request(query, {"filter": filter_input})
+                """
+                filter_input = {field_name: {"eq": value}}
+                variables = {"filter": filter_input, "limit": 1000, "nextToken": next_token}
+                result = self._request(query, variables)
 
-        if result and "data" in result:
-            items = result["data"].get(query_name, {}).get("items", [])
-            return items if items else None
+                if result and "data" in result:
+                    data = result["data"].get(query_name, {})
+                    items = data.get("items", [])
+                    all_items.extend(items)
+                    next_token = data.get("nextToken")
 
-        return None
+                    if not next_token:
+                        break
+                else:
+                    break
+
+        return all_items if all_items else None
 
     def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
         if fields is None:
@@ -726,7 +842,7 @@ class AmplifyClient:
             if not parsed_model_structure:
                 logger.error("Parsed model structure required if primary_field not provided")
                 return None
-            primary_field, is_secondary_index = self.get_primary_field_name(model_name, parsed_model_structure)
+            primary_field, is_secondary_index, _ = self.get_primary_field_name(model_name, parsed_model_structure)
         records = self.get_records(model_name, primary_field, is_secondary_index, fields)
         if not records:
             return None
@@ -766,7 +882,9 @@ class AmplifyClient:
                 continue
 
             try:
-                primary_field, is_secondary_index = self.get_primary_field_name(related_model, parsed_model_structure)
+                primary_field, is_secondary_index, _ = self.get_primary_field_name(
+                    related_model, parsed_model_structure
+                )
                 records = self.get_records(related_model, primary_field, is_secondary_index)
 
                 if records:
