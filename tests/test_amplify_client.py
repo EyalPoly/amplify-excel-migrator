@@ -325,8 +325,8 @@ class TestRequestAsyncErrorHandling:
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ClientConnectionError("Connection failed")):
-                result = await client._request_async(session, "query { test }", context="Model: field=value")
-                assert result is None
+                with pytest.raises(aiohttp.ClientConnectionError, match="Connection error"):
+                    await client._request_async(session, "query { test }", context="Model: field=value")
 
     @pytest.mark.asyncio
     async def test_timeout_error_async_with_context(self):
@@ -338,8 +338,8 @@ class TestRequestAsyncErrorHandling:
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ServerTimeoutError("Request timeout")):
-                result = await client._request_async(session, "query { test }", context="Model: field=value")
-                assert result is None
+                with pytest.raises(aiohttp.ServerTimeoutError, match="Request timeout"):
+                    await client._request_async(session, "query { test }", context="Model: field=value")
 
     @pytest.mark.asyncio
     async def test_client_response_error_async_with_context(self):
@@ -362,8 +362,8 @@ class TestRequestAsyncErrorHandling:
                     request_info=request_info, history=history, status=500, message="Server error"
                 ),
             ):
-                result = await client._request_async(session, "query { test }", context="Model: field=value")
-                assert result is None
+                with pytest.raises(aiohttp.ClientResponseError, match="HTTP response error"):
+                    await client._request_async(session, "query { test }", context="Model: field=value")
 
     @pytest.mark.asyncio
     async def test_client_error_async_with_context(self):
@@ -375,8 +375,8 @@ class TestRequestAsyncErrorHandling:
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ClientError("Client error")):
-                result = await client._request_async(session, "query { test }", context="Model: field=value")
-                assert result is None
+                with pytest.raises(aiohttp.ClientError, match="Client error"):
+                    await client._request_async(session, "query { test }", context="Model: field=value")
 
     @pytest.mark.asyncio
     async def test_graphql_error_async_with_context(self):
@@ -394,8 +394,27 @@ class TestRequestAsyncErrorHandling:
             with patch.object(session, "post") as mock_post:
                 mock_post.return_value.__aenter__.return_value = mock_response
 
-                result = await client._request_async(session, "query { test }", context="Model: field=value")
-                assert result is None
+                with pytest.raises(GraphQLError, match="GraphQL errors"):
+                    await client._request_async(session, "query { test }", context="Model: field=value")
+
+    @pytest.mark.asyncio
+    async def test_http_error_status_code_async(self):
+        """Test non-200 status code raises exception"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            mock_response = AsyncMock()
+            mock_response.status = 500
+            mock_response.text = AsyncMock(return_value="Internal Server Error")
+
+            with patch.object(session, "post") as mock_post:
+                mock_post.return_value.__aenter__.return_value = mock_response
+
+                with pytest.raises(aiohttp.ClientError, match="HTTP Error 500"):
+                    await client._request_async(session, "query { test }")
 
 
 class TestPagination:

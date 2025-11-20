@@ -146,11 +146,12 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure)
+        records, failed_parsing = migrator.transform_rows_to_records(df, parsed_model_structure, "name")
 
         assert len(records) == 2
         assert records[0]["name"] == "John"
         assert records[1]["name"] == "Jane"
+        assert len(failed_parsing) == 0
 
     def test_converts_column_names_to_camel_case(self):
         """Test that DataFrame columns are converted to camelCase"""
@@ -169,7 +170,7 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        migrator.transform_rows_to_records(df, parsed_model_structure)
+        records, failed_parsing = migrator.transform_rows_to_records(df, parsed_model_structure, "userName")
 
         # Check that columns were converted to camelCase
         assert "userName" in captured_rows[0]
@@ -194,12 +195,74 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure)
+        records, failed_parsing = migrator.transform_rows_to_records(df, parsed_model_structure, "name")
 
         # Should have 2 records (skipped the one with error)
         assert len(records) == 2
         assert records[0]["name"] == "John"
         assert records[1]["name"] == "Bob"
+
+        # Should have 1 failed parsing record
+        assert len(failed_parsing) == 1
+        assert failed_parsing[0]["primary_field"] == "name"
+        assert failed_parsing[0]["primary_field_value"] == "Jane"
+        assert "Parsing error: Test error" in failed_parsing[0]["error"]
+        assert failed_parsing[0]["row_number"] == 2
+
+    def test_tracks_multiple_parsing_failures(self):
+        """Test that multiple parsing failures are tracked"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Mock to raise error for rows 2 and 4
+        call_count = [0]
+
+        def mock_transform(row, _, fk_cache):
+            call_count[0] += 1
+            if call_count[0] in [2, 4]:
+                raise ValueError(f"Error in row {call_count[0]}")
+            return {"name": row["name"]}
+
+        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+
+        df = pd.DataFrame({"name": ["Alice", "Bob", "Charlie", "David", "Eve"]})
+
+        parsed_model_structure = {"fields": []}
+
+        records, failed_parsing = migrator.transform_rows_to_records(df, parsed_model_structure, "name")
+
+        # Should have 3 successful records
+        assert len(records) == 3
+        assert records[0]["name"] == "Alice"
+        assert records[1]["name"] == "Charlie"
+        assert records[2]["name"] == "Eve"
+
+        # Should have 2 failed parsing records
+        assert len(failed_parsing) == 2
+        assert failed_parsing[0]["primary_field_value"] == "Bob"
+        assert failed_parsing[0]["row_number"] == 2
+        assert failed_parsing[1]["primary_field_value"] == "David"
+        assert failed_parsing[1]["row_number"] == 4
+
+    def test_uses_row_number_when_primary_field_missing(self):
+        """Test that row number is used when primary field value is missing"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        def mock_transform(row, _, fk_cache):
+            raise ValueError("Missing required field")
+
+        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+
+        # DataFrame without the primary field
+        df = pd.DataFrame({"otherField": ["value1"]})
+
+        parsed_model_structure = {"fields": []}
+
+        records, failed_parsing = migrator.transform_rows_to_records(df, parsed_model_structure, "name")
+
+        # Should have 1 failed parsing record with row number as fallback
+        assert len(failed_parsing) == 1
+        assert failed_parsing[0]["primary_field_value"] == "Row 1"
+        assert failed_parsing[0]["row_number"] == 1
 
 
 class TestReadExcel:
