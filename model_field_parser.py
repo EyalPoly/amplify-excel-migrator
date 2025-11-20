@@ -2,6 +2,7 @@ from typing import Dict, Any
 import logging
 import pandas as pd
 import unicodedata
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class ModelFieldParser:
 
     def parse_model_structure(self, introspection_result: Dict) -> Dict[str, Any]:
         if not introspection_result:
-            logger.error("Empty introspection result received")
+            logger.error("Empty introspection result received", exc_info=True)
             raise ValueError("Introspection result cannot be empty")
 
         if "data" in introspection_result and "__type" in introspection_result["data"]:
@@ -222,9 +223,8 @@ class ModelFieldParser:
     def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
         try:
             if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
-                if isinstance(input_value, str) and "-" in str(input_value):
-                    input_value = sum([p.strip() for p in str(input_value).split("-") if p.strip()])
-                return int(input_value) if field["type"] in ["Int", "Integer"] else float(input_value)
+                parsed_value = self.parse_number_dash_notation(input_value)
+                return int(parsed_value) if field["type"] in ["Int", "Integer"] else float(parsed_value)
             elif field["type"] == "Float":
                 return float(input_value)
             elif field["type"] == "Boolean":
@@ -244,15 +244,48 @@ class ModelFieldParser:
             else:
                 return str(input_value).strip()
         except (ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse value '{input_value}' for field type '{field['type']}': {e}")
+            logger.warning(
+                f"Failed to parse field '{field_name}' with value '{input_value}' (type: {type(input_value).__name__}) "
+                f"for field type '{field['type']}': {e}",
+                exc_info=True,
+            )
             return None
+
+    @staticmethod
+    def parse_number_dash_notation(input_value: Any) -> int | float:
+        """
+        Parse number-dash notation like "2-2" to sum (4).
+        Handles cases where pandas auto-converted "2-2" to datetime.
+
+        Examples:
+        - "2-2" -> 4
+        - "2-2-2" -> 6
+        - datetime(2025, 2, 2) -> 4 (extracts month and day)
+        """
+
+        if isinstance(input_value, (pd.Timestamp, datetime)):
+            input_value = str(input_value)
+
+        # Handle datetime strings that pandas created from "2-2" -> "2025-02-02 00:00:00"
+        if isinstance(input_value, str) and " " in input_value and ":" in input_value:
+            date_part = input_value.split(" ")[0]
+            if "-" in date_part:
+                parts = date_part.split("-")
+                if len(parts) == 3:
+                    return sum([int(parts[1]), int(parts[2])])
+                else:
+                    return sum([int(p) for p in parts])
+
+        if isinstance(input_value, str) and "-" in str(input_value):
+            return sum([int(p.strip()) for p in str(input_value).split("-") if p.strip()])
+
+        return input_value
 
     @staticmethod
     def clean_input(input_value: Any) -> Any:
         if isinstance(input_value, str):
             input_value = input_value.strip()
 
-            # Clean invisible Unicode control and format characters from string values
             input_value = "".join(
                 char
                 for char in input_value
@@ -262,11 +295,20 @@ class ModelFieldParser:
         return input_value
 
     @staticmethod
-    def parse_date(input: Any) -> str:
+    def parse_date(input: Any) -> str | None:
+        if isinstance(input, (pd.Timestamp, datetime)):
+            return input.date().isoformat()
+
+        input_str = str(input).strip()
+
         try:
-            return pd.to_datetime(input, format="%d/%m/%Y").date().isoformat()
-        except ValueError:
+            return pd.to_datetime(input_str, format="%d/%m/%Y").date().isoformat()
+        except (ValueError, OverflowError):
             try:
-                return pd.to_datetime(input, format="%d-%m-%Y").date().isoformat()
-            except ValueError:
-                return pd.to_datetime(input).date().isoformat()
+                return pd.to_datetime(input_str, format="%d-%m-%Y").date().isoformat()
+            except (ValueError, OverflowError):
+                try:
+                    return pd.to_datetime(input_str).date().isoformat()
+                except (ValueError, OverflowError) as e:
+                    logger.error(f"Failed to parse date '{input}': {e}")
+                    return None

@@ -17,6 +17,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+class AuthenticationError(Exception):
+    """Raised when authentication is required but not completed"""
+
+    pass
+
+
+class GraphQLError(Exception):
+    """Raised when GraphQL query returns errors"""
+
+    pass
+
+
 class AmplifyClient:
     """
     Client for Amplify GraphQL using ADMIN_USER_PASSWORD_AUTH flow
@@ -278,23 +290,26 @@ class AmplifyClient:
         if self.admin_group_name not in groups:
             raise PermissionError("User is not in ADMINS group")
 
-    def _request(self, query: str, variables: Dict = None) -> Any | None:
+    def _request(self, query: str, variables: Dict = None, context: str = None) -> Any | None:
         """
         Make a GraphQL request using the ID token
 
         Args:
             query: GraphQL query or mutation
             variables: Variables for the query
+            context: Optional context string to include in error messages (e.g., row identifier)
 
         Returns:
             Response data
         """
         if not self.id_token:
-            raise Exception("Not authenticated. Call authenticate() first.")
+            raise AuthenticationError("Not authenticated. Call authenticate() first.")
 
         headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
         payload = {"query": query, "variables": variables or {}}
+
+        context_msg = f" [{context}]" if context else ""
 
         try:
             response = requests.post(self.api_endpoint, headers=headers, json=payload)
@@ -303,25 +318,38 @@ class AmplifyClient:
                 result = response.json()
 
                 if "errors" in result:
-                    logger.error(f"GraphQL errors: {result['errors']}")
-                    return None
+                    raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
 
                 return result
             else:
-                logger.error(f"HTTP Error {response.status_code}: {response.text}")
+                logger.error(f"HTTP Error {response.status_code}{context_msg}: {response.text}")
                 return None
 
-        except Exception as e:
-            if "NameResolutionError" in str(e):
-                logger.error(
-                    f"Connection error: Unable to resolve hostname. Check your internet connection or the API endpoint URL."
-                )
-                sys.exit(1)
-            else:
-                logger.error(f"Request error: {e}")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"Connection error{context_msg}: Unable to connect to API endpoint. Check your internet connection or the API endpoint URL."
+            )
+            sys.exit(1)
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Request timeout{context_msg}: {e}")
             return None
 
-    async def _request_async(self, session: aiohttp.ClientSession, query: str, variables: Dict = None) -> Any | None:
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error{context_msg}: {e}")
+            return None
+
+        except GraphQLError as e:
+            logger.error(str(e))
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error{context_msg}: {e}")
+            return None
+
+    async def _request_async(
+        self, session: aiohttp.ClientSession, query: str, variables: Dict = None, context: str = None
+    ) -> Any | None:
         """
         Async version of _request for parallel GraphQL requests
 
@@ -329,16 +357,19 @@ class AmplifyClient:
             session: aiohttp ClientSession
             query: GraphQL query or mutation
             variables: Variables for the query
+            context: Optional context string to include in error messages (e.g., row identifier)
 
         Returns:
             Response data
         """
         if not self.id_token:
-            raise Exception("Not authenticated. Call authenticate() first.")
+            raise AuthenticationError("Not authenticated. Call authenticate() first.")
 
         headers = {"Authorization": self.id_token, "Content-Type": "application/json"}
 
         payload = {"query": query, "variables": variables or {}}
+
+        context_msg = f" [{context}]" if context else ""
 
         try:
             async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
@@ -346,16 +377,32 @@ class AmplifyClient:
                     result = await response.json()
 
                     if "errors" in result:
-                        logger.error(f"GraphQL errors: {result['errors']}")
-                        return None
+                        raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
 
                     return result
                 else:
                     text = await response.text()
-                    logger.error(f"HTTP Error {response.status}: {text}")
+                    logger.error(f"HTTP Error {response.status}{context_msg}: {text}")
                     return None
-        except Exception as e:
-            logger.error(f"Request error: {e}")
+
+        except aiohttp.ClientConnectionError as e:
+            logger.error(f"Connection error{context_msg}: Unable to connect to API endpoint. {e}")
+            return None
+
+        except aiohttp.ServerTimeoutError as e:
+            logger.error(f"Request timeout{context_msg}: {e}")
+            return None
+
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"HTTP response error{context_msg}: {e}")
+            return None
+
+        except GraphQLError as e:
+            logger.error(str(e))
+            return None
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Client error{context_msg}: {e}")
             return None
 
     async def create_record_async(
@@ -370,13 +417,16 @@ class AmplifyClient:
         }}
         """
 
-        result = await self._request_async(session, mutation, {"input": data})
+        context = f"{model_name}: {primary_field}={data.get(primary_field)}"
+        result = await self._request_async(session, mutation, {"input": data}, context)
 
         if result and "data" in result:
             created = result["data"].get(f"create{model_name}")
             if created:
                 logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
             return created
+        else:
+            logger.error(f'Failed to create {model_name} with {primary_field}="{data[primary_field]}"')
 
         return None
 
@@ -390,6 +440,8 @@ class AmplifyClient:
         record: Dict,
         field_type: str = "String",
     ) -> Dict | None:
+        context = f"{model_name}: {primary_field}={value}"
+
         if is_secondary_index:
             query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
             query = f"""
@@ -401,7 +453,7 @@ class AmplifyClient:
               }}
             }}
             """
-            result = await self._request_async(session, query, {primary_field: value})
+            result = await self._request_async(session, query, {primary_field: value}, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
@@ -419,7 +471,7 @@ class AmplifyClient:
             }}
             """
             filter_input = {primary_field: {"eq": value}}
-            result = await self._request_async(session, query, {"filter": filter_input})
+            result = await self._request_async(session, query, {"filter": filter_input}, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:

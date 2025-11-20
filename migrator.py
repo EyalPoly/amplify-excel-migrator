@@ -82,7 +82,6 @@ class ExcelToAmplifyMigrator:
     def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
         all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
-
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 
