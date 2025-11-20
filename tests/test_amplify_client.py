@@ -2,8 +2,11 @@
 
 import pytest
 import pandas as pd
-from unittest.mock import MagicMock
-from amplify_client import AmplifyClient
+import asyncio
+import aiohttp
+import requests
+from unittest.mock import MagicMock, Mock, patch, AsyncMock
+from amplify_client import AmplifyClient, AuthenticationError, GraphQLError
 
 
 class TestBuildForeignKeyLookups:
@@ -15,8 +18,7 @@ class TestBuildForeignKeyLookups:
             api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
-        # Mock methods
-        client.get_primary_field_name = MagicMock(return_value=("name", False))
+        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(
             return_value=[
                 {"id": "reporter-1", "name": "John Doe"},
@@ -90,7 +92,7 @@ class TestBuildForeignKeyLookups:
             api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False))
+        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=[{"id": "author-1", "name": "Author One"}])
 
         df = pd.DataFrame({"author": ["Author One"]})
@@ -135,7 +137,7 @@ class TestBuildForeignKeyLookups:
             api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False))
+        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=[{"id": "reporter-1", "name": "John Doe"}])
 
         df = pd.DataFrame({"photographer": ["John Doe"], "editor": ["Jane Smith"]})
@@ -162,7 +164,7 @@ class TestBuildForeignKeyLookups:
             api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False))
+        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=None)  # API returns None
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
@@ -181,7 +183,7 @@ class TestBuildForeignKeyLookups:
             api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
         )
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False))
+        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(
             return_value=[
                 {"id": "reporter-1", "name": "John Doe"},
@@ -202,3 +204,494 @@ class TestBuildForeignKeyLookups:
         assert len(result["Reporter"]["lookup"]) == 2
         assert "John Doe" in result["Reporter"]["lookup"]
         assert "Jane Smith" in result["Reporter"]["lookup"]
+
+
+class TestCustomExceptions:
+    """Test custom exception classes"""
+
+    def test_authentication_error_raised(self):
+        """Test that AuthenticationError is raised when not authenticated"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+
+        with pytest.raises(AuthenticationError, match="Not authenticated"):
+            client._request("query { test }")
+
+    def test_graphql_error_raised(self):
+        """Test that GraphQLError is raised for GraphQL errors"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post") as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"errors": [{"message": "GraphQL Error"}]}
+            mock_post.return_value = mock_response
+
+            result = client._request("query { test }")
+
+            # Should return None after logging the error
+            assert result is None
+
+
+class TestRequestErrorHandling:
+    """Test error handling in _request method"""
+
+    def test_connection_error_with_context(self):
+        """Test ConnectionError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post", side_effect=requests.exceptions.ConnectionError("Connection failed")):
+            with pytest.raises(SystemExit):  # Connection errors exit the system
+                client._request("query { test }", context="Model: field=value")
+
+    def test_timeout_error_with_context(self):
+        """Test Timeout error handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post", side_effect=requests.exceptions.Timeout("Request timeout")):
+            result = client._request("query { test }", context="Model: field=value")
+            assert result is None
+
+    def test_http_error_with_context(self):
+        """Test HTTPError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post", side_effect=requests.exceptions.HTTPError("HTTP error")):
+            result = client._request("query { test }", context="Model: field=value")
+            assert result is None
+
+    def test_request_exception_with_context(self):
+        """Test RequestException handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post", side_effect=requests.exceptions.RequestException("Request error")):
+            result = client._request("query { test }", context="Model: field=value")
+            assert result is None
+
+    def test_http_error_status_code_with_context(self):
+        """Test non-200 status code with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch("requests.post") as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 500
+            mock_response.text = "Internal Server Error"
+            mock_post.return_value = mock_response
+
+            result = client._request("query { test }", context="Model: field=value")
+            assert result is None
+
+
+class TestRequestAsyncErrorHandling:
+    """Test error handling in _request_async method"""
+
+    @pytest.mark.asyncio
+    async def test_authentication_error_async(self):
+        """Test that AuthenticationError is raised when not authenticated"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+
+        async with aiohttp.ClientSession() as session:
+            with pytest.raises(AuthenticationError, match="Not authenticated"):
+                await client._request_async(session, "query { test }")
+
+    @pytest.mark.asyncio
+    async def test_connection_error_async_with_context(self):
+        """Test ClientConnectionError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            with patch.object(session, "post", side_effect=aiohttp.ClientConnectionError("Connection failed")):
+                result = await client._request_async(session, "query { test }", context="Model: field=value")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_async_with_context(self):
+        """Test ServerTimeoutError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            with patch.object(session, "post", side_effect=aiohttp.ServerTimeoutError("Request timeout")):
+                result = await client._request_async(session, "query { test }", context="Model: field=value")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_client_response_error_async_with_context(self):
+        """Test ClientResponseError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            # Create a proper ClientResponseError
+            request_info = aiohttp.RequestInfo(
+                url="https://test.com", method="POST", headers={}, real_url="https://test.com"
+            )
+            history = ()
+            with patch.object(
+                session,
+                "post",
+                side_effect=aiohttp.ClientResponseError(
+                    request_info=request_info, history=history, status=500, message="Server error"
+                ),
+            ):
+                result = await client._request_async(session, "query { test }", context="Model: field=value")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_client_error_async_with_context(self):
+        """Test ClientError handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            with patch.object(session, "post", side_effect=aiohttp.ClientError("Client error")):
+                result = await client._request_async(session, "query { test }", context="Model: field=value")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_graphql_error_async_with_context(self):
+        """Test GraphQL error handling with context"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        async with aiohttp.ClientSession() as session:
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={"errors": [{"message": "GraphQL Error"}]})
+
+            with patch.object(session, "post") as mock_post:
+                mock_post.return_value.__aenter__.return_value = mock_response
+
+                result = await client._request_async(session, "query { test }", context="Model: field=value")
+                assert result is None
+
+
+class TestPagination:
+    """Test pagination logic in list_records_by_secondary_index"""
+
+    def test_single_page_query(self):
+        """Test query that returns all items in single page (no nextToken)"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            # Simulate single page response with no nextToken
+            mock_request.return_value = {
+                "data": {
+                    "listReporters": {
+                        "items": [
+                            {"id": "1", "name": "Reporter 1"},
+                            {"id": "2", "name": "Reporter 2"},
+                        ],
+                        "nextToken": None,
+                    }
+                }
+            }
+
+            result = client.list_records_by_secondary_index("Reporter", "name")
+
+            # Should call _request once
+            mock_request.assert_called_once()
+            # Should return all items
+            assert len(result) == 2
+            assert result[0]["name"] == "Reporter 1"
+            assert result[1]["name"] == "Reporter 2"
+
+    def test_multiple_pages_query(self):
+        """Test query that returns items across multiple pages"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            # Simulate multiple page responses
+            mock_request.side_effect = [
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "1", "name": "Reporter 1"}],
+                            "nextToken": "token1",
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "2", "name": "Reporter 2"}],
+                            "nextToken": "token2",
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "3", "name": "Reporter 3"}],
+                            "nextToken": None,  # Last page
+                        }
+                    }
+                },
+            ]
+
+            result = client.list_records_by_secondary_index("Reporter", "name")
+
+            # Should call _request three times
+            assert mock_request.call_count == 3
+            # Should return all items from all pages
+            assert len(result) == 3
+            assert result[0]["name"] == "Reporter 1"
+            assert result[1]["name"] == "Reporter 2"
+            assert result[2]["name"] == "Reporter 3"
+
+    def test_pagination_with_limit_1000(self):
+        """Test that pagination uses limit of 1000"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            mock_request.return_value = {
+                "data": {
+                    "listReporters": {
+                        "items": [{"id": "1", "name": "Reporter 1"}],
+                        "nextToken": None,
+                    }
+                }
+            }
+
+            client.list_records_by_secondary_index("Reporter", "name")
+
+            # Verify limit parameter is set to 1000
+            call_args = mock_request.call_args
+            variables = call_args[0][1]  # Second positional argument
+            assert variables["limit"] == 1000
+
+    def test_pagination_passes_nexttoken(self):
+        """Test that nextToken is passed correctly between pages"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            mock_request.side_effect = [
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "1", "name": "Reporter 1"}],
+                            "nextToken": "token1",
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "2", "name": "Reporter 2"}],
+                            "nextToken": None,
+                        }
+                    }
+                },
+            ]
+
+            client.list_records_by_secondary_index("Reporter", "name")
+
+            # First call should have None for nextToken
+            first_call_vars = mock_request.call_args_list[0][0][1]
+            assert first_call_vars["nextToken"] is None
+
+            # Second call should have token1
+            second_call_vars = mock_request.call_args_list[1][0][1]
+            assert second_call_vars["nextToken"] == "token1"
+
+    def test_empty_results_no_pagination(self):
+        """Test query that returns no items"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            mock_request.return_value = {
+                "data": {
+                    "listReporters": {
+                        "items": [],
+                        "nextToken": None,
+                    }
+                }
+            }
+
+            result = client.list_records_by_secondary_index("Reporter", "name")
+
+            # Should call _request once
+            mock_request.assert_called_once()
+            # Should return None for empty results
+            assert result is None
+
+    def test_error_handling_stops_pagination(self):
+        """Test that errors stop pagination loop"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listReporters")
+
+        with patch.object(client, "_request") as mock_request:
+            mock_request.side_effect = [
+                {
+                    "data": {
+                        "listReporters": {
+                            "items": [{"id": "1", "name": "Reporter 1"}],
+                            "nextToken": "token1",
+                        }
+                    }
+                },
+                None,  # Error on second page
+            ]
+
+            result = client.list_records_by_secondary_index("Reporter", "name")
+
+            # Should call _request twice and stop
+            assert mock_request.call_count == 2
+            # Should return items from successful pages only
+            assert len(result) == 1
+            assert result[0]["name"] == "Reporter 1"
+
+    def test_pagination_with_secondary_index_value(self):
+        """Test pagination with specific secondary index value"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        with patch.object(client, "_request") as mock_request:
+            mock_request.side_effect = [
+                {
+                    "data": {
+                        "listReporterByName": {
+                            "items": [{"id": "1", "name": "John Doe"}],
+                            "nextToken": "token1",
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "listReporterByName": {
+                            "items": [{"id": "2", "name": "John Doe"}],
+                            "nextToken": None,
+                        }
+                    }
+                },
+            ]
+
+            result = client.list_records_by_secondary_index("Reporter", "name", value="John Doe")
+
+            # Should call _request twice
+            assert mock_request.call_count == 2
+            # Should return all items with the given value
+            assert len(result) == 2
+            # Verify the secondary index value was passed
+            first_call_vars = mock_request.call_args_list[0][0][1]
+            assert first_call_vars["name"] == "John Doe"
+
+
+class TestContextInAsyncMethods:
+    """Test context parameter in async methods"""
+
+    @pytest.mark.asyncio
+    async def test_create_record_async_includes_context(self):
+        """Test that create_record_async passes context to _request_async"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+
+        data = {"name": "Test Name"}
+
+        async with aiohttp.ClientSession() as session:
+            with patch.object(client, "_request_async", new_callable=AsyncMock) as mock_request:
+                mock_request.return_value = {"data": {"createTestModel": {"id": "test-id", "name": "Test Name"}}}
+
+                await client.create_record_async(session, data, "TestModel", "name")
+
+                # Verify context was passed
+                mock_request.assert_called_once()
+                # Check if context is in args or kwargs
+                call_args = mock_request.call_args
+                # The context parameter is passed as keyword argument
+                # Access it from args (positional) or kwargs depending on how it was called
+                if "context" in call_args.kwargs:
+                    assert call_args.kwargs["context"] == "TestModel: name=Test Name"
+                else:
+                    # It might be passed positionally, so check args
+                    assert len(call_args.args) >= 4
+                    assert call_args.args[3] == "TestModel: name=Test Name"
+
+    @pytest.mark.asyncio
+    async def test_check_record_exists_async_includes_context(self):
+        """Test that check_record_exists_async passes context to _request_async"""
+        client = AmplifyClient(
+            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
+        )
+        client.id_token = "test-token"
+        client._get_list_query_name = MagicMock(return_value="listTestModels")
+
+        record = {"name": "Test Name"}
+
+        async with aiohttp.ClientSession() as session:
+            with patch.object(client, "_request_async", new_callable=AsyncMock) as mock_request:
+                mock_request.return_value = {"data": {"listTestModels": {"items": []}}}
+
+                await client.check_record_exists_async(session, "TestModel", "name", "Test Name", False, record)
+
+                # Verify context was passed
+                mock_request.assert_called_once()
+                # Check if context is in args or kwargs
+                call_args = mock_request.call_args
+                # The context parameter is passed as keyword argument
+                # Access it from args (positional) or kwargs depending on how it was called
+                if "context" in call_args.kwargs:
+                    assert call_args.kwargs["context"] == "TestModel: name=Test Name"
+                else:
+                    # It might be passed positionally, so check args
+                    assert len(call_args.args) >= 4
+                    assert call_args.args[3] == "TestModel: name=Test Name"

@@ -51,6 +51,16 @@ class TestExtractRelationshipInfo:
 class TestParseModelStructure:
     """Test parse_model_structure method with belongsTo relationships"""
 
+    def test_raises_value_error_on_empty_introspection(self):
+        """Test that ValueError is raised when introspection result is empty"""
+        parser = ModelFieldParser()
+
+        with pytest.raises(ValueError, match="Introspection result cannot be empty"):
+            parser.parse_model_structure(None)
+
+        with pytest.raises(ValueError, match="Introspection result cannot be empty"):
+            parser.parse_model_structure({})
+
     def test_includes_all_fields_except_metadata(self):
         """Test that all fields except metadata and relationship objects are included"""
         parser = ModelFieldParser()
@@ -238,6 +248,91 @@ class TestParseFieldWithRelationships:
             result = parser._parse_field(field)
 
             assert result == {}, f"Should skip metadata field: {field_name}"
+
+
+class TestCleanInput:
+    """Test clean_input static method for Unicode character cleaning"""
+
+    def test_strips_whitespace(self):
+        """Test that leading and trailing whitespace is stripped"""
+        parser = ModelFieldParser()
+
+        assert parser.clean_input("  test  ") == "test"
+        assert parser.clean_input("\t test \n") == "test"
+        assert parser.clean_input("   ") == ""
+
+    def test_removes_unicode_control_characters(self):
+        """Test that Unicode control characters (Cc) are removed"""
+        parser = ModelFieldParser()
+
+        # NULL character (U+0000)
+        assert parser.clean_input("test\x00value") == "testvalue"
+        # BELL character (U+0007)
+        assert parser.clean_input("test\x07value") == "testvalue"
+        # BACKSPACE character (U+0008)
+        assert parser.clean_input("test\x08value") == "testvalue"
+
+    def test_removes_unicode_format_characters(self):
+        """Test that Unicode format characters (Cf) are removed"""
+        parser = ModelFieldParser()
+
+        # Zero-width space (U+200B)
+        assert parser.clean_input("test\u200bvalue") == "testvalue"
+        # Zero-width non-joiner (U+200C)
+        assert parser.clean_input("test\u200cvalue") == "testvalue"
+        # Soft hyphen (U+00AD)
+        assert parser.clean_input("test\u00advalue") == "testvalue"
+        # Left-to-right mark (U+200E)
+        assert parser.clean_input("test\u200evalue") == "testvalue"
+
+    def test_preserves_newline_tab_carriage_return(self):
+        """Test that newline, tab, and carriage return are preserved"""
+        parser = ModelFieldParser()
+
+        # Newline (U+000A)
+        assert parser.clean_input("test\nvalue") == "test\nvalue"
+        # Tab (U+0009)
+        assert parser.clean_input("test\tvalue") == "test\tvalue"
+        # Carriage return (U+000D)
+        assert parser.clean_input("test\rvalue") == "test\rvalue"
+
+    def test_handles_non_string_input(self):
+        """Test that non-string values are returned unchanged"""
+        parser = ModelFieldParser()
+
+        assert parser.clean_input(123) == 123
+        assert parser.clean_input(123.45) == 123.45
+        assert parser.clean_input(None) is None
+        assert parser.clean_input(True) is True
+        assert parser.clean_input([1, 2, 3]) == [1, 2, 3]
+
+    def test_handles_empty_string(self):
+        """Test that empty string is handled correctly"""
+        parser = ModelFieldParser()
+
+        assert parser.clean_input("") == ""
+
+    def test_preserves_valid_unicode_characters(self):
+        """Test that valid Unicode characters are preserved"""
+        parser = ModelFieldParser()
+
+        # Emoji
+        assert parser.clean_input("test 😀 value") == "test 😀 value"
+        # Hebrew
+        assert parser.clean_input("שלום") == "שלום"
+        # Chinese
+        assert parser.clean_input("你好") == "你好"
+        # Arabic
+        assert parser.clean_input("مرحبا") == "مرحبا"
+
+    def test_complex_string_with_multiple_control_chars(self):
+        """Test cleaning string with multiple control characters"""
+        parser = ModelFieldParser()
+
+        # Mix of control characters that should be removed and preserved
+        input_str = "  test\x00\u200b\nvalue\t\u00adend  "
+        expected = "test\nvalue\tend"
+        assert parser.clean_input(input_str) == expected
 
 
 class TestIntegrationBelongsToFlow:
