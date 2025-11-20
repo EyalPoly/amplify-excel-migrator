@@ -59,25 +59,53 @@ class ExcelToAmplifyMigrator:
 
         total_success = 0
         total_failed = 0
+        failed_records_by_sheet = {}
 
         for sheet_name, df in all_sheets.items():
             logger.info(f"Processing {sheet_name} sheet with {len(df)} rows")
-            success, failed = self.process_sheet(df, sheet_name)
+            success, failed, failed_records = self.process_sheet(df, sheet_name)
             total_success += success
             total_failed += failed
 
-        logger.info("\n" + "=" * 60)
-        logger.info("MIGRATION SUMMARY")
-        logger.info("=" * 60)
-        logger.info(f"📊 Sheets processed: {len(all_sheets)}")
-        logger.info(f"✅ Total successful: {total_success}")
-        logger.info(f"❌ Total failed: {total_failed}")
-        logger.info(
+            if failed_records:
+                failed_records_by_sheet[sheet_name] = failed_records
+
+        print("\n" + "=" * 60)
+        print("MIGRATION SUMMARY")
+        print("=" * 60)
+        print(f"📊 Sheets processed: {len(all_sheets)}")
+        print(f"✅ Total successful: {total_success}")
+        print(f"❌ Total failed: {total_failed}")
+        print(
             f"📈 Success rate: {(total_success / (total_success + total_failed) * 100):.1f}%"
             if (total_success + total_failed) > 0
             else "📈 Success rate: N/A"
         )
-        logger.info("=" * 60)
+
+        if failed_records_by_sheet:
+            print("\n" + "=" * 60)
+            print("FAILED RECORDS DETAILS")
+            print("=" * 60)
+
+            for sheet_name, failed_records in failed_records_by_sheet.items():
+                print(f"\n📄 {sheet_name}:")
+                print("-" * 60)
+                for record in failed_records:
+                    primary_field_value = record.get("primary_field_value", "Unknown")
+                    error = record.get("error", "Unknown error")
+                    row_number = record.get("row_number")
+
+                    if row_number:
+                        print(f"  • Row {row_number}: {primary_field_value}")
+                    else:
+                        print(f"  • Record: {primary_field_value}")
+                    print(f"    Error: {error}")
+
+            print("\n" + "=" * 60)
+        else:
+            print("\n✨ No failed records!")
+
+        print("=" * 60)
 
     def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
@@ -85,26 +113,36 @@ class ExcelToAmplifyMigrator:
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 
-    def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> tuple[int, int]:
+    def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> tuple[int, int, list[Dict]]:
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
-        records = self.transform_rows_to_records(df, parsed_model_structure)
+        primary_field, _, _ = self.amplify_client.get_primary_field_name(sheet_name, parsed_model_structure)
+        records, failed_parsing = self.transform_rows_to_records(df, parsed_model_structure, primary_field)
+        total_failed = len(failed_parsing)
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
         if confirm.lower() != "yes":
             logger.info(f"Upload cancelled for {sheet_name} sheet")
-            return 0, 0
+            return 0, total_failed, failed_parsing
 
-        success_count, error_count = self.amplify_client.upload(records, sheet_name, parsed_model_structure)
+        success_count, upload_error_count, failed_uploads = self.amplify_client.upload(
+            records, sheet_name, parsed_model_structure
+        )
 
-        logger.info(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
-        logger.info(f"✅ Success: {success_count}")
-        logger.info(f"❌ Failed: {error_count}")
-        logger.info(f"📊 Total: {len(records)}")
+        all_failed_records = failed_parsing + failed_uploads
+        total_failed = len(all_failed_records)
 
-        return success_count, error_count
+        print(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
+        print(f"✅ Success: {success_count}")
+        print(f"❌ Failed: {total_failed} (Parsing: {len(failed_parsing)}, Upload: {upload_error_count})")
+        print(f"📊 Total: {len(df)}")
 
-    def transform_rows_to_records(self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any]) -> list[Any]:
+        return success_count, total_failed, all_failed_records
+
+    def transform_rows_to_records(
+        self, df: pd.DataFrame, parsed_model_structure: Dict[str, Any], primary_field: str
+    ) -> tuple[list[Any], list[Dict]]:
         records = []
+        failed_parsing = []
         row_count = 0
         df.columns = [self.to_camel_case(c) for c in df.columns]
 
@@ -115,17 +153,29 @@ class ExcelToAmplifyMigrator:
 
         for row_tuple in df.itertuples(index=False, name="Row"):
             row_count += 1
+            row_dict = {col: getattr(row_tuple, col) for col in df.columns}
             try:
-                row_dict = {col: getattr(row_tuple, col) for col in df.columns}
                 record = self.transform_row_to_record(row_dict, parsed_model_structure, fk_lookup_cache)
                 if record:
                     records.append(record)
             except Exception as e:
-                logger.error(f"Error transforming row {row_count}: {e}")
+                primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
+                error_msg = str(e)
+                logger.error(f"Error transforming row {row_count} ({primary_field}={primary_field_value}): {error_msg}")
+                failed_parsing.append(
+                    {
+                        "primary_field": primary_field,
+                        "primary_field_value": primary_field_value,
+                        "error": f"Parsing error: {error_msg}",
+                        "row_number": row_count,
+                    }
+                )
 
         logger.info(f"Prepared {len(records)} records for upload")
+        if failed_parsing:
+            logger.warning(f"Failed to parse {len(failed_parsing)} rows")
 
-        return records
+        return records, failed_parsing
 
     def get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
         model_structure = self.amplify_client.get_model_structure(sheet_name)

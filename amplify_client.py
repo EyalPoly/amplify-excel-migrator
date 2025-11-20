@@ -50,7 +50,7 @@ class AmplifyClient:
         self.region = region
         self.client_id = client_id
 
-        self.batch_size = 10
+        self.batch_size = 20
         self.cognito_client = None
         self.boto_cognito_admin_client = None
         self.id_token = None
@@ -382,28 +382,35 @@ class AmplifyClient:
                     return result
                 else:
                     text = await response.text()
-                    logger.error(f"HTTP Error {response.status}{context_msg}: {text}")
-                    return None
-
-        except aiohttp.ClientConnectionError as e:
-            logger.error(f"Connection error{context_msg}: Unable to connect to API endpoint. {e}")
-            return None
+                    error_msg = f"HTTP Error {response.status}{context_msg}: {text}"
+                    logger.error(error_msg)
+                    raise aiohttp.ClientError(error_msg)
 
         except aiohttp.ServerTimeoutError as e:
-            logger.error(f"Request timeout{context_msg}: {e}")
-            return None
+            error_msg = f"Request timeout{context_msg}: {e}"
+            logger.error(error_msg)
+            raise aiohttp.ServerTimeoutError(error_msg)
+
+        except aiohttp.ClientConnectionError as e:
+            error_msg = f"Connection error{context_msg}: Unable to connect to API endpoint. {e}"
+            logger.error(error_msg)
+            raise aiohttp.ClientConnectionError(error_msg)
 
         except aiohttp.ClientResponseError as e:
-            logger.error(f"HTTP response error{context_msg}: {e}")
-            return None
+            error_msg = f"HTTP response error{context_msg}: {e}"
+            logger.error(error_msg)
+            raise aiohttp.ClientResponseError(
+                request_info=e.request_info, history=e.history, status=e.status, message=error_msg
+            )
 
         except GraphQLError as e:
             logger.error(str(e))
-            return None
+            raise
 
         except aiohttp.ClientError as e:
-            logger.error(f"Client error{context_msg}: {e}")
-            return None
+            error_msg = f"Client error{context_msg}: {e}"
+            logger.error(error_msg)
+            raise aiohttp.ClientError(error_msg)
 
     async def create_record_async(
         self, session: aiohttp.ClientSession, data: Dict, model_name: str, primary_field: str
@@ -482,7 +489,7 @@ class AmplifyClient:
 
     async def upload_batch_async(
         self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool, field_type: str = "String"
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[Dict]]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
                 self.check_record_exists_async(
@@ -493,24 +500,53 @@ class AmplifyClient:
             check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
 
             filtered_batch = []
-            for result in check_results:
+            failed_records = []
+
+            for i, result in enumerate(check_results):
                 if isinstance(result, Exception):
+                    error_msg = str(result)
+                    failed_records.append(
+                        {
+                            "primary_field": primary_field,
+                            "primary_field_value": batch[i].get(primary_field, "Unknown"),
+                            "error": f"Duplicate check error: {error_msg}",
+                        }
+                    )
                     logger.error(f"Error checking duplicate: {result}")
                 elif result is not None:
                     filtered_batch.append(result)
 
             if not filtered_batch:
-                return 0, len(batch)
+                return 0, len(batch), failed_records
 
             create_tasks = [
                 self.create_record_async(session, record, model_name, primary_field) for record in filtered_batch
             ]
             results = await asyncio.gather(*create_tasks, return_exceptions=True)
 
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    error_msg = str(result)
+                    failed_records.append(
+                        {
+                            "primary_field": primary_field,
+                            "primary_field_value": filtered_batch[i].get(primary_field, "Unknown"),
+                            "error": error_msg,
+                        }
+                    )
+                elif not result:
+                    failed_records.append(
+                        {
+                            "primary_field": primary_field,
+                            "primary_field_value": filtered_batch[i].get(primary_field, "Unknown"),
+                            "error": "Creation failed - no response",
+                        }
+                    )
+
             success_count = sum(1 for r in results if r and not isinstance(r, Exception))
             error_count = len(batch) - success_count
 
-            return success_count, error_count
+            return success_count, error_count, failed_records
 
     def get_model_structure(self, model_type: str) -> Dict:
         query = f"""
@@ -620,33 +656,37 @@ class AmplifyClient:
         logger.error(f"No list query found for model {model_name}, tried: {candidates}")
         return None
 
-    def upload(self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[int, int]:
+    def upload(
+        self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]
+    ) -> tuple[int, int, list[Dict]]:
         logger.info("Uploading to Amplify backend...")
 
         success_count = 0
         error_count = 0
+        all_failed_records = []
         num_of_batches = (len(records) + self.batch_size - 1) // self.batch_size
 
         primary_field, is_secondary_index, field_type = self.get_primary_field_name(model_name, parsed_model_structure)
         if not primary_field:
             logger.error(f"Aborting upload for model {model_name}")
-            return 0, len(records)
+            return 0, len(records), []
 
         for i in range(0, len(records), self.batch_size):
             batch = records[i : i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
-            batch_success, batch_error = asyncio.run(
+            batch_success, batch_error, batch_failed_records = asyncio.run(
                 self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
             )
             success_count += batch_success
             error_count += batch_error
+            all_failed_records.extend(batch_failed_records)
 
             logger.info(
                 f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors"
             )
 
-        return success_count, error_count
+        return success_count, error_count, all_failed_records
 
     def list_records_by_secondary_index(
         self, model_name: str, secondary_index: str, value: str = None, fields: list = None, field_type: str = "String"
