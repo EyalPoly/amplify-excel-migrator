@@ -22,7 +22,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 class ExcelToAmplifyMigrator:
     def __init__(self, excel_file_path: str):
         self._current_sheet = None
-        self.failed_records_by_sheet = None
+        self.failed_records_by_sheet = {}
         self.model_field_parser = ModelFieldParser()
         self.excel_file_path = excel_file_path
         self.amplify_client = None
@@ -96,12 +96,7 @@ class ExcelToAmplifyMigrator:
                 for record in failed_records:
                     primary_field_value = record.get("primary_field_value", "Unknown")
                     error = record.get("error", "Unknown error")
-                    row_number = record.get("row_number")
-
-                    if row_number:
-                        print(f"  • Row {row_number}: {primary_field_value}")
-                    else:
-                        print(f"  • Record: {primary_field_value}")
+                    print(f"  • Record: {primary_field_value}")
                     print(f"    Error: {error}")
 
             print("\n" + "=" * 60)
@@ -135,12 +130,7 @@ class ExcelToAmplifyMigrator:
                 rows_data = []
                 for record in failed_records:
                     row_data = record.get("original_row", {}).copy()
-
-                    if "row_number" in record:
-                        row_data = {"ROW_NUMBER": record["row_number"], **row_data}
-
                     row_data["ERROR"] = record["error"]
-
                     rows_data.append(row_data)
 
                 df = pd.DataFrame(rows_data)
@@ -229,7 +219,6 @@ class ExcelToAmplifyMigrator:
                     primary_field=primary_field,
                     primary_field_value=primary_field_value,
                     error=f"Parsing error: {error_msg}",
-                    row_number=row_count,
                     original_row=row_dict,
                 )
 
@@ -246,7 +235,6 @@ class ExcelToAmplifyMigrator:
         primary_field: str,
         primary_field_value: str,
         error: str,
-        row_number: int = None,
         original_row: Dict = None,
     ) -> None:
         if self._current_sheet not in self.failed_records_by_sheet:
@@ -257,9 +245,6 @@ class ExcelToAmplifyMigrator:
             "primary_field_value": primary_field_value,
             "error": error,
         }
-
-        if row_number is not None:
-            failure_record["row_number"] = row_number
 
         if original_row is not None:
             failure_record["original_row"] = original_row

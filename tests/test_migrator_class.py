@@ -235,7 +235,6 @@ class TestTransformRowsToRecords:
         assert failed_parsing[0]["primary_field"] == "name"
         assert failed_parsing[0]["primary_field_value"] == "Jane"
         assert "Parsing error: Test error" in failed_parsing[0]["error"]
-        assert failed_parsing[0]["row_number"] == 2
 
     def test_tracks_multiple_parsing_failures(self):
         """Test that multiple parsing failures are tracked"""
@@ -277,9 +276,7 @@ class TestTransformRowsToRecords:
         failed_parsing = migrator.failed_records_by_sheet["TestSheet"]
         assert len(failed_parsing) == 2
         assert failed_parsing[0]["primary_field_value"] == "Bob"
-        assert failed_parsing[0]["row_number"] == 2
         assert failed_parsing[1]["primary_field_value"] == "David"
-        assert failed_parsing[1]["row_number"] == 4
 
     def test_uses_row_number_when_primary_field_missing(self):
         """Test that row number is used when primary field value is missing"""
@@ -310,7 +307,6 @@ class TestTransformRowsToRecords:
         failed_parsing = migrator.failed_records_by_sheet["TestSheet"]
         assert len(failed_parsing) == 1
         assert failed_parsing[0]["primary_field_value"] == "Row 1"
-        assert failed_parsing[0]["row_number"] == 1
 
     def test_stores_original_row_in_failure_records(self):
         """Test that original row data is stored when parsing fails"""
@@ -392,7 +388,6 @@ class TestWriteFailedRecordsToExcel:
                     "primary_field": "name",
                     "primary_field_value": "John",
                     "error": "Parsing error: Required field missing",
-                    "row_number": 1,
                     "original_row": {"name": "John", "email": "john@example.com", "age": 30},
                 },
                 {
@@ -415,7 +410,6 @@ class TestWriteFailedRecordsToExcel:
         df = pd.read_excel(output_path, sheet_name="Sheet1")
 
         # Verify columns exist
-        assert "ROW_NUMBER" in df.columns
         assert "name" in df.columns
         assert "email" in df.columns
         assert "age" in df.columns
@@ -426,13 +420,11 @@ class TestWriteFailedRecordsToExcel:
         assert df.loc[0, "name"] == "John"
         assert df.loc[0, "email"] == "john@example.com"
         assert df.loc[0, "age"] == 30
-        assert df.loc[0, "ROW_NUMBER"] == 1
         assert "Required field missing" in df.loc[0, "ERROR"]
 
         assert df.loc[1, "name"] == "Jane"
         assert df.loc[1, "email"] == "jane@example.com"
         assert df.loc[1, "age"] == 25
-        assert pd.isna(df.loc[1, "ROW_NUMBER"])  # Upload failures don't have row_number
         assert "GraphQL failed" in df.loc[1, "ERROR"]
 
     def test_returns_none_when_no_failures(self, tmp_path):
