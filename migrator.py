@@ -105,10 +105,50 @@ class ExcelToAmplifyMigrator:
                     print(f"    Error: {error}")
 
             print("\n" + "=" * 60)
+
+            failed_records_file = self._write_failed_records_to_excel()
+            if failed_records_file:
+                print(f"📁 Failed records exported to: {failed_records_file}")
+                print("=" * 60)
         else:
             print("\n✨ No failed records!")
 
         print("=" * 60)
+
+    def _write_failed_records_to_excel(self) -> str | None:
+        if not self.failed_records_by_sheet or all(
+            len(failures) == 0 for failures in self.failed_records_by_sheet.values()
+        ):
+            return None
+
+        input_path = Path(self.excel_file_path)
+        output_filename = f"{input_path.stem}_failed_records.xlsx"
+        output_path = input_path.parent / output_filename
+
+        logger.info(f"Writing failed records to {output_path}")
+
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            for sheet_name, failed_records in self.failed_records_by_sheet.items():
+                if not failed_records:
+                    continue
+
+                rows_data = []
+                for record in failed_records:
+                    row_data = record.get("original_row", {}).copy()
+
+                    if "row_number" in record:
+                        row_data = {"ROW_NUMBER": record["row_number"], **row_data}
+
+                    row_data["ERROR"] = record["error"]
+
+                    rows_data.append(row_data)
+
+                df = pd.DataFrame(rows_data)
+
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        logger.info(f"Successfully wrote failed records to {output_path}")
+        return str(output_path)
 
     def read_excel(self) -> Dict[str, Any]:
         logger.info(f"Reading Excel file: {self.excel_file_path}")
@@ -122,7 +162,7 @@ class ExcelToAmplifyMigrator:
 
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
 
-        records = self.transform_rows_to_records(df, parsed_model_structure, sheet_name)
+        records, row_dict_by_primary = self.transform_rows_to_records(df, parsed_model_structure, sheet_name)
 
         confirm = input(f"\nUpload {len(records)} records of {sheet_name} to Amplify? (yes/no): ")
         if confirm.lower() != "yes":
@@ -134,10 +174,14 @@ class ExcelToAmplifyMigrator:
         )
 
         for failed_upload in failed_uploads:
+            primary_value = str(failed_upload["primary_field_value"])
+            original_row = row_dict_by_primary.get(primary_value, {})
+
             self._record_failure(
                 primary_field=failed_upload["primary_field"],
                 primary_field_value=failed_upload["primary_field_value"],
                 error=failed_upload["error"],
+                original_row=original_row,
             )
 
         print(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
@@ -155,8 +199,9 @@ class ExcelToAmplifyMigrator:
         df: pd.DataFrame,
         parsed_model_structure: Dict[str, Any],
         sheet_name: str,
-    ) -> list[Any]:
+    ) -> tuple[list[Any], Dict[str, Dict]]:
         records = []
+        row_dict_by_primary = {}  # Maps primary_field_value to original row_dict
         row_count = 0
         df.columns = [self.to_camel_case(c) for c in df.columns]
         primary_field, _, _ = self.amplify_client.get_primary_field_name(sheet_name, parsed_model_structure)
@@ -169,12 +214,15 @@ class ExcelToAmplifyMigrator:
         for row_tuple in df.itertuples(index=False, name="Row"):
             row_count += 1
             row_dict = {col: getattr(row_tuple, col) for col in df.columns}
+            primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
+
+            row_dict_by_primary[str(primary_field_value)] = row_dict.copy()
+
             try:
                 record = self.transform_row_to_record(row_dict, parsed_model_structure, fk_lookup_cache)
                 if record:
                     records.append(record)
             except Exception as e:
-                primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
                 error_msg = str(e)
                 logger.error(f"Error transforming row {row_count} ({primary_field}={primary_field_value}): {error_msg}")
                 self._record_failure(
@@ -182,17 +230,25 @@ class ExcelToAmplifyMigrator:
                     primary_field_value=primary_field_value,
                     error=f"Parsing error: {error_msg}",
                     row_number=row_count,
+                    original_row=row_dict,
                 )
 
         logger.info(f"Prepared {len(records)} records for upload")
 
-        return records
+        return records, row_dict_by_primary
 
     def get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
         return self.model_field_parser.parse_model_structure(model_structure)
 
-    def _record_failure(self, primary_field: str, primary_field_value: str, error: str, row_number: int = None) -> None:
+    def _record_failure(
+        self,
+        primary_field: str,
+        primary_field_value: str,
+        error: str,
+        row_number: int = None,
+        original_row: Dict = None,
+    ) -> None:
         if self._current_sheet not in self.failed_records_by_sheet:
             self.failed_records_by_sheet[self._current_sheet] = []
 
@@ -204,6 +260,9 @@ class ExcelToAmplifyMigrator:
 
         if row_number is not None:
             failure_record["row_number"] = row_number
+
+        if original_row is not None:
+            failure_record["original_row"] = original_row
 
         self.failed_records_by_sheet[self._current_sheet].append(failure_record)
 
@@ -458,6 +517,6 @@ if __name__ == "__main__":
 
     # sys.argv = ["migrator.py", "config"]  # Test config command
     # sys.argv = ['migrator.py', 'show']    # Test show command
-    # sys.argv = ["migrator.py", "migrate"]  # Test migrate command
+    sys.argv = ["migrator.py", "migrate"]  # Test migrate command
 
     main()

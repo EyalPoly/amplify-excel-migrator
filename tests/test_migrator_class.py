@@ -155,7 +155,7 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
 
         assert len(records) == 2
         assert records[0]["name"] == "John"
@@ -188,7 +188,7 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
 
         # Check that columns were converted to camelCase
         assert "userName" in captured_rows[0]
@@ -222,7 +222,7 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
 
         # Should have 2 records (skipped the one with error)
         assert len(records) == 2
@@ -265,7 +265,7 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
 
         # Should have 3 successful records
         assert len(records) == 3
@@ -304,13 +304,201 @@ class TestTransformRowsToRecords:
 
         parsed_model_structure = {"fields": []}
 
-        records = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
 
         # Should have 1 failed parsing record with row number as fallback
         failed_parsing = migrator.failed_records_by_sheet["TestSheet"]
         assert len(failed_parsing) == 1
         assert failed_parsing[0]["primary_field_value"] == "Row 1"
         assert failed_parsing[0]["row_number"] == 1
+
+    def test_stores_original_row_in_failure_records(self):
+        """Test that original row data is stored when parsing fails"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Initialize instance state
+        migrator.failed_records_by_sheet = {}
+        migrator._current_sheet = "TestSheet"
+        migrator.failed_records_by_sheet["TestSheet"] = []
+
+        # Mock amplify_client
+        migrator.amplify_client = MagicMock()
+        migrator.amplify_client.get_primary_field_name.return_value = ("name", False, "String")
+
+        def mock_transform(row, _, fk_cache):
+            raise ValueError("Test error")
+
+        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+
+        df = pd.DataFrame({"name": ["John"], "email": ["john@example.com"], "age": [30]})
+
+        parsed_model_structure = {"fields": []}
+
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+
+        # Verify original row is stored
+        failed_parsing = migrator.failed_records_by_sheet["TestSheet"]
+        assert len(failed_parsing) == 1
+        assert "original_row" in failed_parsing[0]
+        assert failed_parsing[0]["original_row"]["name"] == "John"
+        assert failed_parsing[0]["original_row"]["email"] == "john@example.com"
+        assert failed_parsing[0]["original_row"]["age"] == 30
+
+    def test_builds_row_dict_by_primary_mapping(self):
+        """Test that row_dict_by_primary mapping is correctly built"""
+        migrator = ExcelToAmplifyMigrator("test.xlsx")
+
+        # Initialize instance state
+        migrator.failed_records_by_sheet = {}
+        migrator._current_sheet = "TestSheet"
+        migrator.failed_records_by_sheet["TestSheet"] = []
+
+        # Mock amplify_client
+        migrator.amplify_client = MagicMock()
+        migrator.amplify_client.get_primary_field_name.return_value = ("name", False, "String")
+
+        # Mock transform_row_to_record
+        migrator.transform_row_to_record = MagicMock(
+            side_effect=[{"name": "John", "email": "john@example.com"}, {"name": "Jane", "email": "jane@example.com"}]
+        )
+
+        df = pd.DataFrame({"Name": ["John", "Jane"], "Email": ["john@example.com", "jane@example.com"]})
+
+        parsed_model_structure = {"fields": []}
+
+        records, row_dict_by_primary = migrator.transform_rows_to_records(df, parsed_model_structure, "TestSheet")
+
+        # Verify row_dict_by_primary has correct mappings
+        assert "John" in row_dict_by_primary
+        assert "Jane" in row_dict_by_primary
+        assert row_dict_by_primary["John"]["name"] == "John"
+        assert row_dict_by_primary["John"]["email"] == "john@example.com"
+        assert row_dict_by_primary["Jane"]["name"] == "Jane"
+        assert row_dict_by_primary["Jane"]["email"] == "jane@example.com"
+
+
+class TestWriteFailedRecordsToExcel:
+    """Test _write_failed_records_to_excel method"""
+
+    def test_writes_excel_with_original_row_data(self, tmp_path):
+        """Test that Excel file is created with original row data"""
+        excel_file = tmp_path / "test.xlsx"
+        migrator = ExcelToAmplifyMigrator(str(excel_file))
+
+        # Initialize instance state with failures
+        migrator.failed_records_by_sheet = {
+            "Sheet1": [
+                {
+                    "primary_field": "name",
+                    "primary_field_value": "John",
+                    "error": "Parsing error: Required field missing",
+                    "row_number": 1,
+                    "original_row": {"name": "John", "email": "john@example.com", "age": 30},
+                },
+                {
+                    "primary_field": "name",
+                    "primary_field_value": "Jane",
+                    "error": "Upload error: GraphQL failed",
+                    "original_row": {"name": "Jane", "email": "jane@example.com", "age": 25},
+                },
+            ]
+        }
+
+        # Write failed records to Excel
+        output_path = migrator._write_failed_records_to_excel()
+
+        # Verify file was created
+        assert output_path is not None
+        assert "test_failed_records.xlsx" in output_path
+
+        # Read and verify Excel contents
+        df = pd.read_excel(output_path, sheet_name="Sheet1")
+
+        # Verify columns exist
+        assert "ROW_NUMBER" in df.columns
+        assert "name" in df.columns
+        assert "email" in df.columns
+        assert "age" in df.columns
+        assert "ERROR" in df.columns
+
+        # Verify data
+        assert len(df) == 2
+        assert df.loc[0, "name"] == "John"
+        assert df.loc[0, "email"] == "john@example.com"
+        assert df.loc[0, "age"] == 30
+        assert df.loc[0, "ROW_NUMBER"] == 1
+        assert "Required field missing" in df.loc[0, "ERROR"]
+
+        assert df.loc[1, "name"] == "Jane"
+        assert df.loc[1, "email"] == "jane@example.com"
+        assert df.loc[1, "age"] == 25
+        assert pd.isna(df.loc[1, "ROW_NUMBER"])  # Upload failures don't have row_number
+        assert "GraphQL failed" in df.loc[1, "ERROR"]
+
+    def test_returns_none_when_no_failures(self, tmp_path):
+        """Test that None is returned when there are no failures"""
+        excel_file = tmp_path / "test.xlsx"
+        migrator = ExcelToAmplifyMigrator(str(excel_file))
+
+        # Initialize with empty failures
+        migrator.failed_records_by_sheet = {}
+
+        output_path = migrator._write_failed_records_to_excel()
+
+        assert output_path is None
+
+    def test_returns_none_when_all_sheets_have_empty_failures(self, tmp_path):
+        """Test that None is returned when all sheets have empty failure lists"""
+        excel_file = tmp_path / "test.xlsx"
+        migrator = ExcelToAmplifyMigrator(str(excel_file))
+
+        # Initialize with empty failure lists
+        migrator.failed_records_by_sheet = {"Sheet1": [], "Sheet2": []}
+
+        output_path = migrator._write_failed_records_to_excel()
+
+        assert output_path is None
+
+    def test_handles_multiple_sheets(self, tmp_path):
+        """Test that multiple sheets are written correctly"""
+        excel_file = tmp_path / "test.xlsx"
+        migrator = ExcelToAmplifyMigrator(str(excel_file))
+
+        # Initialize with failures in multiple sheets
+        migrator.failed_records_by_sheet = {
+            "Users": [
+                {
+                    "primary_field": "name",
+                    "primary_field_value": "John",
+                    "error": "Error 1",
+                    "row_number": 1,
+                    "original_row": {"name": "John"},
+                }
+            ],
+            "Posts": [
+                {
+                    "primary_field": "title",
+                    "primary_field_value": "Post1",
+                    "error": "Error 2",
+                    "row_number": 5,
+                    "original_row": {"title": "Post1"},
+                }
+            ],
+        }
+
+        output_path = migrator._write_failed_records_to_excel()
+
+        # Verify both sheets were created
+        assert output_path is not None
+
+        df_users = pd.read_excel(output_path, sheet_name="Users")
+        df_posts = pd.read_excel(output_path, sheet_name="Posts")
+
+        assert len(df_users) == 1
+        assert df_users.loc[0, "name"] == "John"
+
+        assert len(df_posts) == 1
+        assert df_posts.loc[0, "title"] == "Post1"
 
 
 class TestReadExcel:
