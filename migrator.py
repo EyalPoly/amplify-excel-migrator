@@ -306,6 +306,8 @@ class ExcelToAmplifyMigrator:
                 elif field["is_required"]:
                     raise ValueError(f"{related_model}: {value} does not exist")
                 return None
+        elif field["is_list"] and field["is_scalar"]:
+            return self.model_field_parser.parse_scalar_array(field, field_name, row_dict[field_name])
         else:
             return self.model_field_parser.parse_field_input(field, field_name, value)
 

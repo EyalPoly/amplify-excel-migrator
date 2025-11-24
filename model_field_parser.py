@@ -220,29 +220,47 @@ class ModelFieldParser:
 
         return custom_type_objects
 
-    def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
-        try:
-            if field["type"] in ["Int", "Integer"] or field["type"] == "Float":
+    def _convert_single_value(
+        self,
+        field: Dict[str, Any],
+        field_name: str,
+        input_value: Any,
+        use_dash_notation: bool = False,
+        index: int = None,
+    ) -> Any:
+        if field["type"] in ["Int", "Integer"]:
+            if use_dash_notation:
                 parsed_value = self.parse_number_dash_notation(input_value)
-                return int(parsed_value) if field["type"] in ["Int", "Integer"] else float(parsed_value)
-            elif field["type"] == "Float":
-                return float(input_value)
-            elif field["type"] == "Boolean":
-                if isinstance(input_value, bool):
-                    return input_value
-                if str(input_value).strip().lower() in ["true", "1", "v", "y", "yes"]:
-                    return True
-                elif str(input_value).strip().lower() in ["false", "0", "n", "x", "no"]:
-                    return False
-                else:
-                    logger.error(f"Invalid Boolean value for field '{field_name}': {input_value}")
-                    return None
-            elif field["is_enum"]:
-                return str(input_value).strip().replace(" ", "_").upper()
-            elif field["type"] == "AWSDate" or field["type"] == "AWSDateTime":
-                return self.parse_date(input_value)
+                return int(parsed_value)
+            return int(input_value)
+        elif field["type"] == "Float":
+            if use_dash_notation:
+                parsed_value = self.parse_number_dash_notation(input_value)
+                return float(parsed_value)
+            return float(input_value)
+        elif field["type"] == "Boolean":
+            if isinstance(input_value, bool):
+                return input_value
+            input_str = str(input_value).strip().lower()
+            if input_str in ["true", "1", "v", "y", "yes"]:
+                return True
+            elif input_str in ["false", "0", "n", "x", "no"]:
+                return False
             else:
-                return str(input_value).strip()
+                context = f"array '{field_name}[{index}]'" if index is not None else f"field '{field_name}'"
+                logger.error(f"Invalid Boolean value for {context}: {input_value}")
+                return None
+        elif field.get("is_enum", False):
+            return str(input_value).strip().replace(" ", "_").upper()
+        elif field["type"] in ["AWSDate", "AWSDateTime"]:
+            return self.parse_date(input_value)
+        else:
+            return str(input_value).strip()
+
+    def parse_field_input(self, field: Dict[str, Any], field_name: str, input_value: Any) -> Any:
+        """Parse a single field value from Excel"""
+        try:
+            return self._convert_single_value(field, field_name, input_value, use_dash_notation=True)
         except (ValueError, TypeError) as e:
             logger.warning(
                 f"Failed to parse field '{field_name}' with value '{input_value}' (type: {type(input_value).__name__}) "
@@ -250,6 +268,66 @@ class ModelFieldParser:
                 exc_info=True,
             )
             return None
+
+    def parse_scalar_array(self, field: Dict[str, Any], field_name: str, input_value: Any) -> list | None:
+        """
+        Parse scalar array from Excel cell supporting multiple formats:
+        - JSON: ["value1", "value2", "value3"]
+        - Semicolon: value1; value2; value3
+        - Comma: value1, value2, value3
+        - Space: value1 value2 value3
+        """
+        if pd.isna(input_value):
+            return None
+
+        input_str = str(input_value).strip()
+        if not input_str:
+            return None
+
+        if input_str.startswith("[") and input_str.endswith("]"):
+            try:
+                import json
+
+                parsed_json = json.loads(input_str)
+                if isinstance(parsed_json, list):
+                    return self._convert_array_elements(field, field_name, parsed_json)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON array for field '{field_name}': {input_str}")
+
+        if ";" in input_str:
+            values = [v.strip() for v in input_str.split(";") if v.strip()]
+            return self._convert_array_elements(field, field_name, values)
+
+        if "," in input_str:
+            values = [v.strip() for v in input_str.split(",") if v.strip()]
+            return self._convert_array_elements(field, field_name, values)
+
+        values = [v.strip() for v in input_str.split() if v.strip()]
+        if len(values) > 1:
+            return self._convert_array_elements(field, field_name, values)
+
+        return self._convert_array_elements(field, field_name, [input_str])
+
+    def _convert_array_elements(self, field: Dict[str, Any], field_name: str, values: list) -> list:
+        converted = []
+        for i, value in enumerate(values):
+            cleaned_value = self.clean_input(value)
+
+            if not cleaned_value or (isinstance(cleaned_value, str) and not cleaned_value.strip()):
+                continue
+
+            try:
+                result = self._convert_single_value(field, field_name, cleaned_value, use_dash_notation=False, index=i)
+                if result is not None:
+                    converted.append(result)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Failed to convert array element '{field_name}[{i}]' with value '{cleaned_value}' "
+                    f"to type '{field['type']}': {e}"
+                )
+                continue
+
+        return converted if converted else None
 
     @staticmethod
     def parse_number_dash_notation(input_value: Any) -> int | float:
