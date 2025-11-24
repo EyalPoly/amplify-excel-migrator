@@ -108,6 +108,12 @@ class ExcelToAmplifyMigrator:
                 if failed_records_file:
                     print(f"📁 Failed records exported to: {failed_records_file}")
                     print("=" * 60)
+
+                    update_config = input("\nUpdate config to use this failed records file for next run? (yes/no): ")
+                    if update_config.lower() == "yes":
+                        self._update_excel_path_in_config(failed_records_file)
+                        print(f"✅ Config updated! Next 'migrate' will use: {Path(failed_records_file).name}")
+                        print("=" * 60)
             else:
                 print("Failed records export skipped.")
                 print("=" * 60)
@@ -115,6 +121,12 @@ class ExcelToAmplifyMigrator:
             print("\n✨ No failed records!")
 
         print("=" * 60)
+
+    @staticmethod
+    def _update_excel_path_in_config(new_excel_path: str) -> None:
+        config = load_cached_config()
+        config["excel_path"] = new_excel_path
+        save_config(config)
 
     def _write_failed_records_to_excel(self) -> str | None:
         if not self.failed_records_by_sheet or all(
