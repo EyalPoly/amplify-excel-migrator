@@ -34,11 +34,21 @@ jobs:
     - name: Check if version bump should be skipped
       id: check_skip
       run: |
-        # Check if PR title or last commit contains [skip bump]
-        COMMIT_MSG=$(git log -1 --pretty=%B)
-        if echo "$COMMIT_MSG" | grep -q "\[skip bump\]"; then
+        # Check if PR title or any commit in the PR contains [skip bump]
+        PR_TITLE="${{ github.event.pull_request.title }}"
+
+        # Check PR title
+        if echo "$PR_TITLE" | grep -q "\[skip bump\]"; then
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "Skipping version bump (found [skip bump] in commit message)"
+          echo "Skipping version bump (found [skip bump] in PR title)"
+          exit 0
+        fi
+
+        # Check all commits in the PR (from merge base to HEAD)
+        MERGE_BASE=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
+        if git log "$MERGE_BASE..HEAD" --pretty=%B | grep -q "\[skip bump\]"; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "Skipping version bump (found [skip bump] in commit messages)"
         else
           echo "skip=false" >> $GITHUB_OUTPUT
         fi
