@@ -587,7 +587,6 @@ class AmplifyClient:
         """
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
-            # Find the field type in parsed_model_structure
             field_type = "String"
             for field in parsed_model_structure["fields"]:
                 if field["name"] == secondary_index:

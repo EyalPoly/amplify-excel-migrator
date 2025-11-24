@@ -1,3 +1,3 @@
 """Amplify Excel Migrator - CLI tool to migrate Excel data to AWS Amplify"""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

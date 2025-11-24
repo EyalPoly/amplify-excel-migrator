@@ -31,21 +31,50 @@ jobs:
         python -m pip install --upgrade pip
         pip install build twine
 
+    - name: Check if version bump should be skipped
+      id: check_skip
+      run: |
+        # Check if PR title or last commit contains [skip bump]
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+        if echo "$COMMIT_MSG" | grep -q "\[skip bump\]"; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "Skipping version bump (found [skip bump] in commit message)"
+        else
+          echo "skip=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Bump version
       id: bump_version
+      if: steps.check_skip.outputs.skip != 'true'
       run: |
         python bump_version.py
         NEW_VERSION=$(python -c "import re; content=open('setup.py').read(); print(re.search(r'version\s*=\s*[\"\\']([0-9.]+)[\"\\']', content).group(1))")
         echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
         echo "New version: $NEW_VERSION"
 
+    - name: Get current version (if bump skipped)
+      id: current_version
+      if: steps.check_skip.outputs.skip == 'true'
+      run: |
+        CURRENT_VERSION=$(python -c "import re; content=open('setup.py').read(); print(re.search(r'version\s*=\s*[\"\\']([0-9.]+)[\"\\']', content).group(1))")
+        echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Using current version: $CURRENT_VERSION"
+
     - name: Commit version bump
+      if: steps.check_skip.outputs.skip != 'true'
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         git add setup.py
         git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }} [skip ci]"
         git tag "v${{ steps.bump_version.outputs.new_version }}"
+
+    - name: Create tag for manual version
+      if: steps.check_skip.outputs.skip == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git tag "v${{ steps.current_version.outputs.new_version }}"
 
     - name: Push changes
       uses: ad-m/github-push-action@master
@@ -72,12 +101,12 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ steps.bump_version.outputs.new_version }}
-        name: Release v${{ steps.bump_version.outputs.new_version }}
+        tag_name: v${{ steps.bump_version.outputs.new_version || steps.current_version.outputs.new_version }}
+        name: Release v${{ steps.bump_version.outputs.new_version || steps.current_version.outputs.new_version }}
         body: |
-          Automated release v${{ steps.bump_version.outputs.new_version }}
+          Automated release v${{ steps.bump_version.outputs.new_version || steps.current_version.outputs.new_version }}
 
-          Published to PyPI: https://pypi.org/project/amplify-excel-migrator/${{ steps.bump_version.outputs.new_version }}/
+          Published to PyPI: https://pypi.org/project/amplify-excel-migrator/${{ steps.bump_version.outputs.new_version || steps.current_version.outputs.new_version }}/
         files: |
           dist/*.whl
           dist/*.tar.gz
