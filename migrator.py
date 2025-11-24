@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import sys
+from datetime import datetime
 from getpass import getpass
 from pathlib import Path
 from typing import Dict, Any
@@ -101,9 +102,14 @@ class ExcelToAmplifyMigrator:
 
             print("\n" + "=" * 60)
 
-            failed_records_file = self._write_failed_records_to_excel()
-            if failed_records_file:
-                print(f"📁 Failed records exported to: {failed_records_file}")
+            export_confirm = input("\nExport failed records to Excel? (yes/no): ")
+            if export_confirm.lower() == "yes":
+                failed_records_file = self._write_failed_records_to_excel()
+                if failed_records_file:
+                    print(f"📁 Failed records exported to: {failed_records_file}")
+                    print("=" * 60)
+            else:
+                print("Failed records export skipped.")
                 print("=" * 60)
         else:
             print("\n✨ No failed records!")
@@ -117,7 +123,13 @@ class ExcelToAmplifyMigrator:
             return None
 
         input_path = Path(self.excel_file_path)
-        output_filename = f"{input_path.stem}_failed_records.xlsx"
+
+        base_name = input_path.stem
+        if "_failed_records_" in base_name:
+            base_name = base_name.split("_failed_records_")[0]
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{base_name}_failed_records_{timestamp}.xlsx"
         output_path = input_path.parent / output_filename
 
         logger.info(f"Writing failed records to {output_path}")
