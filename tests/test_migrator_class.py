@@ -402,9 +402,10 @@ class TestWriteFailedRecordsToExcel:
         # Write failed records to Excel
         output_path = migrator._write_failed_records_to_excel()
 
-        # Verify file was created
+        # Verify file was created with timestamp
         assert output_path is not None
-        assert "test_failed_records.xlsx" in output_path
+        assert "test_failed_records_" in output_path
+        assert output_path.endswith(".xlsx")
 
         # Read and verify Excel contents
         df = pd.read_excel(output_path, sheet_name="Sheet1")

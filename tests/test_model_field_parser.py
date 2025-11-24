@@ -467,3 +467,149 @@ class TestIntegrationBelongsToFlow:
         # No fields should have related_model
         for field in result["fields"]:
             assert "related_model" not in field
+
+
+class TestParseScalarArray:
+    """Test parse_scalar_array method for handling array fields"""
+
+    def test_parses_json_array_format(self):
+        """Test parsing JSON array format"""
+        parser = ModelFieldParser()
+        field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(
+            field, "urls", '["https://url1.com", "https://url2.com", "https://url3.com"]'
+        )
+
+        assert result == ["https://url1.com", "https://url2.com", "https://url3.com"]
+
+    def test_parses_semicolon_separated(self):
+        """Test parsing semicolon-separated values"""
+        parser = ModelFieldParser()
+        field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "urls", "https://url1.com; https://url2.com; https://url3.com")
+
+        assert result == ["https://url1.com", "https://url2.com", "https://url3.com"]
+
+    def test_parses_comma_separated(self):
+        """Test parsing comma-separated values"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "tags", "tag1, tag2, tag3")
+
+        assert result == ["tag1", "tag2", "tag3"]
+
+    def test_parses_space_separated(self):
+        """Test parsing space-separated values"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "tags", "tag1 tag2 tag3")
+
+        assert result == ["tag1", "tag2", "tag3"]
+
+    def test_parses_int_array(self):
+        """Test parsing integer array"""
+        parser = ModelFieldParser()
+        field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "numbers", "1, 2, 3, 4, 5")
+
+        assert result == [1, 2, 3, 4, 5]
+
+    def test_parses_float_array(self):
+        """Test parsing float array"""
+        parser = ModelFieldParser()
+        field = {"name": "scores", "type": "Float", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "scores", "1.5, 2.7, 3.9")
+
+        assert result == [1.5, 2.7, 3.9]
+
+    def test_parses_boolean_array(self):
+        """Test parsing boolean array"""
+        parser = ModelFieldParser()
+        field = {"name": "flags", "type": "Boolean", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "flags", "true, false, yes, no")
+
+        assert result == [True, False, True, False]
+
+    def test_returns_none_for_empty_value(self):
+        """Test that empty values return None"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        assert parser.parse_scalar_array(field, "tags", "") is None
+        assert parser.parse_scalar_array(field, "tags", None) is None
+        import pandas as pd
+
+        assert parser.parse_scalar_array(field, "tags", pd.NA) is None
+
+    def test_handles_single_value_as_array(self):
+        """Test that single value is returned as single-item array"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "tags", "single-value")
+
+        assert result == ["single-value"]
+
+    def test_skips_empty_elements(self):
+        """Test that empty elements are skipped"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "tags", "tag1, , tag3, , tag5")
+
+        assert result == ["tag1", "tag3", "tag5"]
+
+    def test_cleans_whitespace_from_elements(self):
+        """Test that whitespace is cleaned from elements"""
+        parser = ModelFieldParser()
+        field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "tags", "  tag1  ,  tag2  ,  tag3  ")
+
+        assert result == ["tag1", "tag2", "tag3"]
+
+    def test_handles_mixed_separators_prioritizes_semicolon(self):
+        """Test that semicolon takes priority over comma and space"""
+        parser = ModelFieldParser()
+        field = {"name": "values", "type": "String", "is_list": True, "is_scalar": True}
+
+        # When semicolon is present, use it (even if commas exist)
+        result = parser.parse_scalar_array(field, "values", "val1, val2; val3, val4")
+
+        assert result == ["val1, val2", "val3, val4"]
+
+    def test_handles_json_array_with_numbers(self):
+        """Test JSON array with numbers"""
+        parser = ModelFieldParser()
+        field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "numbers", "[1, 2, 3, 4, 5]")
+
+        assert result == [1, 2, 3, 4, 5]
+
+    def test_handles_invalid_type_conversion_gracefully(self):
+        """Test that invalid type conversions are skipped with warning"""
+        parser = ModelFieldParser()
+        field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
+
+        # Mix of valid and invalid integers
+        result = parser.parse_scalar_array(field, "numbers", "1, abc, 3, xyz, 5")
+
+        # Only valid numbers should be included
+        assert result == [1, 3, 5]
+
+    def test_handles_enum_array(self):
+        """Test parsing enum array"""
+        parser = ModelFieldParser()
+        field = {"name": "statuses", "type": "Status", "is_list": True, "is_scalar": True, "is_enum": True}
+
+        result = parser.parse_scalar_array(field, "statuses", "active, pending, completed")
+
+        assert result == ["ACTIVE", "PENDING", "COMPLETED"]
