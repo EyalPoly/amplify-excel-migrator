@@ -83,7 +83,7 @@ class ExcelToAmplifyMigrator:
             else "📈 Success rate: N/A"
         )
 
-        if self.failed_records_by_sheet:
+        if total_failed > 0:
             print("\n" + "=" * 60)
             print("FAILED RECORDS DETAILS")
             print("=" * 60)
@@ -201,7 +201,7 @@ class ExcelToAmplifyMigrator:
         print(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
         print(f"✅ Success: {success_count}")
         print(
-            f"❌ Failed: {len(self.failed_records_by_sheet[sheet_name])}"
+            f"❌ Failed: {len(self.failed_records_by_sheet[sheet_name])} "
             f"(Parsing: {len(self.failed_records_by_sheet[sheet_name])}, Upload: {upload_error_count})"
         )
         print(f"📊 Total: {len(df)}")
