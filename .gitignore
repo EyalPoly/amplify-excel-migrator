@@ -25,4 +25,6 @@ eggs/
 sdist/
 var/
 
-*.xls;xlsx;csv
+*.xls
+*.xlsx
+*.csv

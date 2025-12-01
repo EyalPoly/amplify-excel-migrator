@@ -18,14 +18,6 @@ Install the latest stable version from PyPI:
 pip install amplify-excel-migrator
 ```
 
-### From GitHub
-
-Install directly from GitHub:
-
-```bash
-pip install git+https://github.com/EyalPoly/amplify-excel-migrator.git
-```
-
 ### From Source
 
 Clone the repository and install:
@@ -35,16 +27,6 @@ git clone https://github.com/EyalPoly/amplify-excel-migrator.git
 cd amplify-excel-migrator
 pip install .
 ```
-
-### For Development
-
-Install with development dependencies:
-
-```bash
-pip install -e ".[dev]"
-```
-
-This installs the package in editable mode with pytest and other development tools.
 
 ## Usage
 
@@ -66,7 +48,7 @@ This will prompt you for:
 - Cognito Client ID
 - Admin username
 
-Configuration is saved to `~/.amplify-migrator/config.json` (passwords are never saved).
+Configuration is saved to `~/.amplify-migrator/config.json`
 
 ### 2. Show Configuration
 
@@ -145,13 +127,26 @@ Admin Password: ********
 
 ## Features
 
+### Data Processing & Conversion
+- **Automatic type parsing** - Smart field type detection for all GraphQL types including scalars, enums, and custom types
+- **Custom types and enums** - Full support for Amplify custom types with automatic conversion
+- **Duplicate detection** - Automatically skips existing records to prevent duplicates
+- **Foreign key resolution** - Automatic relationship handling with pre-fetching for performance
+
+### AWS Integration
 - **Configuration caching** - Save your setup, reuse it for multiple migrations
-- **Interactive prompts** - Easy step-by-step configuration
-- **Custom types and enums** - Full support for Amplify custom types
-- **Duplicate detection** - Automatically skips existing records
-- **Async uploads** - Fast parallel uploads for better performance
 - **MFA support** - Works with multi-factor authentication
-- **Automatic type parsing** - Smart field type detection and conversion
+- **Admin group validation** - Ensures proper authorization before migration
+
+### Performance
+- **Async uploads** - Fast parallel uploads with configurable batch size
+- **Connection pooling** - Efficient HTTP connection reuse for better performance
+- **Pagination support** - Handles large datasets efficiently
+
+### User Experience
+- **Interactive prompts** - Easy step-by-step configuration
+- **Progress reporting** - Real-time feedback on migration status
+- **Detailed error messages** - Clear context for troubleshooting failures
 
 ## Excel File Format
 
@@ -160,18 +155,118 @@ The Excel file should have:
 - Column names matching the model field names
 - First row as headers
 
-### Example Excel Structure
+### Basic Structure
 
 **Sheet: User**
+
 | name | email | age |
 |------|-------|-----|
 | John | john@example.com | 30 |
 | Jane | jane@example.com | 25 |
 
 **Sheet: Post**
+
 | title | content | userId |
 |-------|---------|--------|
 | First Post | Hello World | john@example.com |
+
+### Relationships (Foreign Keys)
+
+To reference related records, use the primary key value of the related model:
+
+**Sheet: Comment**
+
+| content      | postId   | userId           |
+|--------------|----------|------------------|
+| Great post!  | post-123 | john@example.com |
+
+The tool automatically resolves foreign keys by looking up the related records.
+
+### Array/List Fields
+
+Array fields support multiple input formats:
+
+- **JSON format:** `["tag1", "tag2", "tag3"]`
+- **Semicolon-separated:** `tag1; tag2; tag3`
+- **Comma-separated:** `tag1, tag2, tag3`
+
+## Advanced Features
+
+- **Foreign Key Resolution** - Automatically resolves relationships between models with pre-fetching for optimal performance
+- **Schema Introspection** - Dynamically queries your GraphQL schema to understand model structures and field types
+- **Configurable Batch Processing** - Tune upload performance with adjustable batch sizes (default: 20 records per batch)
+- **Progress Reporting** - Real-time batch progress with per-sheet confirmation prompts before upload
+
+## Error Handling & Recovery
+
+When records fail to upload, the tool provides a robust recovery mechanism to help you identify and fix issues without starting over.
+
+### How It Works
+
+1. **Automatic Error Capture** - Each failed record is logged with detailed error messages explaining what went wrong
+2. **Failed Records Export** - After migration completes, you'll be prompted to export failed records to a new Excel file with a timestamp (e.g., `data_failed_records_20251201_143022.xlsx`)
+3. **Easy Retry** - Fix the issues in the exported file and run the migration again using only the failed records
+4. **Progress Visibility** - Detailed summary shows success/failure counts, percentages, and specific error reasons for each failed record
+
+### Recovery Workflow Example
+
+```bash
+# Run initial migration
+amplify-migrator migrate
+
+# Migration completes with some failures:
+# ✅ Successfully uploaded: 95 records (95%)
+# ❌ Failed to upload: 5 records (5%)
+#
+# Export failed records? (y/n): y
+# Failed records exported to: data_failed_records_20251201_143022.xlsx
+
+# Fix the errors in the exported Excel file
+# Then re-run migration with the failed records file
+
+amplify-migrator migrate
+# Excel file path: data_failed_records_20251201_143022.xlsx
+```
+
+The tool tracks which records succeeded and failed, providing row-level context to help you quickly identify and resolve issues.
+
+## Troubleshooting
+
+### Authentication Errors
+
+**Error: Unable to authenticate with Cognito**
+- Verify your Cognito User Pool ID and Client ID are correct
+- Ensure your username and password are valid
+- Check that your user is in the ADMINS group
+
+### MFA Issues
+
+**Error: MFA required but not configured**
+- Enable MFA in your Cognito User Pool settings
+- Ensure your user has MFA set up (SMS or software token)
+
+### AWS Credentials
+
+**Error: AWS credentials not found**
+- Set up AWS credentials in `~/.aws/credentials`
+- Or set environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`
+- Or use `aws configure` to set up your default profile
+
+### Excel File Format
+
+**Error: Sheet name does not match any model**
+- Ensure sheet names exactly match your Amplify GraphQL model names (case-sensitive)
+- Check for extra spaces or special characters in sheet names
+
+**Error: Required field missing**
+- Verify all required fields in your GraphQL schema have corresponding columns in Excel
+- Check column names match field names (case-sensitive)
+
+### Permission Errors
+
+**Error: User is not in ADMINS group**
+- Add your user to the ADMINS group in Cognito User Pool
+- Contact your AWS administrator if you don't have permission
 
 ## License
 
