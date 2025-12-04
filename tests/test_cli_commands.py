@@ -10,6 +10,7 @@ from migrator import (
     cmd_config,
     cmd_migrate,
 )
+from amplify_excel_migrator.core import ConfigManager
 
 
 @pytest.fixture
@@ -25,32 +26,44 @@ def sample_config():
     }
 
 
+@pytest.fixture
+def mock_config_manager(tmp_path):
+    """Create a mock ConfigManager for testing"""
+    test_config_file = tmp_path / "config.json"
+
+    def init_mock(self, config_path=None):
+        self.config_path = test_config_file
+        self._config = {}
+
+    return init_mock
+
+
 class TestCmdShow:
     """Test 'show' command"""
 
-    def test_show_with_no_config(self, capsys, tmp_path, monkeypatch):
+    def test_show_with_no_config(self, capsys, mock_config_manager):
         """Test show command with no config file"""
-        test_config_file = tmp_path / "config.json"
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
-
-        cmd_show()
+        with patch.object(ConfigManager, "__init__", mock_config_manager):
+            cmd_show()
 
         captured = capsys.readouterr()
         assert "❌ No configuration found!" in captured.out
         assert "amplify-migrator config" in captured.out
 
-    def test_show_with_existing_config(self, capsys, tmp_path, sample_config, monkeypatch):
+    def test_show_with_existing_config(self, capsys, tmp_path, sample_config):
         """Test show command with existing config"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
-        test_config_dir.mkdir(parents=True)
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(test_config_file, "w") as f:
             json.dump(sample_config, f)
 
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
-        cmd_show()
+        with patch.object(ConfigManager, "__init__", init_mock):
+            cmd_show()
 
         captured = capsys.readouterr()
         assert "test_data.xlsx" in captured.out
@@ -58,18 +71,20 @@ class TestCmdShow:
         assert "us-east-1" in captured.out
         assert "test-client-id" in captured.out
 
-    def test_show_displays_config_location(self, capsys, tmp_path, sample_config, monkeypatch):
+    def test_show_displays_config_location(self, capsys, tmp_path, sample_config):
         """Test that show command displays config file location"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
-        test_config_dir.mkdir(parents=True)
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(test_config_file, "w") as f:
             json.dump(sample_config, f)
 
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
-        cmd_show()
+        with patch.object(ConfigManager, "__init__", init_mock):
+            cmd_show()
 
         captured = capsys.readouterr()
         assert str(test_config_file) in captured.out
@@ -78,13 +93,13 @@ class TestCmdShow:
 class TestCmdConfig:
     """Test 'config' command"""
 
-    def test_config_prompts_for_all_values(self, tmp_path, monkeypatch):
+    def test_config_prompts_for_all_values(self, tmp_path):
         """Test that config command prompts for all required values"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
+        test_config_file = tmp_path / "config.json"
 
-        monkeypatch.setattr("migrator.CONFIG_DIR", test_config_dir)
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
         # Mock all input prompts
         inputs = [
@@ -96,8 +111,9 @@ class TestCmdConfig:
             "admin@test.com",
         ]
 
-        with patch("builtins.input", side_effect=inputs):
-            cmd_config()
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
 
         # Verify config was saved
         assert test_config_file.exists()
@@ -106,60 +122,63 @@ class TestCmdConfig:
             assert saved_config["excel_path"] == "test.xlsx"
             assert saved_config["username"] == "admin@test.com"
 
-    def test_config_saves_to_correct_location(self, capsys, tmp_path, monkeypatch):
+    def test_config_saves_to_correct_location(self, capsys, tmp_path):
         """Test that config is saved to the correct location"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
+        test_config_file = tmp_path / "config.json"
 
-        monkeypatch.setattr("migrator.CONFIG_DIR", test_config_dir)
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
         inputs = ["test.xlsx", "https://test.com", "us-east-1", "pool", "client", "user"]
 
-        with patch("builtins.input", side_effect=inputs):
-            cmd_config()
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
 
         captured = capsys.readouterr()
         assert "✅ Configuration saved successfully!" in captured.out
         assert "amplify-migrator migrate" in captured.out
 
-    def test_config_uses_defaults(self, tmp_path, monkeypatch):
-        """Test that config command uses default values when user presses enter"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
+    def test_config_uses_cached_values_as_defaults(self, tmp_path, sample_config):
+        """Test that config command shows cached values as defaults"""
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr("migrator.CONFIG_DIR", test_config_dir)
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
 
-        # When no cached config exists, all fields need values
-        inputs = [
-            "data.xlsx",  # excel_path
-            "https://test.com",  # api_endpoint
-            "us-east-1",  # region
-            "pool-id",  # user_pool_id
-            "client-id",  # client_id
-            "admin@test.com",  # username
-        ]
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
-        with patch("builtins.input", side_effect=inputs):
-            cmd_config()
+        # Press enter to accept all defaults (from cached config)
+        inputs = ["", "", "", "", "", ""]  # Empty strings use cached values
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
 
         with open(test_config_file) as f:
             saved_config = json.load(f)
-            assert saved_config["excel_path"] == "data.xlsx"
+            assert saved_config["excel_path"] == "test_data.xlsx"
             assert saved_config["region"] == "us-east-1"
 
 
 class TestCmdMigrate:
     """Test 'migrate' command"""
 
-    def test_migrate_fails_without_config(self, capsys, tmp_path, monkeypatch):
+    def test_migrate_fails_without_config(self, capsys, tmp_path):
         """Test that migrate command fails when no config exists"""
         test_config_file = tmp_path / "config.json"
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
 
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_migrate()
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_migrate()
 
         assert exc_info.value.code == 1
 
@@ -167,84 +186,84 @@ class TestCmdMigrate:
         assert "❌ No configuration found!" in captured.out
         assert "amplify-migrator config" in captured.out
 
-    def test_migrate_uses_cached_config(self, tmp_path, sample_config, monkeypatch):
+    def test_migrate_uses_cached_config(self, tmp_path, sample_config):
         """Test that migrate command uses cached configuration"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
-        test_config_dir.mkdir(parents=True)
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(test_config_file, "w") as f:
             json.dump(sample_config, f)
 
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
         # Mock the entire migration process
-        with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class, patch(
-            "migrator.get_config_value", return_value="password123"
-        ):
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
+                with patch("amplify_excel_migrator.core.config.getpass", return_value="password123"):
+                    mock_instance = MagicMock()
+                    mock_instance.authenticate.return_value = True
+                    mock_migrator_class.return_value = mock_instance
 
-            mock_instance = MagicMock()
-            mock_instance.authenticate.return_value = True
-            mock_migrator_class.return_value = mock_instance
+                    cmd_migrate()
 
-            cmd_migrate()
+                    # Verify migrator was initialized with cached values
+                    mock_migrator_class.assert_called_once_with("test_data.xlsx")
+                    mock_instance.init_client.assert_called_once()
 
-            # Verify migrator was initialized with cached values
-            mock_migrator_class.assert_called_once_with("test_data.xlsx")
-            mock_instance.init_client.assert_called_once()
+                    # Check that init_client was called with correct parameters
+                    call_args = mock_instance.init_client.call_args
+                    assert call_args[0][0] == "https://test.appsync-api.us-east-1.amazonaws.com/graphql"
+                    assert call_args[0][1] == "us-east-1"
+                    assert call_args[0][2] == "us-east-1_testpool"
 
-            # Check that init_client was called with correct parameters
-            call_args = mock_instance.init_client.call_args
-            assert call_args[0][0] == "https://test.appsync-api.us-east-1.amazonaws.com/graphql"  # api_endpoint
-            assert call_args[0][1] == "us-east-1"  # region
-            assert call_args[0][2] == "us-east-1_testpool"  # user_pool_id
-
-    def test_migrate_prompts_for_password(self, tmp_path, sample_config, monkeypatch):
+    def test_migrate_prompts_for_password(self, tmp_path, sample_config):
         """Test that migrate command always prompts for password"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
-        test_config_dir.mkdir(parents=True)
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(test_config_file, "w") as f:
             json.dump(sample_config, f)
 
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
-        with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class, patch(
-            "migrator.get_config_value", return_value="secret_password"
-        ) as mock_get_config:
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
+                with patch(
+                    "amplify_excel_migrator.core.config.getpass", return_value="secret_password"
+                ) as mock_getpass:
+                    mock_instance = MagicMock()
+                    mock_instance.authenticate.return_value = True
+                    mock_migrator_class.return_value = mock_instance
 
-            mock_instance = MagicMock()
-            mock_instance.authenticate.return_value = True
-            mock_migrator_class.return_value = mock_instance
+                    cmd_migrate()
 
-            cmd_migrate()
+                    # Verify getpass was called (for password prompt)
+                    mock_getpass.assert_called()
 
-            # Verify get_config_value was called (for password prompt)
-            # Check that it was called with secret=True parameter
-            called_with_secret = any(call.kwargs.get("secret") is True for call in mock_get_config.call_args_list)
-            assert called_with_secret or mock_get_config.called
-
-    def test_migrate_stops_if_authentication_fails(self, tmp_path, sample_config, monkeypatch):
+    def test_migrate_stops_if_authentication_fails(self, tmp_path, sample_config):
         """Test that migrate stops if authentication fails"""
-        test_config_dir = tmp_path / ".amplify-migrator"
-        test_config_file = test_config_dir / "config.json"
-        test_config_dir.mkdir(parents=True)
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(test_config_file, "w") as f:
             json.dump(sample_config, f)
 
-        monkeypatch.setattr("migrator.CONFIG_FILE", test_config_file)
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
 
-        with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class, patch(
-            "migrator.get_config_value", return_value="wrong_password"
-        ):
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
+                with patch("amplify_excel_migrator.core.config.getpass", return_value="wrong_password"):
+                    mock_instance = MagicMock()
+                    mock_instance.authenticate.return_value = False  # Authentication fails
+                    mock_migrator_class.return_value = mock_instance
 
-            mock_instance = MagicMock()
-            mock_instance.authenticate.return_value = False  # Authentication fails
-            mock_migrator_class.return_value = mock_instance
+                    cmd_migrate()
 
-            cmd_migrate()
-
-            # Verify run() was NOT called
-            mock_instance.run.assert_not_called()
+                    # Verify run() was NOT called
+                    mock_instance.run.assert_not_called()
