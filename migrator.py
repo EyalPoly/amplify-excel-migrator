@@ -4,20 +4,17 @@ import logging
 import re
 import sys
 from datetime import datetime
-from getpass import getpass
 from pathlib import Path
 from typing import Dict, Any
 
 import pandas as pd
 
 from amplify_client import AmplifyClient
+from amplify_excel_migrator.core import ConfigManager
 from model_field_parser import ModelFieldParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-CONFIG_DIR = Path.home() / ".amplify-migrator"
-CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 class ExcelToAmplifyMigrator:
@@ -124,9 +121,8 @@ class ExcelToAmplifyMigrator:
 
     @staticmethod
     def _update_excel_path_in_config(new_excel_path: str) -> None:
-        config = load_cached_config()
-        config["excel_path"] = new_excel_path
-        save_config(config)
+        config_manager = ConfigManager()
+        config_manager.update({"excel_path": new_excel_path})
 
     def _write_failed_records_to_excel(self) -> str | None:
         if not self.failed_records_by_sheet or all(
@@ -361,50 +357,6 @@ class ExcelToAmplifyMigrator:
         return parts[0].lower() + "".join(word.capitalize() for word in parts[1:])
 
 
-def get_config_value(prompt: str, default: str = "", secret: bool = False) -> str:
-    if default:
-        prompt = f"{prompt} [{default}]: "
-    else:
-        prompt = f"{prompt}: "
-
-    if secret:
-        value = getpass(prompt)
-    else:
-        value = input(prompt)
-
-    return value.strip() if value.strip() else default
-
-
-def save_config(config: Dict[str, str]) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    cache_config = {k: v for k, v in config.items() if k not in ["password", "ADMIN_PASSWORD"]}
-
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cache_config, f, indent=2)
-
-    logger.info(f"✅ Configuration saved to {CONFIG_FILE}")
-
-
-def load_cached_config() -> Dict[str, str]:
-    if not CONFIG_FILE.exists():
-        return {}
-
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning(f"Failed to load cached config: {e}")
-        return {}
-
-
-def get_cached_or_prompt(key: str, prompt: str, cached_config: Dict, default: str = "", secret: bool = False) -> str:
-    if key in cached_config:
-        return cached_config[key]
-
-    return get_config_value(prompt, default, secret)
-
-
 def cmd_show(args=None):
     print(
         """
@@ -414,7 +366,8 @@ def cmd_show(args=None):
     """
     )
 
-    cached_config = load_cached_config()
+    config_manager = ConfigManager()
+    cached_config = config_manager.load()
 
     if not cached_config:
         print("\n❌ No configuration found!")
@@ -430,7 +383,7 @@ def cmd_show(args=None):
     print(f"Client ID:            {cached_config.get('client_id', 'N/A')}")
     print(f"Admin Username:       {cached_config.get('username', 'N/A')}")
     print("-" * 54)
-    print(f"\n📍 Config location: {CONFIG_FILE}")
+    print(f"\n📍 Config location: {config_manager.config_path}")
     print(f"💡 Run 'amplify-migrator config' to update configuration.")
 
 
@@ -443,18 +396,21 @@ def cmd_config(args=None):
     """
     )
 
-    cached_config = load_cached_config()
+    config_manager = ConfigManager()
+    cached_config = config_manager.load()
 
     config = {
-        "excel_path": get_config_value("Excel file path", cached_config.get("excel_path")),
-        "api_endpoint": get_config_value("AWS Amplify API endpoint", cached_config.get("api_endpoint")),
-        "region": get_config_value("AWS Region", cached_config.get("region")),
-        "user_pool_id": get_config_value("Cognito User Pool ID", cached_config.get("user_pool_id")),
-        "client_id": get_config_value("Cognito Client ID", cached_config.get("client_id")),
-        "username": get_config_value("Admin Username", cached_config.get("username")),
+        "excel_path": config_manager.prompt_for_value("Excel file path", cached_config.get("excel_path", "")),
+        "api_endpoint": config_manager.prompt_for_value(
+            "AWS Amplify API endpoint", cached_config.get("api_endpoint", "")
+        ),
+        "region": config_manager.prompt_for_value("AWS Region", cached_config.get("region", "")),
+        "user_pool_id": config_manager.prompt_for_value("Cognito User Pool ID", cached_config.get("user_pool_id", "")),
+        "client_id": config_manager.prompt_for_value("Cognito Client ID", cached_config.get("client_id", "")),
+        "username": config_manager.prompt_for_value("Admin Username", cached_config.get("username", "")),
     }
 
-    save_config(config)
+    config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
     print(f"💡 You can now run 'amplify-migrator migrate' to start the migration.")
 
@@ -470,23 +426,24 @@ def cmd_migrate(args=None):
     """
     )
 
-    cached_config = load_cached_config()
+    config_manager = ConfigManager()
+    cached_config = config_manager.load()
 
     if not cached_config:
         print("\n❌ No configuration found!")
         print("💡 Run 'amplify-migrator config' first to set up your configuration.")
         sys.exit(1)
 
-    excel_path = get_cached_or_prompt("excel_path", "Excel file path", cached_config, "data.xlsx")
-    api_endpoint = get_cached_or_prompt("api_endpoint", "AWS Amplify API endpoint", cached_config)
-    region = get_cached_or_prompt("region", "AWS Region", cached_config, "us-east-1")
-    user_pool_id = get_cached_or_prompt("user_pool_id", "Cognito User Pool ID", cached_config)
-    client_id = get_cached_or_prompt("client_id", "Cognito Client ID", cached_config)
-    username = get_cached_or_prompt("username", "Admin Username", cached_config)
+    excel_path = config_manager.get_or_prompt("excel_path", "Excel file path", "data.xlsx")
+    api_endpoint = config_manager.get_or_prompt("api_endpoint", "AWS Amplify API endpoint")
+    region = config_manager.get_or_prompt("region", "AWS Region", "us-east-1")
+    user_pool_id = config_manager.get_or_prompt("user_pool_id", "Cognito User Pool ID")
+    client_id = config_manager.get_or_prompt("client_id", "Cognito Client ID")
+    username = config_manager.get_or_prompt("username", "Admin Username")
 
     print("\n🔐 Authentication:")
     print("-" * 54)
-    password = get_config_value("Admin Password", secret=True)
+    password = config_manager.prompt_for_value("Admin Password", secret=True)
 
     migrator = ExcelToAmplifyMigrator(excel_path)
     migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
