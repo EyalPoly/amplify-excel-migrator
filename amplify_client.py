@@ -13,6 +13,8 @@ from botocore.exceptions import NoCredentialsError, ProfileNotFound, NoRegionErr
 from pycognito import Cognito, MFAChallengeException
 from pycognito.exceptions import ForceChangePasswordException
 
+from amplify_excel_migrator.graphql import QueryBuilder, MutationBuilder
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -415,17 +417,11 @@ class AmplifyClient:
     async def create_record_async(
         self, session: aiohttp.ClientSession, data: Dict, model_name: str, primary_field: str
     ) -> Dict | None:
-        mutation = f"""
-        mutation Create{model_name}($input: Create{model_name}Input!)  {{
-            create{model_name}(input: $input) {{
-                id
-                {primary_field}
-            }}
-        }}
-        """
+        mutation = MutationBuilder.build_create_mutation(model_name, return_fields=["id", primary_field])
+        variables = MutationBuilder.build_create_variables(data)
 
         context = f"{model_name}: {primary_field}={data.get(primary_field)}"
-        result = await self._request_async(session, mutation, {"input": data}, context)
+        result = await self._request_async(session, mutation, variables, context)
 
         if result and "data" in result:
             created = result["data"].get(f"create{model_name}")
@@ -450,17 +446,13 @@ class AmplifyClient:
         context = f"{model_name}: {primary_field}={value}"
 
         if is_secondary_index:
+            query = QueryBuilder.build_secondary_index_query(
+                model_name, primary_field, fields=["id"], field_type=field_type, with_pagination=False
+            )
+            variables = {primary_field: value}
             query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
-            query = f"""
-            query {query_name}(${primary_field}: {field_type}!) {{
-              {query_name}({primary_field}: ${primary_field}) {{
-                items {{
-                    id
-                }}
-              }}
-            }}
-            """
-            result = await self._request_async(session, query, {primary_field: value}, context)
+
+            result = await self._request_async(session, query, variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
@@ -468,17 +460,11 @@ class AmplifyClient:
                     return None
         else:
             query_name = self._get_list_query_name(model_name)
-            query = f"""
-            query List{model_name}s($filter: Model{model_name}FilterInput) {{
-              {query_name}(filter: $filter) {{
-                items {{
-                    id
-                }}
-              }}
-            }}
-            """
-            filter_input = {primary_field: {"eq": value}}
-            result = await self._request_async(session, query, {"filter": filter_input}, context)
+            query = QueryBuilder.build_list_query_with_filter(model_name, fields=["id"], with_pagination=False)
+            filter_input = QueryBuilder.build_filter_equals(primary_field, value)
+            variables = {"filter": filter_input}
+
+            result = await self._request_async(session, query, variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
@@ -824,16 +810,8 @@ class AmplifyClient:
         if fields is None:
             fields = ["id"]
 
-        fields_str = "\n".join(fields)
-
+        query = QueryBuilder.build_get_by_id_query(model_name, fields=fields)
         query_name = f"get{model_name}"
-        query = f"""
-        query Get{model_name}($id: ID!) {{
-          {query_name}(id: $id) {{
-            {fields_str}
-          }}
-        }}
-        """
 
         result = self._request(query, {"id": record_id})
 
