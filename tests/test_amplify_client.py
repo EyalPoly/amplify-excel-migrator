@@ -16,8 +16,8 @@ class TestBuildForeignKeyLookups:
         """Test that FK lookup cache is built correctly"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
-        client.get_records = MagicMock(
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(
             return_value=[
                 {"id": "reporter-1", "name": "John Doe"},
                 {"id": "reporter-2", "name": "Jane Smith"},
@@ -38,15 +38,15 @@ class TestBuildForeignKeyLookups:
         assert result["Reporter"]["primary_field"] == "name"
 
         # Verify API was called once
-        client.get_primary_field_name.assert_called_once_with("Reporter", parsed_model_structure)
-        client.get_records.assert_called_once_with("Reporter", "name", False)
+        client._executor.get_primary_field_name.assert_called_once_with("Reporter", parsed_model_structure)
+        client._executor.get_records.assert_called_once_with("Reporter", "name", False)
 
     def test_skips_non_id_fields(self):
         """Test that non-ID fields are skipped"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock()
-        client.get_records = MagicMock()
+        client._executor.get_primary_field_name = MagicMock()
+        client._executor.get_records = MagicMock()
 
         df = pd.DataFrame({"title": ["Story 1"], "content": ["Content 1"]})
         parsed_model_structure = {
@@ -60,14 +60,14 @@ class TestBuildForeignKeyLookups:
 
         # No lookups should be built
         assert result == {}
-        client.get_primary_field_name.assert_not_called()
-        client.get_records.assert_not_called()
+        client._executor.get_primary_field_name.assert_not_called()
+        client._executor.get_records.assert_not_called()
 
     def test_skips_fields_not_in_dataframe(self):
         """Test that fields not in DataFrame columns are skipped"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock()
+        client._executor.get_primary_field_name = MagicMock()
 
         df = pd.DataFrame({"title": ["Story 1"]})
         parsed_model_structure = {
@@ -78,14 +78,14 @@ class TestBuildForeignKeyLookups:
 
         # No lookups should be built
         assert result == {}
-        client.get_primary_field_name.assert_not_called()
+        client._executor.get_primary_field_name.assert_not_called()
 
     def test_infers_related_model_from_field_name(self):
         """Test that related model is inferred when not explicitly provided"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
-        client.get_records = MagicMock(return_value=[{"id": "author-1", "name": "Author One"}])
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(return_value=[{"id": "author-1", "name": "Author One"}])
 
         df = pd.DataFrame({"author": ["Author One"]})
         parsed_model_structure = {
@@ -102,13 +102,13 @@ class TestBuildForeignKeyLookups:
         assert result["Author"]["lookup"]["Author One"] == "author-1"
 
         # Verify API was called with inferred model name
-        client.get_primary_field_name.assert_called_once_with("Author", parsed_model_structure)
+        client._executor.get_primary_field_name.assert_called_once_with("Author", parsed_model_structure)
 
     def test_handles_errors_gracefully(self):
         """Test that errors in fetching don't crash the whole process"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(side_effect=Exception("API Error"))
+        client._executor.get_primary_field_name = MagicMock(side_effect=Exception("API Error"))
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
@@ -125,8 +125,8 @@ class TestBuildForeignKeyLookups:
         """Test that the same related model is only fetched once"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
-        client.get_records = MagicMock(return_value=[{"id": "reporter-1", "name": "John Doe"}])
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(return_value=[{"id": "reporter-1", "name": "John Doe"}])
 
         df = pd.DataFrame({"photographer": ["John Doe"], "editor": ["Jane Smith"]})
         parsed_model_structure = {
@@ -143,15 +143,15 @@ class TestBuildForeignKeyLookups:
         assert "Reporter" in result
 
         # API should be called only once
-        client.get_primary_field_name.assert_called_once()
-        client.get_records.assert_called_once()
+        client._executor.get_primary_field_name.assert_called_once()
+        client._executor.get_records.assert_called_once()
 
     def test_handles_empty_records_response(self):
         """Test that empty records from API don't break the cache"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
-        client.get_records = MagicMock(return_value=None)  # API returns None
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(return_value=None)  # API returns None
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
@@ -167,8 +167,8 @@ class TestBuildForeignKeyLookups:
         """Test that records without the primary field are filtered out"""
         client = AmplifyClient(api_endpoint="https://test.com")
 
-        client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
-        client.get_records = MagicMock(
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(
             return_value=[
                 {"id": "reporter-1", "name": "John Doe"},
                 {"id": "reporter-2"},  # Missing name

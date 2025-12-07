@@ -1,192 +1,98 @@
-import asyncio
+"""
+Amplify GraphQL Client - Facade for backward compatibility.
+
+This module provides a backward-compatible interface that delegates to the new
+GraphQLClient and QueryExecutor classes.
+"""
+
 import logging
-import sys
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import aiohttp
-import requests
-import inflect
 
-from amplify_excel_migrator.graphql import QueryBuilder, MutationBuilder
+from amplify_excel_migrator.graphql import GraphQLClient, QueryExecutor, AuthenticationError, GraphQLError
 from amplify_excel_migrator.auth import AuthenticationProvider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-class AuthenticationError(Exception):
-    """Raised when authentication is required but not completed"""
-
-    pass
-
-
-class GraphQLError(Exception):
-    """Raised when GraphQL query returns errors"""
-
-    pass
-
-
 class AmplifyClient:
     """
-    Client for Amplify GraphQL API operations.
+    Facade for Amplify GraphQL API operations.
+
+    This class maintains backward compatibility while delegating to
+    GraphQLClient and QueryExecutor for actual operations.
     """
 
     def __init__(self, api_endpoint: str, auth_provider: Optional[AuthenticationProvider] = None):
         """
-        Initialize the client
+        Initialize the client.
 
         Args:
             api_endpoint: Amplify GraphQL endpoint
             auth_provider: Authentication provider instance
         """
         self.api_endpoint = api_endpoint
-        self.auth_provider = auth_provider
+        self._auth_provider = auth_provider
 
-        self.batch_size = 20
-        self.records_cache = {}
+        self._client = GraphQLClient(api_endpoint, auth_provider)
+        self._executor = QueryExecutor(self._client, batch_size=20)
 
-    def _request(self, query: str, variables: Dict = None, context: str = None) -> Any | None:
+        self.batch_size = self._executor.batch_size
+        self.records_cache = self._executor.records_cache
+
+    @property
+    def auth_provider(self) -> Optional[AuthenticationProvider]:
+        """Get the authentication provider."""
+        return self._auth_provider
+
+    @auth_provider.setter
+    def auth_provider(self, value: Optional[AuthenticationProvider]):
+        """Set the authentication provider and update internal clients."""
+        self._auth_provider = value
+        self._client.auth_provider = value
+
+    def _request(self, query: str, variables: Optional[Dict] = None, context: Optional[str] = None) -> Any:
         """
-        Make a GraphQL request using the ID token
+        Make a GraphQL request using the ID token.
 
         Args:
             query: GraphQL query or mutation
             variables: Variables for the query
-            context: Optional context string to include in error messages (e.g., row identifier)
+            context: Optional context string to include in error messages
 
         Returns:
             Response data
         """
-        if not self.auth_provider or not self.auth_provider.is_authenticated():
-            raise AuthenticationError("Not authenticated. Call authenticate() on the auth provider first.")
-
-        id_token = self.auth_provider.get_id_token()
-        headers = {"Authorization": id_token, "Content-Type": "application/json"}
-
-        payload = {"query": query, "variables": variables or {}}
-
-        context_msg = f" [{context}]" if context else ""
-
-        try:
-            response = requests.post(self.api_endpoint, headers=headers, json=payload)
-
-            if response.status_code == 200:
-                result = response.json()
-
-                if "errors" in result:
-                    raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
-
-                return result
-            else:
-                logger.error(f"HTTP Error {response.status_code}{context_msg}: {response.text}")
-                return None
-
-        except requests.exceptions.ConnectionError as e:
-            logger.error(
-                f"Connection error{context_msg}: Unable to connect to API endpoint. Check your internet connection or the API endpoint URL."
-            )
-            sys.exit(1)
-
-        except requests.exceptions.Timeout as e:
-            logger.error(f"Request timeout{context_msg}: {e}")
-            return None
-
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error{context_msg}: {e}")
-            return None
-
-        except GraphQLError as e:
-            logger.error(str(e))
-            return None
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error{context_msg}: {e}")
-            return None
+        return self._client.request(query, variables, context)
 
     async def _request_async(
-        self, session: aiohttp.ClientSession, query: str, variables: Dict = None, context: str = None
-    ) -> Any | None:
+        self,
+        session: aiohttp.ClientSession,
+        query: str,
+        variables: Optional[Dict] = None,
+        context: Optional[str] = None,
+    ) -> Any:
         """
-        Async version of _request for parallel GraphQL requests
+        Async version of _request for parallel GraphQL requests.
 
         Args:
             session: aiohttp ClientSession
             query: GraphQL query or mutation
             variables: Variables for the query
-            context: Optional context string to include in error messages (e.g., row identifier)
+            context: Optional context string to include in error messages
 
         Returns:
             Response data
         """
-        if not self.auth_provider or not self.auth_provider.is_authenticated():
-            raise AuthenticationError("Not authenticated. Call authenticate() on the auth provider first.")
-
-        id_token = self.auth_provider.get_id_token()
-        headers = {"Authorization": id_token, "Content-Type": "application/json"}
-
-        payload = {"query": query, "variables": variables or {}}
-
-        context_msg = f" [{context}]" if context else ""
-
-        try:
-            async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
-                if response.status == 200:
-                    result = await response.json()
-
-                    if "errors" in result:
-                        raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
-
-                    return result
-                else:
-                    text = await response.text()
-                    error_msg = f"HTTP Error {response.status}{context_msg}: {text}"
-                    logger.error(error_msg)
-                    raise aiohttp.ClientError(error_msg)
-
-        except aiohttp.ServerTimeoutError as e:
-            error_msg = f"Request timeout{context_msg}: {e}"
-            logger.error(error_msg)
-            raise aiohttp.ServerTimeoutError(error_msg)
-
-        except aiohttp.ClientConnectionError as e:
-            error_msg = f"Connection error{context_msg}: Unable to connect to API endpoint. {e}"
-            logger.error(error_msg)
-            raise aiohttp.ClientConnectionError(error_msg)
-
-        except aiohttp.ClientResponseError as e:
-            error_msg = f"HTTP response error{context_msg}: {e}"
-            logger.error(error_msg)
-            raise aiohttp.ClientResponseError(
-                request_info=e.request_info, history=e.history, status=e.status, message=error_msg
-            )
-
-        except GraphQLError as e:
-            logger.error(str(e))
-            raise
-
-        except aiohttp.ClientError as e:
-            error_msg = f"Client error{context_msg}: {e}"
-            logger.error(error_msg)
-            raise aiohttp.ClientError(error_msg)
+        return await self._client.request_async(session, query, variables, context)
 
     async def create_record_async(
         self, session: aiohttp.ClientSession, data: Dict, model_name: str, primary_field: str
-    ) -> Dict | None:
-        mutation = MutationBuilder.build_create_mutation(model_name, return_fields=["id", primary_field])
-        variables = MutationBuilder.build_create_variables(data)
-
-        context = f"{model_name}: {primary_field}={data.get(primary_field)}"
-        result = await self._request_async(session, mutation, variables, context)
-
-        if result and "data" in result:
-            created = result["data"].get(f"create{model_name}")
-            if created:
-                logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
-            return created
-        else:
-            logger.error(f'Failed to create {model_name} with {primary_field}="{data[primary_field]}"')
-
-        return None
+    ) -> Optional[Dict]:
+        """Create a single record asynchronously."""
+        return await self._executor.create_record_async(session, data, model_name, primary_field)
 
     async def check_record_exists_async(
         self,
@@ -197,477 +103,91 @@ class AmplifyClient:
         is_secondary_index: bool,
         record: Dict,
         field_type: str = "String",
-    ) -> Dict | None:
-        context = f"{model_name}: {primary_field}={value}"
-
-        if is_secondary_index:
-            query = QueryBuilder.build_secondary_index_query(
-                model_name, primary_field, fields=["id"], field_type=field_type, with_pagination=False
-            )
-            variables = {primary_field: value}
-            query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
-
-            result = await self._request_async(session, query, variables, context)
-            if result and "data" in result:
-                items = result["data"].get(query_name, {}).get("items", [])
-                if len(items) > 0:
-                    logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
-                    return None
-        else:
-            query_name = self._get_list_query_name(model_name)
-            query = QueryBuilder.build_list_query_with_filter(model_name, fields=["id"], with_pagination=False)
-            filter_input = QueryBuilder.build_filter_equals(primary_field, value)
-            variables = {"filter": filter_input}
-
-            result = await self._request_async(session, query, variables, context)
-            if result and "data" in result:
-                items = result["data"].get(query_name, {}).get("items", [])
-                if len(items) > 0:
-                    logger.error(f'Record with {primary_field}="{value}" already exists in {model_name}')
-                    return None
-
-        return record
+    ) -> Optional[Dict]:
+        """Check if a record already exists asynchronously."""
+        return await self._executor.check_record_exists_async(
+            session, model_name, primary_field, value, is_secondary_index, record, field_type
+        )
 
     async def upload_batch_async(
-        self, batch: list, model_name: str, primary_field: str, is_secondary_index: bool, field_type: str = "String"
-    ) -> tuple[int, int, list[Dict]]:
-        async with aiohttp.ClientSession() as session:
-            duplicate_checks = [
-                self.check_record_exists_async(
-                    session, model_name, primary_field, record[primary_field], is_secondary_index, record, field_type
-                )
-                for record in batch
-            ]
-            check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
+        self,
+        batch: List[Dict],
+        model_name: str,
+        primary_field: str,
+        is_secondary_index: bool,
+        field_type: str = "String",
+    ) -> tuple[int, int, List[Dict]]:
+        """Upload a batch of records asynchronously."""
+        return await self._executor.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
 
-            filtered_batch = []
-            failed_records = []
-
-            for i, result in enumerate(check_results):
-                if isinstance(result, Exception):
-                    error_msg = str(result)
-                    failed_records.append(
-                        {
-                            "primary_field": primary_field,
-                            "primary_field_value": batch[i].get(primary_field, "Unknown"),
-                            "error": f"Duplicate check error: {error_msg}",
-                        }
-                    )
-                    logger.error(f"Error checking duplicate: {result}")
-                elif result is not None:
-                    filtered_batch.append(result)
-
-            if not filtered_batch:
-                return 0, len(batch), failed_records
-
-            create_tasks = [
-                self.create_record_async(session, record, model_name, primary_field) for record in filtered_batch
-            ]
-            results = await asyncio.gather(*create_tasks, return_exceptions=True)
-
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    error_msg = str(result)
-                    failed_records.append(
-                        {
-                            "primary_field": primary_field,
-                            "primary_field_value": filtered_batch[i].get(primary_field, "Unknown"),
-                            "error": error_msg,
-                        }
-                    )
-                elif not result:
-                    failed_records.append(
-                        {
-                            "primary_field": primary_field,
-                            "primary_field_value": filtered_batch[i].get(primary_field, "Unknown"),
-                            "error": "Creation failed - no response",
-                        }
-                    )
-
-            success_count = sum(1 for r in results if r and not isinstance(r, Exception))
-            error_count = len(batch) - success_count
-
-            return success_count, error_count, failed_records
-
-    def get_model_structure(self, model_type: str) -> Dict:
-        query = f"""
-        query GetModelType {{
-          __type(name: "{model_type}") {{
-            name
-            kind
-            description
-            fields {{
-              name
-              type {{
-                name
-                kind
-                ofType {{
-                  name
-                  kind
-                  ofType {{
-                    name
-                    kind
-                  }}
-                }}
-              }}
-              description
-            }}
-          }}
-        }}
-        """
-
-        response = self._request(query)
-        if response and "data" in response and "__type" in response["data"]:
-            return response["data"]["__type"]
-
-        return {}
+    def get_model_structure(self, model_type: str) -> Dict[str, Any]:
+        """Get the GraphQL schema structure for a model type."""
+        return self._executor.get_model_structure(model_type)
 
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
-        """
-        Returns: (field_name, is_secondary_index, field_type)
-        """
-        secondary_index = self._get_secondary_index(model_name)
-        if secondary_index:
-            field_type = "String"
-            for field in parsed_model_structure["fields"]:
-                if field["name"] == secondary_index:
-                    field_type = field["type"]
-                    break
-            return secondary_index, True, field_type
-
-        for field in parsed_model_structure["fields"]:
-            if field["is_required"] and field["is_scalar"] and field["name"] != "id":
-                return field["name"], False, field["type"]
-
-        logger.error("No suitable primary field found (required scalar field other than id)")
-        return "", False, "String"
+        """Determine the primary field for a model."""
+        return self._executor.get_primary_field_name(model_name, parsed_model_structure)
 
     def _get_secondary_index(self, model_name: str) -> str:
-        query_structure = self.get_model_structure("Query")
-        if not query_structure:
-            logger.error("Query type not found in schema")
-            return ""
+        """Find secondary index for a model."""
+        return self._executor._get_secondary_index(model_name)
 
-        query_fields = query_structure["fields"]
-
-        pattern = f"{model_name}By"
-
-        for query in query_fields:
-            query_name = query["name"]
-            if pattern in query_name:
-                pattern_index = query_name.index(pattern)
-                field_name = query_name[pattern_index + len(pattern) :]
-                return field_name[0].lower() + field_name[1:] if field_name else ""
-
-        return ""
-
-    def _get_list_query_name(self, model_name: str) -> str | None:
-        query_structure = self.get_model_structure("Query")
-        if not query_structure:
-            logger.error("Query type not found in schema")
-            return f"list{model_name}s"
-
-        query_fields = query_structure["fields"]
-        p = inflect.engine()
-
-        candidates = [f"list{model_name}"]
-        capitals = [i for i, c in enumerate(model_name) if c.isupper()]
-
-        if len(capitals) > 1:
-            last_word_start = capitals[-1]
-            prefix = model_name[:last_word_start]
-            last_word = model_name[last_word_start:]
-
-            last_word_plural = str(p.plural(last_word.lower()))  # type: ignore[arg-type]
-            last_word_plural_cap = last_word_plural[0].upper() + last_word_plural[1:] if last_word_plural else ""
-
-            pascal_plural = f"{prefix}{last_word_plural_cap}"
-            candidates.append(f"list{pascal_plural}")
-
-        full_plural = str(p.plural(model_name.lower()))  # type: ignore[arg-type]
-        full_plural_cap = full_plural[0].upper() + full_plural[1:] if full_plural else ""
-        candidates.append(f"list{full_plural_cap}")
-
-        for query in query_fields:
-            query_name = query["name"]
-            if query_name in candidates and "By" not in query_name:
-                return query_name
-
-        logger.error(f"No list query found for model {model_name}, tried: {candidates}")
-        return None
+    def _get_list_query_name(self, model_name: str) -> Optional[str]:
+        """Determine the correct list query name for a model."""
+        return self._executor._get_list_query_name(model_name)
 
     def upload(
-        self, records: list, model_name: str, parsed_model_structure: Dict[str, Any]
-    ) -> tuple[int, int, list[Dict]]:
-        logger.info("Uploading to Amplify backend...")
-
-        success_count = 0
-        error_count = 0
-        all_failed_records = []
-        num_of_batches = (len(records) + self.batch_size - 1) // self.batch_size
-
-        primary_field, is_secondary_index, field_type = self.get_primary_field_name(model_name, parsed_model_structure)
-        if not primary_field:
-            logger.error(f"Aborting upload for model {model_name}")
-            return 0, len(records), []
-
-        for i in range(0, len(records), self.batch_size):
-            batch = records[i : i + self.batch_size]
-            logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
-
-            batch_success, batch_error, batch_failed_records = asyncio.run(
-                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
-            )
-            success_count += batch_success
-            error_count += batch_error
-            all_failed_records.extend(batch_failed_records)
-
-            logger.info(
-                f"Processed batch {i // self.batch_size + 1} of model {model_name}: {success_count} success, {error_count} errors"
-            )
-
-        return success_count, error_count, all_failed_records
+        self, records: List[Dict], model_name: str, parsed_model_structure: Dict[str, Any]
+    ) -> tuple[int, int, List[Dict]]:
+        """Upload multiple records in batches."""
+        return self._executor.upload(records, model_name, parsed_model_structure)
 
     def list_records_by_secondary_index(
-        self, model_name: str, secondary_index: str, value: str = None, fields: list = None, field_type: str = "String"
-    ) -> Dict | None:
-        if fields is None:
-            fields = ["id", secondary_index]
-
-        fields_str = "\n".join(fields)
-        all_items = []
-        next_token = None
-
-        if not value:
-            query_name = self._get_list_query_name(model_name)
-
-            while True:
-                query = f"""
-                query List{model_name}s($limit: Int, $nextToken: String) {{
-                  {query_name}(limit: $limit, nextToken: $nextToken) {{
-                    items {{
-                        {fields_str}
-                    }}
-                    nextToken
-                  }}
-                }}
-                """
-                variables = {"limit": 1000, "nextToken": next_token}
-                result = self._request(query, variables)
-
-                if result and "data" in result:
-                    data = result["data"].get(query_name, {})
-                    items = data.get("items", [])
-                    all_items.extend(items)
-                    next_token = data.get("nextToken")
-
-                    if not next_token:
-                        break
-                else:
-                    break
-        else:
-            query_name = f"list{model_name}By{secondary_index[0].upper() + secondary_index[1:]}"
-
-            while True:
-                query = f"""
-                query {query_name}(${secondary_index}: {field_type}!, $limit: Int, $nextToken: String) {{
-                  {query_name}({secondary_index}: ${secondary_index}, limit: $limit, nextToken: $nextToken) {{
-                    items {{
-                        {fields_str}
-                    }}
-                    nextToken
-                  }}
-                }}
-                """
-                variables = {secondary_index: value, "limit": 1000, "nextToken": next_token}
-                result = self._request(query, variables)
-
-                if result and "data" in result:
-                    data = result["data"].get(query_name, {})
-                    items = data.get("items", [])
-                    all_items.extend(items)
-                    next_token = data.get("nextToken")
-
-                    if not next_token:
-                        break
-                else:
-                    break
-
-        return all_items if all_items else None
+        self,
+        model_name: str,
+        secondary_index: str,
+        value: Optional[str] = None,
+        fields: Optional[List] = None,
+        field_type: str = "String",
+    ) -> Optional[List[Dict]]:
+        """List records using a secondary index."""
+        return self._executor.list_records_by_secondary_index(model_name, secondary_index, value, fields, field_type)
 
     def list_records_by_field(
-        self, model_name: str, field_name: str, value: str = None, fields: list = None
-    ) -> Dict | None:
-        if fields is None:
-            fields = ["id", field_name]
+        self, model_name: str, field_name: str, value: Optional[str] = None, fields: Optional[List] = None
+    ) -> Optional[List[Dict]]:
+        """List records filtered by a field value."""
+        return self._executor.list_records_by_field(model_name, field_name, value, fields)
 
-        fields_str = "\n".join(fields)
-        all_items = []
-        next_token = None
-
-        query_name = self._get_list_query_name(model_name)
-
-        if not value:
-            while True:
-                query = f"""
-                query List{model_name}s($limit: Int, $nextToken: String) {{
-                  {query_name}(limit: $limit, nextToken: $nextToken) {{
-                    items {{
-                        {fields_str}
-                    }}
-                    nextToken
-                  }}
-                }}
-                """
-                variables = {"limit": 1000, "nextToken": next_token}
-                result = self._request(query, variables)
-
-                if result and "data" in result:
-                    data = result["data"].get(query_name, {})
-                    items = data.get("items", [])
-                    all_items.extend(items)
-                    next_token = data.get("nextToken")
-
-                    if not next_token:
-                        break
-                else:
-                    break
-        else:
-            while True:
-                query = f"""
-                query List{model_name}s($filter: Model{model_name}FilterInput, $limit: Int, $nextToken: String) {{
-                  {query_name}(filter: $filter, limit: $limit, nextToken: $nextToken) {{
-                    items {{
-                        {fields_str}
-                    }}
-                    nextToken
-                  }}
-                }}
-                """
-                filter_input = {field_name: {"eq": value}}
-                variables = {"filter": filter_input, "limit": 1000, "nextToken": next_token}
-                result = self._request(query, variables)
-
-                if result and "data" in result:
-                    data = result["data"].get(query_name, {})
-                    items = data.get("items", [])
-                    all_items.extend(items)
-                    next_token = data.get("nextToken")
-
-                    if not next_token:
-                        break
-                else:
-                    break
-
-        return all_items if all_items else None
-
-    def get_record_by_id(self, model_name: str, record_id: str, fields: list = None) -> Dict | None:
-        if fields is None:
-            fields = ["id"]
-
-        query = QueryBuilder.build_get_by_id_query(model_name, fields=fields)
-        query_name = f"get{model_name}"
-
-        result = self._request(query, {"id": record_id})
-
-        if result and "data" in result:
-            return result["data"].get(query_name)
-
-        return None
+    def get_record_by_id(self, model_name: str, record_id: str, fields: Optional[List] = None) -> Optional[Dict]:
+        """Get a single record by ID."""
+        return self._executor.get_record_by_id(model_name, record_id, fields)
 
     def get_records(
         self,
         model_name: str,
-        primary_field: str = None,
-        is_secondary_index: bool = None,
-        fields: list = None,
-    ) -> list | None:
-        if model_name in self.records_cache:
-            return self.records_cache[model_name]
-
-        if not primary_field:
-            return None
-        if is_secondary_index:
-            records = self.list_records_by_secondary_index(model_name, primary_field, fields=fields)
-        else:
-            records = self.list_records_by_field(model_name, primary_field, fields=fields)
-
-        if records:
-            self.records_cache[model_name] = records
-            logger.debug(f"💾 Cached {len(records)} records for {model_name}")
-        return records
+        primary_field: Optional[str] = None,
+        is_secondary_index: Optional[bool] = None,
+        fields: Optional[List] = None,
+    ) -> Optional[List[Dict]]:
+        """Get all records for a model with caching."""
+        return self._executor.get_records(model_name, primary_field, is_secondary_index, fields)
 
     def get_record(
         self,
         model_name: str,
-        parsed_model_structure: Dict[str, Any] = None,
-        value: str = None,
-        record_id: str = None,
-        primary_field: str = None,
-        is_secondary_index: bool = None,
-        fields: list = None,
-    ) -> Dict | None:
-        if record_id:
-            return self.get_record_by_id(model_name, record_id)
-
-        if not primary_field:
-            if not parsed_model_structure:
-                logger.error("Parsed model structure required if primary_field not provided")
-                return None
-            primary_field, is_secondary_index, _ = self.get_primary_field_name(model_name, parsed_model_structure)
-        records = self.get_records(model_name, primary_field, is_secondary_index, fields)
-        if not records:
-            return None
-        return next((record for record in records if record.get(primary_field) == value), None)
+        parsed_model_structure: Optional[Dict[str, Any]] = None,
+        value: Optional[str] = None,
+        record_id: Optional[str] = None,
+        primary_field: Optional[str] = None,
+        is_secondary_index: Optional[bool] = None,
+        fields: Optional[List] = None,
+    ) -> Optional[Dict]:
+        """Get a single record by ID or by primary field value."""
+        return self._executor.get_record(
+            model_name, parsed_model_structure, value, record_id, primary_field, is_secondary_index, fields
+        )
 
     def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-        """
-        Build a cache of foreign key lookups for all ID fields in the DataFrame.
-
-        This pre-fetches all related records to avoid N+1 query problems during row processing.
-
-        Args:
-            df: pandas DataFrame containing the data to be processed
-            parsed_model_structure: Parsed model structure containing field information
-
-        Returns:
-            Dictionary mapping model names to lookup dictionaries and primary fields
-        """
-
-        fk_lookup_cache = {}
-
-        for field in parsed_model_structure["fields"]:
-            if not field["is_id"]:
-                continue
-
-            field_name = field["name"][:-2]
-
-            if field_name not in df.columns:
-                continue
-
-            if "related_model" in field:
-                related_model = field["related_model"]
-            else:
-                related_model = field_name[0].upper() + field_name[1:]
-
-            if related_model in fk_lookup_cache:
-                continue
-
-            try:
-                primary_field, is_secondary_index, _ = self.get_primary_field_name(
-                    related_model, parsed_model_structure
-                )
-                records = self.get_records(related_model, primary_field, is_secondary_index)
-
-                if records:
-                    lookup = {
-                        str(record.get(primary_field)): record.get("id")
-                        for record in records
-                        if record.get(primary_field)
-                    }
-                    fk_lookup_cache[related_model] = {"lookup": lookup, "primary_field": primary_field}
-                    logger.debug(f"  📦 Cached {len(lookup)} {related_model} records")
-            except Exception as e:
-                logger.warning(f"  ⚠️  Could not pre-fetch {related_model}: {e}")
-
-        return fk_lookup_cache
+        """Build a cache of foreign key lookups for all ID fields in the DataFrame."""
+        return self._executor.build_foreign_key_lookups(df, parsed_model_structure)
