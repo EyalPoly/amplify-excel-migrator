@@ -14,9 +14,7 @@ class TestBuildForeignKeyLookups:
 
     def test_builds_lookup_cache_for_related_models(self):
         """Test that FK lookup cache is built correctly"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(
@@ -45,9 +43,7 @@ class TestBuildForeignKeyLookups:
 
     def test_skips_non_id_fields(self):
         """Test that non-ID fields are skipped"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock()
         client.get_records = MagicMock()
@@ -69,9 +65,7 @@ class TestBuildForeignKeyLookups:
 
     def test_skips_fields_not_in_dataframe(self):
         """Test that fields not in DataFrame columns are skipped"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock()
 
@@ -88,9 +82,7 @@ class TestBuildForeignKeyLookups:
 
     def test_infers_related_model_from_field_name(self):
         """Test that related model is inferred when not explicitly provided"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=[{"id": "author-1", "name": "Author One"}])
@@ -114,9 +106,7 @@ class TestBuildForeignKeyLookups:
 
     def test_handles_errors_gracefully(self):
         """Test that errors in fetching don't crash the whole process"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(side_effect=Exception("API Error"))
 
@@ -133,9 +123,7 @@ class TestBuildForeignKeyLookups:
 
     def test_deduplicates_same_related_model(self):
         """Test that the same related model is only fetched once"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=[{"id": "reporter-1", "name": "John Doe"}])
@@ -160,9 +148,7 @@ class TestBuildForeignKeyLookups:
 
     def test_handles_empty_records_response(self):
         """Test that empty records from API don't break the cache"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(return_value=None)  # API returns None
@@ -179,9 +165,7 @@ class TestBuildForeignKeyLookups:
 
     def test_filters_out_records_without_primary_field(self):
         """Test that records without the primary field are filtered out"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         client.get_records = MagicMock(
@@ -211,19 +195,18 @@ class TestCustomExceptions:
 
     def test_authentication_error_raised(self):
         """Test that AuthenticationError is raised when not authenticated"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         with pytest.raises(AuthenticationError, match="Not authenticated"):
             client._request("query { test }")
 
     def test_graphql_error_raised(self):
         """Test that GraphQLError is raised for GraphQL errors"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post") as mock_post:
             mock_response = Mock()
@@ -242,10 +225,11 @@ class TestRequestErrorHandling:
 
     def test_connection_error_with_context(self):
         """Test ConnectionError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post", side_effect=requests.exceptions.ConnectionError("Connection failed")):
             with pytest.raises(SystemExit):  # Connection errors exit the system
@@ -253,10 +237,11 @@ class TestRequestErrorHandling:
 
     def test_timeout_error_with_context(self):
         """Test Timeout error handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post", side_effect=requests.exceptions.Timeout("Request timeout")):
             result = client._request("query { test }", context="Model: field=value")
@@ -264,10 +249,11 @@ class TestRequestErrorHandling:
 
     def test_http_error_with_context(self):
         """Test HTTPError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post", side_effect=requests.exceptions.HTTPError("HTTP error")):
             result = client._request("query { test }", context="Model: field=value")
@@ -275,10 +261,11 @@ class TestRequestErrorHandling:
 
     def test_request_exception_with_context(self):
         """Test RequestException handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post", side_effect=requests.exceptions.RequestException("Request error")):
             result = client._request("query { test }", context="Model: field=value")
@@ -286,10 +273,11 @@ class TestRequestErrorHandling:
 
     def test_http_error_status_code_with_context(self):
         """Test non-200 status code with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch("requests.post") as mock_post:
             mock_response = Mock()
@@ -307,9 +295,7 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_authentication_error_async(self):
         """Test that AuthenticationError is raised when not authenticated"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
+        client = AmplifyClient(api_endpoint="https://test.com")
 
         async with aiohttp.ClientSession() as session:
             with pytest.raises(AuthenticationError, match="Not authenticated"):
@@ -318,10 +304,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_connection_error_async_with_context(self):
         """Test ClientConnectionError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ClientConnectionError("Connection failed")):
@@ -331,10 +318,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_timeout_error_async_with_context(self):
         """Test ServerTimeoutError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ServerTimeoutError("Request timeout")):
@@ -344,10 +332,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_client_response_error_async_with_context(self):
         """Test ClientResponseError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             # Create a proper ClientResponseError
@@ -368,10 +357,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_client_error_async_with_context(self):
         """Test ClientError handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             with patch.object(session, "post", side_effect=aiohttp.ClientError("Client error")):
@@ -381,10 +371,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_graphql_error_async_with_context(self):
         """Test GraphQL error handling with context"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             mock_response = AsyncMock()
@@ -400,10 +391,11 @@ class TestRequestAsyncErrorHandling:
     @pytest.mark.asyncio
     async def test_http_error_status_code_async(self):
         """Test non-200 status code raises exception"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         async with aiohttp.ClientSession() as session:
             mock_response = AsyncMock()
@@ -422,10 +414,11 @@ class TestPagination:
 
     def test_single_page_query(self):
         """Test query that returns all items in single page (no nextToken)"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -453,10 +446,11 @@ class TestPagination:
 
     def test_multiple_pages_query(self):
         """Test query that returns items across multiple pages"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -500,10 +494,11 @@ class TestPagination:
 
     def test_pagination_with_limit_1000(self):
         """Test that pagination uses limit of 1000"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -525,10 +520,11 @@ class TestPagination:
 
     def test_pagination_passes_nexttoken(self):
         """Test that nextToken is passed correctly between pages"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -563,10 +559,11 @@ class TestPagination:
 
     def test_empty_results_no_pagination(self):
         """Test query that returns no items"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -588,10 +585,11 @@ class TestPagination:
 
     def test_error_handling_stops_pagination(self):
         """Test that errors stop pagination loop"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listReporters")
 
         with patch.object(client, "_request") as mock_request:
@@ -617,10 +615,11 @@ class TestPagination:
 
     def test_pagination_with_secondary_index_value(self):
         """Test pagination with specific secondary index value"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         with patch.object(client, "_request") as mock_request:
             mock_request.side_effect = [
@@ -659,10 +658,11 @@ class TestContextInAsyncMethods:
     @pytest.mark.asyncio
     async def test_create_record_async_includes_context(self):
         """Test that create_record_async passes context to _request_async"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
 
         data = {"name": "Test Name"}
 
@@ -688,10 +688,11 @@ class TestContextInAsyncMethods:
     @pytest.mark.asyncio
     async def test_check_record_exists_async_includes_context(self):
         """Test that check_record_exists_async passes context to _request_async"""
-        client = AmplifyClient(
-            api_endpoint="https://test.com", user_pool_id="pool-id", region="us-east-1", client_id="client-id"
-        )
-        client.id_token = "test-token"
+        client = AmplifyClient(api_endpoint="https://test.com")
+        mock_auth = Mock()
+        mock_auth.is_authenticated.return_value = True
+        mock_auth.get_id_token.return_value = "test-token"
+        client.auth_provider = mock_auth
         client._get_list_query_name = MagicMock(return_value="listTestModels")
 
         record = {"name": "Test Name"}
