@@ -1,7 +1,7 @@
-"""Tests for ModelFieldParser class"""
+"""Tests for FieldParser class"""
 
 import pytest
-from model_field_parser import ModelFieldParser
+from amplify_excel_migrator.schema import FieldParser
 
 
 class TestExtractRelationshipInfo:
@@ -9,7 +9,7 @@ class TestExtractRelationshipInfo:
 
     def test_extracts_belongsto_relationship(self):
         """Test extracting belongsTo relationship info"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         field = {"name": "photographer", "type": {"kind": "OBJECT", "name": "Reporter", "ofType": None}, "args": []}
 
@@ -21,7 +21,7 @@ class TestExtractRelationshipInfo:
 
     def test_extracts_with_non_null_wrapper(self):
         """Test extracting relationship with NON_NULL wrapper"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         field = {
             "name": "author",
@@ -37,7 +37,7 @@ class TestExtractRelationshipInfo:
 
     def test_extracts_from_all_fields(self):
         """Test that _extract_relationship_info filters out Connection types"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Connection types should be filtered out by _extract_relationship_info
         field = {"name": "posts", "type": {"kind": "OBJECT", "name": "ModelPostConnection", "ofType": None}, "args": []}
@@ -53,7 +53,7 @@ class TestParseModelStructure:
 
     def test_raises_value_error_on_empty_introspection(self):
         """Test that ValueError is raised when introspection result is empty"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         with pytest.raises(ValueError, match="Introspection result cannot be empty"):
             parser.parse_model_structure(None)
@@ -63,7 +63,7 @@ class TestParseModelStructure:
 
     def test_includes_all_fields_except_metadata(self):
         """Test that all fields except metadata and relationship objects are included"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         introspection_result = {
             "name": "Story",
@@ -102,7 +102,7 @@ class TestParseModelStructure:
 
     def test_adds_related_model_to_foreign_key(self):
         """Test that foreign key fields get related_model property"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         introspection_result = {
             "name": "Story",
@@ -132,7 +132,7 @@ class TestParseModelStructure:
 
     def test_handles_multiple_relationships(self):
         """Test handling multiple belongsTo relationships"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         introspection_result = {
             "name": "Story",
@@ -175,7 +175,7 @@ class TestParseModelStructure:
 
     def test_preserves_custom_types(self):
         """Test that custom type OBJECT fields are preserved (not filtered)"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         introspection_result = {
             "name": "User",
@@ -211,7 +211,7 @@ class TestParseFieldWithRelationships:
 
     def test_marks_custom_type_correctly(self):
         """Test that custom type fields are marked correctly"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         field = {"name": "address", "type": {"kind": "OBJECT", "name": "Address", "ofType": None}, "description": None}
 
@@ -222,7 +222,7 @@ class TestParseFieldWithRelationships:
 
     def test_skips_connections(self):
         """Test that Connection types are skipped"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         field = {
             "name": "posts",
@@ -236,7 +236,7 @@ class TestParseFieldWithRelationships:
 
     def test_skips_metadata_fields(self):
         """Test that metadata fields are skipped"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         for field_name in ["id", "createdAt", "updatedAt", "owner"]:
             field = {
@@ -255,7 +255,7 @@ class TestCleanInput:
 
     def test_strips_whitespace(self):
         """Test that leading and trailing whitespace is stripped"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         assert parser.clean_input("  test  ") == "test"
         assert parser.clean_input("\t test \n") == "test"
@@ -263,7 +263,7 @@ class TestCleanInput:
 
     def test_removes_unicode_control_characters(self):
         """Test that Unicode control characters (Cc) are removed"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # NULL character (U+0000)
         assert parser.clean_input("test\x00value") == "testvalue"
@@ -274,7 +274,7 @@ class TestCleanInput:
 
     def test_removes_unicode_format_characters(self):
         """Test that Unicode format characters (Cf) are removed"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Zero-width space (U+200B)
         assert parser.clean_input("test\u200bvalue") == "testvalue"
@@ -287,7 +287,7 @@ class TestCleanInput:
 
     def test_preserves_newline_tab_carriage_return(self):
         """Test that newline, tab, and carriage return are preserved"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Newline (U+000A)
         assert parser.clean_input("test\nvalue") == "test\nvalue"
@@ -298,7 +298,7 @@ class TestCleanInput:
 
     def test_handles_non_string_input(self):
         """Test that non-string values are returned unchanged"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         assert parser.clean_input(123) == 123
         assert parser.clean_input(123.45) == 123.45
@@ -308,13 +308,13 @@ class TestCleanInput:
 
     def test_handles_empty_string(self):
         """Test that empty string is handled correctly"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         assert parser.clean_input("") == ""
 
     def test_preserves_valid_unicode_characters(self):
         """Test that valid Unicode characters are preserved"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Emoji
         assert parser.clean_input("test 😀 value") == "test 😀 value"
@@ -327,7 +327,7 @@ class TestCleanInput:
 
     def test_complex_string_with_multiple_control_chars(self):
         """Test cleaning string with multiple control characters"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Mix of control characters that should be removed and preserved
         input_str = "  test\x00\u200b\nvalue\t\u00adend  "
@@ -340,7 +340,7 @@ class TestIntegrationBelongsToFlow:
 
     def test_full_story_model_with_photographer(self):
         """Test complete Story model with photographer belongsTo relationship"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         # Simulate real GraphQL introspection response
         introspection_result = {
@@ -434,7 +434,7 @@ class TestIntegrationBelongsToFlow:
 
     def test_model_without_relationships(self):
         """Test model without any belongsTo relationships"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
 
         introspection_result = {
             "name": "User",
@@ -474,7 +474,7 @@ class TestParseScalarArray:
 
     def test_parses_json_array_format(self):
         """Test parsing JSON array format"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(
@@ -485,7 +485,7 @@ class TestParseScalarArray:
 
     def test_parses_semicolon_separated(self):
         """Test parsing semicolon-separated values"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "urls", "https://url1.com; https://url2.com; https://url3.com")
@@ -494,7 +494,7 @@ class TestParseScalarArray:
 
     def test_parses_comma_separated(self):
         """Test parsing comma-separated values"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "tags", "tag1, tag2, tag3")
@@ -503,7 +503,7 @@ class TestParseScalarArray:
 
     def test_parses_space_separated(self):
         """Test parsing space-separated values"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "tags", "tag1 tag2 tag3")
@@ -512,7 +512,7 @@ class TestParseScalarArray:
 
     def test_parses_int_array(self):
         """Test parsing integer array"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "numbers", "1, 2, 3, 4, 5")
@@ -521,7 +521,7 @@ class TestParseScalarArray:
 
     def test_parses_float_array(self):
         """Test parsing float array"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "scores", "type": "Float", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "scores", "1.5, 2.7, 3.9")
@@ -530,7 +530,7 @@ class TestParseScalarArray:
 
     def test_parses_boolean_array(self):
         """Test parsing boolean array"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "flags", "type": "Boolean", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "flags", "true, false, yes, no")
@@ -539,7 +539,7 @@ class TestParseScalarArray:
 
     def test_returns_none_for_empty_value(self):
         """Test that empty values return None"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         assert parser.parse_scalar_array(field, "tags", "") is None
@@ -550,7 +550,7 @@ class TestParseScalarArray:
 
     def test_handles_single_value_as_array(self):
         """Test that single value is returned as single-item array"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "tags", "single-value")
@@ -559,7 +559,7 @@ class TestParseScalarArray:
 
     def test_skips_empty_elements(self):
         """Test that empty elements are skipped"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "tags", "tag1, , tag3, , tag5")
@@ -568,7 +568,7 @@ class TestParseScalarArray:
 
     def test_cleans_whitespace_from_elements(self):
         """Test that whitespace is cleaned from elements"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "tags", "type": "String", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "tags", "  tag1  ,  tag2  ,  tag3  ")
@@ -577,7 +577,7 @@ class TestParseScalarArray:
 
     def test_handles_mixed_separators_prioritizes_semicolon(self):
         """Test that semicolon takes priority over comma and space"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "values", "type": "String", "is_list": True, "is_scalar": True}
 
         # When semicolon is present, use it (even if commas exist)
@@ -587,7 +587,7 @@ class TestParseScalarArray:
 
     def test_handles_json_array_with_numbers(self):
         """Test JSON array with numbers"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(field, "numbers", "[1, 2, 3, 4, 5]")
@@ -596,7 +596,7 @@ class TestParseScalarArray:
 
     def test_handles_invalid_type_conversion_gracefully(self):
         """Test that invalid type conversions are skipped with warning"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "numbers", "type": "Int", "is_list": True, "is_scalar": True}
 
         # Mix of valid and invalid integers
@@ -607,7 +607,7 @@ class TestParseScalarArray:
 
     def test_handles_enum_array(self):
         """Test parsing enum array"""
-        parser = ModelFieldParser()
+        parser = FieldParser()
         field = {"name": "statuses", "type": "Status", "is_list": True, "is_scalar": True, "is_enum": True}
 
         result = parser.parse_scalar_array(field, "statuses", "active, pending, completed")

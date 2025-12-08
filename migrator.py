@@ -11,7 +11,7 @@ import pandas as pd
 
 from amplify_client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
-from model_field_parser import ModelFieldParser
+from amplify_excel_migrator.schema import FieldParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class ExcelToAmplifyMigrator:
     def __init__(self, excel_file_path: str):
         self._current_sheet = None
         self.failed_records_by_sheet = {}
-        self.model_field_parser = ModelFieldParser()
+        self.field_parser = FieldParser()
         self.excel_file_path = excel_file_path
         self.amplify_client = None
 
@@ -248,7 +248,7 @@ class ExcelToAmplifyMigrator:
 
     def get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
-        return self.model_field_parser.parse_model_structure(model_structure)
+        return self.field_parser.parse_model_structure(model_structure)
 
     def _record_failure(
         self,
@@ -299,7 +299,7 @@ class ExcelToAmplifyMigrator:
                 raise ValueError(f"Required field '{field_name}' is missing")
             return None
 
-        value = self.model_field_parser.clean_input(row_dict[field_name])
+        value = self.field_parser.clean_input(row_dict[field_name])
 
         if field["is_id"]:
             if "related_model" in field:
@@ -327,9 +327,9 @@ class ExcelToAmplifyMigrator:
                     raise ValueError(f"{related_model}: {value} does not exist")
                 return None
         elif field["is_list"] and field["is_scalar"]:
-            return self.model_field_parser.parse_scalar_array(field, field_name, row_dict[field_name])
+            return self.field_parser.parse_scalar_array(field, field_name, row_dict[field_name])
         else:
-            return self.model_field_parser.parse_field_input(field, field_name, value)
+            return self.field_parser.parse_field_input(field, field_name, value)
 
     def _parse_custom_type_array(self, row: pd.Series, field: Dict[str, Any]) -> Any:
         field_name = field["name"]
@@ -346,7 +346,7 @@ class ExcelToAmplifyMigrator:
         parsed_custom_type = self.get_parsed_model_structure(custom_type_name)
         custom_type_fields = parsed_custom_type["fields"]
 
-        return self.model_field_parser.build_custom_type_from_columns(row, custom_type_fields, custom_type_name)
+        return self.field_parser.build_custom_type_from_columns(row, custom_type_fields, custom_type_name)
 
     @staticmethod
     def to_camel_case(s: str) -> str:
