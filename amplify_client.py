@@ -128,14 +128,6 @@ class AmplifyClient:
         """Determine the primary field for a model."""
         return self._executor.get_primary_field_name(model_name, parsed_model_structure)
 
-    def _get_secondary_index(self, model_name: str) -> str:
-        """Find secondary index for a model."""
-        return self._executor._get_secondary_index(model_name)
-
-    def _get_list_query_name(self, model_name: str) -> Optional[str]:
-        """Determine the correct list query name for a model."""
-        return self._executor._get_list_query_name(model_name)
-
     def upload(
         self, records: List[Dict], model_name: str, parsed_model_structure: Dict[str, Any]
     ) -> tuple[int, int, List[Dict]]:

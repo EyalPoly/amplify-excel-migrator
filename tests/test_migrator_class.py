@@ -61,7 +61,7 @@ class TestExcelToAmplifyMigratorInit:
 
         assert migrator.excel_file_path == "test.xlsx"
         assert migrator.amplify_client is None
-        assert migrator.model_field_parser is not None
+        assert migrator.field_parser is not None
 
     def test_init_client(self):
         """Test client initialization"""
