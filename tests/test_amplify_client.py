@@ -419,9 +419,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             # Simulate single page response with no nextToken
             mock_request.return_value = {
                 "data": {
@@ -451,9 +451,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             # Simulate multiple page responses
             mock_request.side_effect = [
                 {
@@ -499,9 +499,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             mock_request.return_value = {
                 "data": {
                     "listReporters": {
@@ -525,9 +525,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             mock_request.side_effect = [
                 {
                     "data": {
@@ -549,13 +549,13 @@ class TestPagination:
 
             client.list_records_by_secondary_index("Reporter", "name")
 
-            # First call should have None for nextToken
+            # First call should not have nextToken (or have None)
             first_call_vars = mock_request.call_args_list[0][0][1]
-            assert first_call_vars["nextToken"] is None
+            assert first_call_vars.get("nextToken") is None
 
             # Second call should have token1
             second_call_vars = mock_request.call_args_list[1][0][1]
-            assert second_call_vars["nextToken"] == "token1"
+            assert second_call_vars.get("nextToken") == "token1"
 
     def test_empty_results_no_pagination(self):
         """Test query that returns no items"""
@@ -564,9 +564,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             mock_request.return_value = {
                 "data": {
                     "listReporters": {
@@ -590,9 +590,9 @@ class TestPagination:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listReporters")
+        client._executor._get_list_query_name = MagicMock(return_value="listReporters")
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             mock_request.side_effect = [
                 {
                     "data": {
@@ -621,7 +621,7 @@ class TestPagination:
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
 
-        with patch.object(client, "_request") as mock_request:
+        with patch.object(client._client, "request") as mock_request:
             mock_request.side_effect = [
                 {
                     "data": {
@@ -667,7 +667,7 @@ class TestContextInAsyncMethods:
         data = {"name": "Test Name"}
 
         async with aiohttp.ClientSession() as session:
-            with patch.object(client, "_request_async", new_callable=AsyncMock) as mock_request:
+            with patch.object(client._client, "request_async", new_callable=AsyncMock) as mock_request:
                 mock_request.return_value = {"data": {"createTestModel": {"id": "test-id", "name": "Test Name"}}}
 
                 await client.create_record_async(session, data, "TestModel", "name")
@@ -693,12 +693,12 @@ class TestContextInAsyncMethods:
         mock_auth.is_authenticated.return_value = True
         mock_auth.get_id_token.return_value = "test-token"
         client.auth_provider = mock_auth
-        client._get_list_query_name = MagicMock(return_value="listTestModels")
+        client._executor._get_list_query_name = MagicMock(return_value="listTestModels")
 
         record = {"name": "Test Name"}
 
         async with aiohttp.ClientSession() as session:
-            with patch.object(client, "_request_async", new_callable=AsyncMock) as mock_request:
+            with patch.object(client._client, "request_async", new_callable=AsyncMock) as mock_request:
                 mock_request.return_value = {"data": {"listTestModels": {"items": []}}}
 
                 await client.check_record_exists_async(session, "TestModel", "name", "Test Name", False, record)
