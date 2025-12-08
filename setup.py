@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="amplify-excel-migrator",
-    version="1.2.9",
+    version="1.2.10",
     author="Eyal Politansky",
     author_email="10eyal10@gmail.com",
     description="A CLI tool to migrate Excel data to AWS Amplify",
