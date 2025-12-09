@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -12,7 +12,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/EyalPoly/amplify-excel-migrator",
-    py_modules=["migrator", "amplify_client", "model_field_parser"],
+    packages=find_packages(),
+    py_modules=["amplify_client"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -42,7 +43,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "amplify-migrator=migrator:main",
+            "amplify-migrator=amplify_excel_migrator.cli.commands:main",
         ],
     },
 )

@@ -5,7 +5,7 @@ import sys
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from migrator import (
+from amplify_excel_migrator.cli.commands import (
     cmd_show,
     cmd_config,
     cmd_migrate,
@@ -201,8 +201,8 @@ class TestCmdMigrate:
         # Mock the entire migration process
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
-                with patch("migrator.ExcelReader") as mock_excel_reader_class:
-                    with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                with patch("amplify_excel_migrator.cli.commands.ExcelReader") as mock_excel_reader_class:
+                    with patch("amplify_excel_migrator.cli.commands.MigrationOrchestrator") as mock_orchestrator_class:
                         with patch("amplify_excel_migrator.core.config.getpass", return_value="password123"):
                             mock_auth_instance = MagicMock()
                             mock_auth_instance.authenticate.return_value = True
@@ -243,8 +243,8 @@ class TestCmdMigrate:
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
-                with patch("migrator.ExcelReader") as mock_excel_reader_class:
-                    with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                with patch("amplify_excel_migrator.cli.commands.ExcelReader") as mock_excel_reader_class:
+                    with patch("amplify_excel_migrator.cli.commands.MigrationOrchestrator") as mock_orchestrator_class:
                         with patch(
                             "amplify_excel_migrator.core.config.getpass", return_value="secret_password"
                         ) as mock_getpass:
@@ -277,7 +277,7 @@ class TestCmdMigrate:
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
-                with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                with patch("amplify_excel_migrator.cli.commands.MigrationOrchestrator") as mock_orchestrator_class:
                     with patch("amplify_excel_migrator.core.config.getpass", return_value="wrong_password"):
                         mock_auth_instance = MagicMock()
                         mock_auth_instance.authenticate.return_value = False  # Authentication fails
