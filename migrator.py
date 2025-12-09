@@ -13,6 +13,7 @@ from amplify_client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
 from amplify_excel_migrator.schema import FieldParser
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
+from amplify_excel_migrator.migration import FailureTracker, ProgressReporter, BatchUploader
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -20,14 +21,15 @@ logger = logging.getLogger(__name__)
 
 class ExcelToAmplifyMigrator:
     def __init__(self, excel_file_path: str):
-        self._current_sheet = None
-        self.failed_records_by_sheet = {}
         self.excel_file_path = excel_file_path
         self.amplify_client = None
 
         self.field_parser = FieldParser()
         self.excel_reader = ExcelReader(excel_file_path)
         self.data_transformer = DataTransformer(self.field_parser)
+        self.failure_tracker = FailureTracker()
+        self.progress_reporter = ProgressReporter()
+        self.batch_uploader = None
 
     def init_client(
         self,
@@ -47,6 +49,8 @@ class ExcelToAmplifyMigrator:
             client_id=client_id,
         )
 
+        self.batch_uploader = BatchUploader(self.amplify_client)
+
         try:
             self.amplify_client.init_cognito_client(
                 is_aws_admin=is_aws_admin, username=username, aws_profile=aws_profile
@@ -57,6 +61,31 @@ class ExcelToAmplifyMigrator:
 
     def authenticate(self, username: str, password: str) -> bool:
         return self.amplify_client.authenticate(username, password)
+
+    @property
+    def failed_records_by_sheet(self) -> Dict[str, list]:
+        return self.failure_tracker.get_failures_by_sheet()
+
+    @failed_records_by_sheet.setter
+    def failed_records_by_sheet(self, value: Dict[str, list]) -> None:
+        self.failure_tracker.clear()
+        for sheet_name, failures in value.items():
+            self.failure_tracker.set_current_sheet(sheet_name)
+            for failure in failures:
+                self.failure_tracker.record_failure(
+                    primary_field=failure.get("primary_field", ""),
+                    primary_field_value=failure.get("primary_field_value", ""),
+                    error=failure.get("error", ""),
+                    original_row=failure.get("original_row"),
+                )
+
+    @property
+    def _current_sheet(self) -> str:
+        return self.failure_tracker._current_sheet
+
+    @_current_sheet.setter
+    def _current_sheet(self, value: str) -> None:
+        self.failure_tracker.set_current_sheet(value)
 
     def run(self):
         all_sheets = self.read_excel()
@@ -169,7 +198,6 @@ class ExcelToAmplifyMigrator:
 
     def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> int:
         self._current_sheet = sheet_name
-        self.failed_records_by_sheet[sheet_name] = []
 
         parsed_model_structure = self.get_parsed_model_structure(sheet_name)
 
@@ -244,19 +272,7 @@ class ExcelToAmplifyMigrator:
         error: str,
         original_row: Dict = None,
     ) -> None:
-        if self._current_sheet not in self.failed_records_by_sheet:
-            self.failed_records_by_sheet[self._current_sheet] = []
-
-        failure_record = {
-            "primary_field": primary_field,
-            "primary_field_value": primary_field_value,
-            "error": error,
-        }
-
-        if original_row is not None:
-            failure_record["original_row"] = original_row
-
-        self.failed_records_by_sheet[self._current_sheet].append(failure_record)
+        self.failure_tracker.record_failure(primary_field, primary_field_value, error, original_row)
 
     def transform_row_to_record(
         self, row_dict: Dict, parsed_model_structure: Dict[str, Any], fk_lookup_cache: Dict[str, Dict[str, str]]
