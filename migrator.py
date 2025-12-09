@@ -12,6 +12,7 @@ import pandas as pd
 from amplify_client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
 from amplify_excel_migrator.schema import FieldParser
+from amplify_excel_migrator.data import ExcelReader, DataTransformer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,9 +22,12 @@ class ExcelToAmplifyMigrator:
     def __init__(self, excel_file_path: str):
         self._current_sheet = None
         self.failed_records_by_sheet = {}
-        self.field_parser = FieldParser()
         self.excel_file_path = excel_file_path
         self.amplify_client = None
+
+        self.field_parser = FieldParser()
+        self.excel_reader = ExcelReader(excel_file_path)
+        self.data_transformer = DataTransformer(self.field_parser)
 
     def init_client(
         self,
@@ -161,10 +165,7 @@ class ExcelToAmplifyMigrator:
         return str(output_path)
 
     def read_excel(self) -> Dict[str, Any]:
-        logger.info(f"Reading Excel file: {self.excel_file_path}")
-        all_sheets = pd.read_excel(self.excel_file_path, sheet_name=None)
-        logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
-        return all_sheets
+        return self.excel_reader.read_all_sheets()
 
     def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> int:
         self._current_sheet = sheet_name
@@ -210,10 +211,7 @@ class ExcelToAmplifyMigrator:
         parsed_model_structure: Dict[str, Any],
         sheet_name: str,
     ) -> tuple[list[Any], Dict[str, Dict]]:
-        records = []
-        row_dict_by_primary = {}  # Maps primary_field_value to original row_dict
-        row_count = 0
-        df.columns = [self.to_camel_case(c) for c in df.columns]
+        df.columns = [self.data_transformer.to_camel_case(c) for c in df.columns]
         primary_field, _, _ = self.amplify_client.get_primary_field_name(sheet_name, parsed_model_structure)
 
         fk_lookup_cache = {}
@@ -221,28 +219,17 @@ class ExcelToAmplifyMigrator:
             logger.info("🚀 Pre-fetching foreign key lookups...")
             fk_lookup_cache = self.amplify_client.build_foreign_key_lookups(df, parsed_model_structure)
 
-        for row_tuple in df.itertuples(index=False, name="Row"):
-            row_count += 1
-            row_dict = {col: getattr(row_tuple, col) for col in df.columns}
-            primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
+        records, row_dict_by_primary, failed_rows = self.data_transformer.transform_rows_to_records(
+            df, parsed_model_structure, primary_field, fk_lookup_cache
+        )
 
-            row_dict_by_primary[str(primary_field_value)] = row_dict.copy()
-
-            try:
-                record = self.transform_row_to_record(row_dict, parsed_model_structure, fk_lookup_cache)
-                if record:
-                    records.append(record)
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"Error transforming row {row_count} ({primary_field}={primary_field_value}): {error_msg}")
-                self._record_failure(
-                    primary_field=primary_field,
-                    primary_field_value=primary_field_value,
-                    error=f"Parsing error: {error_msg}",
-                    original_row=row_dict,
-                )
-
-        logger.info(f"Prepared {len(records)} records for upload")
+        for failed_row in failed_rows:
+            self._record_failure(
+                primary_field=failed_row["primary_field"],
+                primary_field_value=failed_row["primary_field_value"],
+                error=failed_row["error"],
+                original_row=failed_row["original_row"],
+            )
 
         return records, row_dict_by_primary
 

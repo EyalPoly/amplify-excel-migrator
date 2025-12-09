@@ -146,8 +146,8 @@ class TestTransformRowsToRecords:
         migrator.amplify_client = MagicMock()
         migrator.amplify_client.get_primary_field_name.return_value = ("name", False, "String")
 
-        # Mock transform_row_to_record
-        migrator.transform_row_to_record = MagicMock(
+        # Mock transform_row_to_record on data_transformer
+        migrator.data_transformer.transform_row_to_record = MagicMock(
             side_effect=[{"name": "John", "email": "john@example.com"}, {"name": "Jane", "email": "jane@example.com"}]
         )
 
@@ -182,7 +182,7 @@ class TestTransformRowsToRecords:
             captured_rows.append(row)
             return {"test": "value"}
 
-        migrator.transform_row_to_record = MagicMock(side_effect=capture_row)
+        migrator.data_transformer.transform_row_to_record = MagicMock(side_effect=capture_row)
 
         df = pd.DataFrame({"User Name": ["John"], "Email Address": ["john@example.com"]})
 
@@ -216,7 +216,7 @@ class TestTransformRowsToRecords:
                 raise ValueError("Test error")
             return {"name": row["name"]}
 
-        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+        migrator.data_transformer.transform_row_to_record = MagicMock(side_effect=mock_transform)
 
         df = pd.DataFrame({"name": ["John", "Jane", "Bob"]})
 
@@ -258,7 +258,7 @@ class TestTransformRowsToRecords:
                 raise ValueError(f"Error in row {call_count[0]}")
             return {"name": row["name"]}
 
-        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+        migrator.data_transformer.transform_row_to_record = MagicMock(side_effect=mock_transform)
 
         df = pd.DataFrame({"name": ["Alice", "Bob", "Charlie", "David", "Eve"]})
 
@@ -294,7 +294,7 @@ class TestTransformRowsToRecords:
         def mock_transform(row, _, fk_cache):
             raise ValueError("Missing required field")
 
-        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+        migrator.data_transformer.transform_row_to_record = MagicMock(side_effect=mock_transform)
 
         # DataFrame without the primary field
         df = pd.DataFrame({"otherField": ["value1"]})
@@ -324,7 +324,7 @@ class TestTransformRowsToRecords:
         def mock_transform(row, _, fk_cache):
             raise ValueError("Test error")
 
-        migrator.transform_row_to_record = MagicMock(side_effect=mock_transform)
+        migrator.data_transformer.transform_row_to_record = MagicMock(side_effect=mock_transform)
 
         df = pd.DataFrame({"name": ["John"], "email": ["john@example.com"], "age": [30]})
 
@@ -353,8 +353,8 @@ class TestTransformRowsToRecords:
         migrator.amplify_client = MagicMock()
         migrator.amplify_client.get_primary_field_name.return_value = ("name", False, "String")
 
-        # Mock transform_row_to_record
-        migrator.transform_row_to_record = MagicMock(
+        # Mock transform_row_to_record on data_transformer
+        migrator.data_transformer.transform_row_to_record = MagicMock(
             side_effect=[{"name": "John", "email": "john@example.com"}, {"name": "Jane", "email": "jane@example.com"}]
         )
 
