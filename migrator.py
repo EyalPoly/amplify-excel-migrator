@@ -13,7 +13,7 @@ from amplify_client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
 from amplify_excel_migrator.schema import FieldParser
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
-from amplify_excel_migrator.migration import FailureTracker, ProgressReporter, BatchUploader
+from amplify_excel_migrator.migration import FailureTracker, ProgressReporter, BatchUploader, MigrationOrchestrator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -448,12 +448,40 @@ def cmd_migrate(args=None):
     print("-" * 54)
     password = config_manager.prompt_for_value("Admin Password", secret=True)
 
-    migrator = ExcelToAmplifyMigrator(excel_path)
-    migrator.init_client(api_endpoint, region, user_pool_id, client_id=client_id, username=username)
-    if not migrator.authenticate(username, password):
+    from amplify_excel_migrator.auth import CognitoAuthProvider
+
+    auth_provider = CognitoAuthProvider(
+        user_pool_id=user_pool_id,
+        client_id=client_id,
+        region=region,
+    )
+
+    amplify_client = AmplifyClient(
+        api_endpoint=api_endpoint,
+        auth_provider=auth_provider,
+    )
+
+    if not auth_provider.authenticate(username, password):
         return
 
-    migrator.run()
+    excel_reader = ExcelReader(excel_path)
+    field_parser = FieldParser()
+    data_transformer = DataTransformer(field_parser)
+    failure_tracker = FailureTracker()
+    progress_reporter = ProgressReporter()
+    batch_uploader = BatchUploader(amplify_client)
+
+    orchestrator = MigrationOrchestrator(
+        excel_reader=excel_reader,
+        data_transformer=data_transformer,
+        amplify_client=amplify_client,
+        failure_tracker=failure_tracker,
+        progress_reporter=progress_reporter,
+        batch_uploader=batch_uploader,
+        field_parser=field_parser,
+    )
+
+    orchestrator.run()
 
 
 def main():
