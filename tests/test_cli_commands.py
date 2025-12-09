@@ -200,23 +200,34 @@ class TestCmdMigrate:
 
         # Mock the entire migration process
         with patch.object(ConfigManager, "__init__", init_mock):
-            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
-                with patch("amplify_excel_migrator.core.config.getpass", return_value="password123"):
-                    mock_instance = MagicMock()
-                    mock_instance.authenticate.return_value = True
-                    mock_migrator_class.return_value = mock_instance
+            with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("migrator.ExcelReader") as mock_excel_reader_class:
+                    with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                        with patch("amplify_excel_migrator.core.config.getpass", return_value="password123"):
+                            mock_auth_instance = MagicMock()
+                            mock_auth_instance.authenticate.return_value = True
+                            mock_auth_provider_class.return_value = mock_auth_instance
 
-                    cmd_migrate()
+                            mock_excel_reader_instance = MagicMock()
+                            mock_excel_reader_class.return_value = mock_excel_reader_instance
 
-                    # Verify migrator was initialized with cached values
-                    mock_migrator_class.assert_called_once_with("test_data.xlsx")
-                    mock_instance.init_client.assert_called_once()
+                            mock_orchestrator_instance = MagicMock()
+                            mock_orchestrator_class.return_value = mock_orchestrator_instance
 
-                    # Check that init_client was called with correct parameters
-                    call_args = mock_instance.init_client.call_args
-                    assert call_args[0][0] == "https://test.appsync-api.us-east-1.amazonaws.com/graphql"
-                    assert call_args[0][1] == "us-east-1"
-                    assert call_args[0][2] == "us-east-1_testpool"
+                            cmd_migrate()
+
+                            # Verify auth provider was initialized with cached values
+                            mock_auth_provider_class.assert_called_once()
+                            call_args = mock_auth_provider_class.call_args
+                            assert call_args[1]["user_pool_id"] == "us-east-1_testpool"
+                            assert call_args[1]["client_id"] == "test-client-id"
+                            assert call_args[1]["region"] == "us-east-1"
+
+                            # Verify authenticate was called
+                            mock_auth_instance.authenticate.assert_called_once_with("test@example.com", "password123")
+
+                            # Verify orchestrator was called
+                            mock_orchestrator_instance.run.assert_called_once()
 
     def test_migrate_prompts_for_password(self, tmp_path, sample_config):
         """Test that migrate command always prompts for password"""
@@ -231,18 +242,26 @@ class TestCmdMigrate:
             self._config = {}
 
         with patch.object(ConfigManager, "__init__", init_mock):
-            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
-                with patch(
-                    "amplify_excel_migrator.core.config.getpass", return_value="secret_password"
-                ) as mock_getpass:
-                    mock_instance = MagicMock()
-                    mock_instance.authenticate.return_value = True
-                    mock_migrator_class.return_value = mock_instance
+            with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("migrator.ExcelReader") as mock_excel_reader_class:
+                    with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                        with patch(
+                            "amplify_excel_migrator.core.config.getpass", return_value="secret_password"
+                        ) as mock_getpass:
+                            mock_auth_instance = MagicMock()
+                            mock_auth_instance.authenticate.return_value = True
+                            mock_auth_provider_class.return_value = mock_auth_instance
 
-                    cmd_migrate()
+                            mock_excel_reader_instance = MagicMock()
+                            mock_excel_reader_class.return_value = mock_excel_reader_instance
 
-                    # Verify getpass was called (for password prompt)
-                    mock_getpass.assert_called()
+                            mock_orchestrator_instance = MagicMock()
+                            mock_orchestrator_class.return_value = mock_orchestrator_instance
+
+                            cmd_migrate()
+
+                            # Verify getpass was called (for password prompt)
+                            mock_getpass.assert_called()
 
     def test_migrate_stops_if_authentication_fails(self, tmp_path, sample_config):
         """Test that migrate stops if authentication fails"""
@@ -257,13 +276,17 @@ class TestCmdMigrate:
             self._config = {}
 
         with patch.object(ConfigManager, "__init__", init_mock):
-            with patch("migrator.ExcelToAmplifyMigrator") as mock_migrator_class:
-                with patch("amplify_excel_migrator.core.config.getpass", return_value="wrong_password"):
-                    mock_instance = MagicMock()
-                    mock_instance.authenticate.return_value = False  # Authentication fails
-                    mock_migrator_class.return_value = mock_instance
+            with patch("amplify_excel_migrator.auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("migrator.MigrationOrchestrator") as mock_orchestrator_class:
+                    with patch("amplify_excel_migrator.core.config.getpass", return_value="wrong_password"):
+                        mock_auth_instance = MagicMock()
+                        mock_auth_instance.authenticate.return_value = False  # Authentication fails
+                        mock_auth_provider_class.return_value = mock_auth_instance
 
-                    cmd_migrate()
+                        mock_orchestrator_instance = MagicMock()
+                        mock_orchestrator_class.return_value = mock_orchestrator_instance
 
-                    # Verify run() was NOT called
-                    mock_instance.run.assert_not_called()
+                        cmd_migrate()
+
+                        # Verify run() was NOT called
+                        mock_orchestrator_instance.run.assert_not_called()
