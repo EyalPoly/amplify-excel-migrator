@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 
 import pandas as pd
 
-from amplify_client import AmplifyClient
+from amplify_excel_migrator.client import AmplifyClient
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
 from amplify_excel_migrator.schema import FieldParser
 from amplify_excel_migrator.migration import FailureTracker, ProgressReporter, BatchUploader

@@ -13,7 +13,6 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/EyalPoly/amplify-excel-migrator",
     packages=find_packages(),
-    py_modules=["amplify_client"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
