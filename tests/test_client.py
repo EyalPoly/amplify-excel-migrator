@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 from unittest.mock import MagicMock
-from amplify_client import AmplifyClient
+from amplify_excel_migrator.client import AmplifyClient
 
 
 class TestBuildForeignKeyLookups:

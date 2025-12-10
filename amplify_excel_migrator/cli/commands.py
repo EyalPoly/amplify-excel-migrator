@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from amplify_client import AmplifyClient
+from amplify_excel_migrator.client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
 from amplify_excel_migrator.schema import FieldParser
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
