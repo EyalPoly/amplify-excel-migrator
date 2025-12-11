@@ -119,20 +119,15 @@ def cmd_migrate(args=None):
     if not auth_provider.authenticate(username, password):
         return
 
-    excel_reader = ExcelReader(excel_path)
     field_parser = FieldParser()
-    data_transformer = DataTransformer(field_parser)
-    failure_tracker = FailureTracker()
-    progress_reporter = ProgressReporter()
-    batch_uploader = BatchUploader(amplify_client)
 
     orchestrator = MigrationOrchestrator(
-        excel_reader=excel_reader,
-        data_transformer=data_transformer,
+        excel_reader=ExcelReader(excel_path),
+        data_transformer=DataTransformer(field_parser),
         amplify_client=amplify_client,
-        failure_tracker=failure_tracker,
-        progress_reporter=progress_reporter,
-        batch_uploader=batch_uploader,
+        failure_tracker=FailureTracker(),
+        progress_reporter=ProgressReporter(),
+        batch_uploader=BatchUploader(amplify_client),
         field_parser=field_parser,
     )
 
