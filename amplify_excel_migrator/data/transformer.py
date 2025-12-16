@@ -103,14 +103,10 @@ class DataTransformer:
 
             if record_id:
                 return record_id
-            elif field["is_required"]:
+            else:
                 raise ValueError(f"{related_model}: {value} does not exist")
-            return None
         else:
-            if field["is_required"]:
-                raise ValueError(f"No pre-fetched data for {related_model}, cannot resolve FK for required field")
-            logger.warning(f"No pre-fetched data for {related_model}, skipping optional FK field")
-            return None
+            raise ValueError(f"No pre-fetched data for {related_model}")
 
     @staticmethod
     def to_camel_case(s: str) -> str:

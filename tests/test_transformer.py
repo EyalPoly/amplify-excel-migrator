@@ -239,13 +239,12 @@ class TestResolveForeignKey:
 
         assert result == "author-123"
 
-    def test_returns_none_for_missing_optional_fk(self, transformer):
+    def test_raises_error_for_missing_optional_fk(self, transformer):
         field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
-        result = transformer._resolve_foreign_key(field, "John Doe", fk_cache)
-
-        assert result is None
+        with pytest.raises(ValueError, match="Author: John Doe does not exist"):
+            transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_required_fk(self, transformer):
         field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
@@ -254,13 +253,12 @@ class TestResolveForeignKey:
         with pytest.raises(ValueError, match="Author: John Doe does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
-    def test_returns_none_for_missing_cache_optional_field(self, transformer):
+    def test_raises_error_for_missing_cache_optional_field(self, transformer):
         field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
         fk_cache = {}
 
-        result = transformer._resolve_foreign_key(field, "John Doe", fk_cache)
-
-        assert result is None
+        with pytest.raises(ValueError, match="No pre-fetched data for Author"):
+            transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_cache_required_field(self, transformer):
         field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
