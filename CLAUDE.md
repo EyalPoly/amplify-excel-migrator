@@ -1,5 +1,10 @@
 # Workflow
 - Be sure to typecheck when you're done making a series of code changes
+- Run tests after making code changes to ensure nothing is broken
+- When writing tests, ensure you cover edge cases and potential failure points
+- Strive for clarity and simplicity in your code; avoid unnecessary complexity
+- Refactor code when you see opportunities to improve structure or readability
+- Bump minor or major version numbers when you add new features or make breaking changes
 
 # Comments
 - Only add comments and docstrings when they are truly needed to explain why something is done a certain way, not what is being done. Code should be self-explanatory as much as possible.
@@ -21,3 +26,4 @@ Based on your exploration, think deeply about the implementation. Create a plan 
 
 ## Step 3 - Implement
 Implement the solution following your plan. Verify each step as you go and adjust the plan if needed.
+
