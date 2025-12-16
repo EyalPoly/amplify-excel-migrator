@@ -5,6 +5,7 @@
 - Strive for clarity and simplicity in your code; avoid unnecessary complexity
 - Refactor code when you see opportunities to improve structure or readability
 - Bump minor or major version numbers when you add new features or make breaking changes
+- Update README to reflect any changes made to functionality or usage
 
 # Comments
 - Only add comments and docstrings when they are truly needed to explain why something is done a certain way, not what is being done. Code should be self-explanatory as much as possible.

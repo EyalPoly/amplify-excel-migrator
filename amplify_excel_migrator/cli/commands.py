@@ -5,7 +5,7 @@ import sys
 
 from amplify_excel_migrator.client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
-from amplify_excel_migrator.schema import FieldParser
+from amplify_excel_migrator.schema import FieldParser, SchemaExporter
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
 from amplify_excel_migrator.migration import (
     FailureTracker,
@@ -13,6 +13,7 @@ from amplify_excel_migrator.migration import (
     BatchUploader,
     MigrationOrchestrator,
 )
+from amplify_excel_migrator.auth import CognitoAuthProvider
 
 
 def cmd_show(args=None):
@@ -134,6 +135,64 @@ def cmd_migrate(args=None):
     orchestrator.run()
 
 
+def cmd_export_schema(args=None):
+    print(
+        """
+    ╔════════════════════════════════════════════════════╗
+    ║         Amplify Migrator - Schema Export           ║
+    ╚════════════════════════════════════════════════════╝
+    """
+    )
+
+    config_manager = ConfigManager()
+    cached_config = config_manager.load()
+
+    if not cached_config:
+        print("\n❌ No configuration found!")
+        print("💡 Run 'amplify-migrator config' first to set up your configuration.")
+        sys.exit(1)
+
+    api_endpoint = config_manager.get_or_prompt("api_endpoint", "AWS Amplify API endpoint")
+    region = config_manager.get_or_prompt("region", "AWS Region", "us-east-1")
+    user_pool_id = config_manager.get_or_prompt("user_pool_id", "Cognito User Pool ID")
+    client_id = config_manager.get_or_prompt("client_id", "Cognito Client ID")
+    username = config_manager.get_or_prompt("username", "Admin Username")
+
+    output_path = args.output if args else "schema-reference.md"
+
+    print("\n🔐 Authentication:")
+    print("-" * 54)
+    password = config_manager.prompt_for_value("Admin Password", secret=True)
+
+    auth_provider = CognitoAuthProvider(
+        user_pool_id=user_pool_id,
+        client_id=client_id,
+        region=region,
+    )
+
+    amplify_client = AmplifyClient(
+        api_endpoint=api_endpoint,
+        auth_provider=auth_provider,
+    )
+
+    if not auth_provider.authenticate(username, password):
+        return
+
+    print("\n📋 Exporting schema...")
+    print("-" * 54)
+
+    field_parser = FieldParser()
+    schema_exporter = SchemaExporter(amplify_client, field_parser)
+
+    try:
+        schema_exporter.export_to_markdown(output_path, models=args.models if args and args.models else None)
+        print(f"\n✅ Schema exported successfully to: {output_path}")
+        print("💡 Share this file with your team to help them prepare Excel files.")
+    except Exception as e:
+        print(f"\n❌ Failed to export schema: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API",
@@ -150,6 +209,21 @@ def main():
 
     migrate_parser = subparsers.add_parser("migrate", help="Run the migration")
     migrate_parser.set_defaults(func=cmd_migrate)
+
+    export_parser = subparsers.add_parser("export-schema", help="Export GraphQL schema to markdown reference")
+    export_parser.add_argument(
+        "--output",
+        "-o",
+        default="schema-reference.md",
+        help="Output file path (default: schema-reference.md)",
+    )
+    export_parser.add_argument(
+        "--models",
+        "-m",
+        nargs="*",
+        help="Specific models to export (default: all models)",
+    )
+    export_parser.set_defaults(func=cmd_export_schema)
 
     args = parser.parse_args()
 

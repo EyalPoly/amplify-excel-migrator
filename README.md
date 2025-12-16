@@ -30,7 +30,7 @@ pip install .
 
 ## Usage
 
-The tool has three subcommands:
+The tool has four subcommands:
 
 ### 1. Configure (First Time Setup)
 
@@ -58,7 +58,31 @@ View your current saved configuration:
 amplify-migrator show
 ```
 
-### 3. Run Migration
+### 3. Export Schema
+
+Export your GraphQL schema to a markdown reference document:
+
+```bash
+# Export all models
+amplify-migrator export-schema
+
+# Export to a specific file
+amplify-migrator export-schema --output my-schema.md
+
+# Export specific models only
+amplify-migrator export-schema --models User Post Comment
+```
+
+This generates a comprehensive markdown document with:
+- All model fields with types and requirements
+- Enum definitions
+- Custom type structures
+- Foreign key relationships
+- Excel formatting guidelines
+
+Perfect for sharing with team members who need to prepare Excel files for migration.
+
+### 4. Run Migration
 
 Run the migration using your saved configuration:
 
@@ -76,6 +100,9 @@ amplify-migrator config
 
 # View current configuration
 amplify-migrator show
+
+# Export schema documentation (share with team)
+amplify-migrator export-schema
 
 # Run migration (uses saved config)
 amplify-migrator migrate
@@ -147,6 +174,7 @@ Admin Password: ********
 - **Interactive prompts** - Easy step-by-step configuration
 - **Progress reporting** - Real-time feedback on migration status
 - **Detailed error messages** - Clear context for troubleshooting failures
+- **Schema export** - Generate markdown documentation of your GraphQL schema to share with team members
 
 ## Excel File Format
 
