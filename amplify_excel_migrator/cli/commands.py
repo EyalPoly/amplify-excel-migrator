@@ -194,6 +194,10 @@ def cmd_export_schema(args=None):
 
 
 def main():
+    import sys
+
+    sys.argv = ["amplify-migrator", "export-schema"]
+
     parser = argparse.ArgumentParser(
         description="Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -232,3 +236,7 @@ def main():
         sys.exit(1)
 
     args.func(args)
+
+
+if __name__ == "__main__":
+    main()

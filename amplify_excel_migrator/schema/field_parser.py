@@ -72,7 +72,7 @@ class FieldParser:
         return model_info
 
     def _extract_relationship_info(self, field: Dict) -> Dict[str, str] | None:
-        base_type = self._get_base_type_name(field.get("type", {}))
+        base_type = self.get_base_type_name(field.get("type", {}))
         type_kind = self._get_type_kind(field.get("type", {}))
         field_name = field.get("name", "")
 
@@ -83,7 +83,7 @@ class FieldParser:
         return {"target_model": base_type, "foreign_key": inferred_foreign_key}
 
     def _parse_field(self, field: Dict) -> Dict[str, Any]:
-        base_type = self._get_base_type_name(field.get("type", {}))
+        base_type = self.get_base_type_name(field.get("type", {}))
         type_kind = self._get_type_kind(field.get("type", {}))
 
         if "Connection" in base_type or field.get("name") in self.metadata_fields or type_kind == "INTERFACE":
@@ -103,7 +103,7 @@ class FieldParser:
 
         return field_info
 
-    def _get_base_type_name(self, type_obj: Dict) -> str:
+    def get_base_type_name(self, type_obj: Dict) -> str:
         """
         Get the base type name, unwrapping NON_NULL and LIST wrappers
         """
@@ -115,7 +115,7 @@ class FieldParser:
             return type_obj["name"]
 
         if type_obj.get("ofType"):
-            return self._get_base_type_name(type_obj["ofType"])
+            return self.get_base_type_name(type_obj["ofType"])
 
         return "Unknown"
 

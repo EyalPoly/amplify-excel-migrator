@@ -82,6 +82,8 @@ This generates a comprehensive markdown document with:
 
 Perfect for sharing with team members who need to prepare Excel files for migration.
 
+💡 The exported schema reference can help you prepare your Excel file. For detailed formatting guidelines, see the [Excel Format Specification](docs/EXCEL_FORMAT_SPECIFICATION.md).
+
 ### 4. Run Migration
 
 Run the migration using your saved configuration:
@@ -110,6 +112,8 @@ amplify-migrator migrate
 # View help
 amplify-migrator --help
 ```
+
+📋 For detailed Excel format requirements, see the [Excel Format Specification](docs/EXCEL_FORMAT_SPECIFICATION.md).
 
 ### Example: Configuration
 
@@ -176,47 +180,11 @@ Admin Password: ********
 - **Detailed error messages** - Clear context for troubleshooting failures
 - **Schema export** - Generate markdown documentation of your GraphQL schema to share with team members
 
-## Excel File Format
+## Excel Format Requirements
 
-The Excel file should have:
-- One sheet per Amplify model (sheet name must match model name)
-- Column names matching the model field names
-- First row as headers
+Your Excel file must follow specific formatting guidelines for sheet names, column headers, data types, and special field handling. For comprehensive format requirements, examples, and troubleshooting, see:
 
-### Basic Structure
-
-**Sheet: User**
-
-| name | email | age |
-|------|-------|-----|
-| John | john@example.com | 30 |
-| Jane | jane@example.com | 25 |
-
-**Sheet: Post**
-
-| title | content | userId |
-|-------|---------|--------|
-| First Post | Hello World | john@example.com |
-
-### Relationships (Foreign Keys)
-
-To reference related records, use the primary key value of the related model:
-
-**Sheet: Comment**
-
-| content      | postId   | userId           |
-|--------------|----------|------------------|
-| Great post!  | post-123 | john@example.com |
-
-The tool automatically resolves foreign keys by looking up the related records.
-
-### Array/List Fields
-
-Array fields support multiple input formats:
-
-- **JSON format:** `["tag1", "tag2", "tag3"]`
-- **Semicolon-separated:** `tag1; tag2; tag3`
-- **Comma-separated:** `tag1, tag2, tag3`
+📋 **[Excel Format Specification Guide](docs/EXCEL_FORMAT_SPECIFICATION.md)**
 
 ## Advanced Features
 
@@ -236,65 +204,35 @@ When records fail to upload, the tool provides a robust recovery mechanism to he
 3. **Easy Retry** - Fix the issues in the exported file and run the migration again using only the failed records
 4. **Progress Visibility** - Detailed summary shows success/failure counts, percentages, and specific error reasons for each failed record
 
-### Recovery Workflow Example
-
-```bash
-# Run initial migration
-amplify-migrator migrate
-
-# Migration completes with some failures:
-# ✅ Successfully uploaded: 95 records (95%)
-# ❌ Failed to upload: 5 records (5%)
-#
-# Export failed records? (y/n): y
-# Failed records exported to: data_failed_records_20251201_143022.xlsx
-
-# Fix the errors in the exported Excel file
-# Then re-run migration with the failed records file
-
-amplify-migrator migrate
-# Excel file path: data_failed_records_20251201_143022.xlsx
-```
-
-The tool tracks which records succeeded and failed, providing row-level context to help you quickly identify and resolve issues.
+The tool tracks which records succeeded and failed, providing row-level context to help you quickly identify and resolve issues. Simply export the failed records, fix the errors in the Excel file, and re-run the migration with the corrected file.
 
 ## Troubleshooting
 
-### Authentication Errors
+### Authentication & AWS Configuration
 
-**Error: Unable to authenticate with Cognito**
+**Authentication Errors:**
 - Verify your Cognito User Pool ID and Client ID are correct
 - Ensure your username and password are valid
 - Check that your user is in the ADMINS group
 
-### MFA Issues
-
-**Error: MFA required but not configured**
-- Enable MFA in your Cognito User Pool settings
+**MFA Issues:**
+- Enable MFA in your Cognito User Pool settings if required
 - Ensure your user has MFA set up (SMS or software token)
 
-### AWS Credentials
-
-**Error: AWS credentials not found**
+**AWS Credentials:**
 - Set up AWS credentials in `~/.aws/credentials`
 - Or set environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`
 - Or use `aws configure` to set up your default profile
 
-### Excel File Format
-
-**Error: Sheet name does not match any model**
-- Ensure sheet names exactly match your Amplify GraphQL model names (case-sensitive)
-- Check for extra spaces or special characters in sheet names
-
-**Error: Required field missing**
-- Verify all required fields in your GraphQL schema have corresponding columns in Excel
-- Check column names match field names (case-sensitive)
-
-### Permission Errors
-
-**Error: User is not in ADMINS group**
+**Permission Errors:**
 - Add your user to the ADMINS group in Cognito User Pool
 - Contact your AWS administrator if you don't have permission
+
+### Excel Format & Validation Issues
+
+For errors related to Excel file format, data types, sheet naming, required fields, or foreign keys, see the comprehensive troubleshooting guide:
+
+📋 **[Common Issues and Solutions](docs/EXCEL_FORMAT_SPECIFICATION.md#common-issues-and-solutions)**
 
 ## License
 

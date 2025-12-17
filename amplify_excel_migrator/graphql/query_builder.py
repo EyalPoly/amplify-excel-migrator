@@ -157,6 +157,20 @@ query IntrospectModel {{
         return query.strip()
 
     @staticmethod
+    def build_schema_introspection_query() -> str:
+        query = """
+query IntrospectSchema {
+  __schema {
+    types {
+      name
+      kind
+    }
+  }
+}
+"""
+        return query.strip()
+
+    @staticmethod
     def build_variables_for_list(
         limit: int = 1000,
         next_token: Optional[str] = None,

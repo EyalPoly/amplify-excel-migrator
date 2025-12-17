@@ -77,77 +77,112 @@ class TestExportToMarkdown:
 class TestDiscoverModels:
     """Test _discover_models method"""
 
-    def test_discovers_models_from_query_type(self, exporter, mock_client):
+    def test_discovers_models_from_schema(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "Post", "kind": "OBJECT"},
+            {"name": "Query", "kind": "OBJECT"},
+            {"name": "String", "kind": "SCALAR"},
+        ]
         mock_client.get_model_structure.return_value = {
             "fields": [
-                {"name": "listUsers"},
-                {"name": "listPosts"},
+                {"name": "listUser"},
+                {"name": "listPost"},
                 {"name": "getUser"},
             ]
         }
 
         result = exporter._discover_models()
 
-        assert set(result) == {"Users", "Posts"}
-        mock_client.get_model_structure.assert_called_once_with("Query")
+        assert set(result) == {"User", "Post"}
+        mock_client.get_all_types.assert_called_once()
 
-    def test_filters_list_queries(self, exporter, mock_client):
-        mock_client.get_model_structure.return_value = {
-            "fields": [
-                {"name": "listUsers"},
-                {"name": "getUser"},
-                {"name": "createUser"},
-            ]
-        }
+    def test_excludes_query_mutation_subscription(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "Query", "kind": "OBJECT"},
+            {"name": "Mutation", "kind": "OBJECT"},
+            {"name": "Subscription", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
         result = exporter._discover_models()
 
-        assert result == ["Users"]
+        assert result == ["User"]
 
     def test_excludes_connection_types(self, exporter, mock_client):
-        mock_client.get_model_structure.return_value = {
-            "fields": [
-                {"name": "listUsers"},
-                {"name": "listUsersConnection"},
-            ]
-        }
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "ModelUserConnection", "kind": "OBJECT"},
+            {"name": "UserConnection", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
         result = exporter._discover_models()
 
-        assert result == ["Users"]
+        assert result == ["User"]
 
-    def test_returns_empty_list_when_no_query_fields(self, exporter, mock_client):
-        mock_client.get_model_structure.return_value = {}
+    def test_excludes_model_prefix_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "ModelUserFilterInput", "kind": "INPUT_OBJECT"},
+            {"name": "ModelStringInput", "kind": "INPUT_OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
+
+        result = exporter._discover_models()
+
+        assert result == ["User"]
+
+    def test_excludes_builtin_graphql_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "__Schema", "kind": "OBJECT"},
+            {"name": "__Type", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
+
+        result = exporter._discover_models()
+
+        assert result == ["User"]
+
+    def test_excludes_non_object_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "String", "kind": "SCALAR"},
+            {"name": "Status", "kind": "ENUM"},
+            {"name": "CreateUserInput", "kind": "INPUT_OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
+
+        result = exporter._discover_models()
+
+        assert result == ["User"]
+
+    def test_returns_empty_list_when_no_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = []
 
         result = exporter._discover_models()
 
         assert result == []
 
     def test_returns_sorted_model_list(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "Zebra", "kind": "OBJECT"},
+            {"name": "Apple", "kind": "OBJECT"},
+            {"name": "Banana", "kind": "OBJECT"},
+        ]
         mock_client.get_model_structure.return_value = {
             "fields": [
-                {"name": "listZebras"},
-                {"name": "listApples"},
-                {"name": "listBananas"},
+                {"name": "listZebra"},
+                {"name": "listApple"},
+                {"name": "listBanana"},
             ]
         }
 
         result = exporter._discover_models()
 
-        assert result == ["Apples", "Bananas", "Zebras"]
-
-    def test_handles_empty_field_names(self, exporter, mock_client):
-        mock_client.get_model_structure.return_value = {
-            "fields": [
-                {"name": "listUsers"},
-                {"name": ""},
-                {"name": "list"},
-            ]
-        }
-
-        result = exporter._discover_models()
-
-        assert result == ["Users"]
+        assert result == ["Apple", "Banana", "Zebra"]
 
 
 class TestGenerateMarkdown:

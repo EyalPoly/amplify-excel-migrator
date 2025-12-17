@@ -24,6 +24,9 @@ class QueryExecutor:
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         return self.schema.get_model_structure(model_type)
 
+    def get_all_types(self) -> list[Dict[str, Any]]:
+        return self.schema.get_all_types()
+
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         return self.schema.get_primary_field_name(model_name, parsed_model_structure)
 

@@ -23,33 +23,52 @@ class SchemaExporter:
         logger.info(f"Schema exported successfully to {output_path}")
 
     def _discover_models(self) -> List[str]:
-        logger.info("Discovering models from Query type")
-        query_structure = self.client.get_model_structure("Query")
+        logger.info("Discovering models from schema")
+        all_types = self.client.get_all_types()
 
-        if not query_structure or "fields" not in query_structure:
-            logger.warning("Could not introspect Query type")
+        if not all_types:
+            logger.warning("Could not introspect schema types")
             return []
 
+        query_structure = self.client.get_model_structure("Query")
+        query_field_names = set()
+        if query_structure and "fields" in query_structure:
+            query_field_names = {field.get("name", "") for field in query_structure["fields"]}
+
         models = set()
-        for field in query_structure["fields"]:
-            field_name = field.get("name", "")
-            if field_name.startswith("list"):
-                model_name = field_name[4:]
-                if model_name and not model_name.endswith("Connection"):
-                    models.add(model_name)
+        for type_info in all_types:
+            type_name = type_info.get("name", "")
+            type_kind = type_info.get("kind", "")
+
+            if type_kind == "OBJECT":
+                if (
+                    not type_name.startswith("__")
+                    and type_name not in ["Query", "Mutation", "Subscription"]
+                    and not type_name.startswith("Model")
+                    and not type_name.endswith("Connection")
+                ):
+
+                    has_list_query = any(
+                        field_name.startswith("list")
+                        and type_name.lower() in field_name.lower()
+                        and "By" not in field_name
+                        for field_name in query_field_names
+                    )
+
+                    if has_list_query:
+                        models.add(type_name)
 
         return sorted(list(models))
 
     def _generate_markdown(self, models: List[str]) -> str:
-        lines = []
-        lines.append("# GraphQL Schema Reference")
-        lines.append("")
-        lines.append(
-            "This document provides a complete reference of your GraphQL schema for preparing Excel data migrations."
-        )
-        lines.append("")
-        lines.append("## Table of Contents")
-        lines.append("")
+        lines = [
+            "# GraphQL Schema Reference",
+            "",
+            "This document provides a complete reference of your GraphQL schema for preparing Excel data migrations.",
+            "",
+            "## Table of Contents",
+            "",
+        ]
         for model in models:
             lines.append(f"- [{model}](#{model.lower()})")
         lines.append("")
