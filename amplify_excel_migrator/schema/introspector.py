@@ -24,6 +24,15 @@ class SchemaIntrospector:
 
         return {}
 
+    def get_all_types(self) -> list[Dict[str, Any]]:
+        query = QueryBuilder.build_schema_introspection_query()
+        response = self.client.request(query)
+
+        if response and "data" in response and "__schema" in response["data"]:
+            return response["data"]["__schema"].get("types", [])
+
+        return []
+
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:
