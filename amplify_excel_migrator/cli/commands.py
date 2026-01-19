@@ -17,13 +17,11 @@ from amplify_excel_migrator.auth import CognitoAuthProvider
 
 
 def cmd_show(args=None):
-    print(
-        """
+    print("""
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Current Configuration    ║
     ╚════════════════════════════════════════════════════╝
-    """
-    )
+    """)
 
     config_manager = ConfigManager()
     cached_config = config_manager.load()
@@ -47,13 +45,11 @@ def cmd_show(args=None):
 
 
 def cmd_config(args=None):
-    print(
-        """
+    print("""
     ╔════════════════════════════════════════════════════╗
     ║        Amplify Migrator - Configuration Setup      ║
     ╚════════════════════════════════════════════════════╝
-    """
-    )
+    """)
 
     config_manager = ConfigManager()
     cached_config = config_manager.load()
@@ -75,15 +71,13 @@ def cmd_config(args=None):
 
 
 def cmd_migrate(args=None):
-    print(
-        """
+    print("""
     ╔════════════════════════════════════════════════════╗
     ║             Migrator Tool for Amplify              ║
     ╠════════════════════════════════════════════════════╣
     ║   This tool requires admin privileges to execute   ║
     ╚════════════════════════════════════════════════════╝
-    """
-    )
+    """)
 
     config_manager = ConfigManager()
     cached_config = config_manager.load()
@@ -136,13 +130,11 @@ def cmd_migrate(args=None):
 
 
 def cmd_export_schema(args=None):
-    print(
-        """
+    print("""
     ╔════════════════════════════════════════════════════╗
     ║         Amplify Migrator - Schema Export           ║
     ╚════════════════════════════════════════════════════╝
-    """
-    )
+    """)
 
     config_manager = ConfigManager()
     cached_config = config_manager.load()
@@ -194,10 +186,6 @@ def cmd_export_schema(args=None):
 
 
 def main():
-    import sys
-
-    sys.argv = ["amplify-migrator", "export-schema"]
-
     parser = argparse.ArgumentParser(
         description="Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API",
         formatter_class=argparse.RawDescriptionHelpFormatter,
