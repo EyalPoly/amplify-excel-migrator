@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Script to automatically bump patch version in setup.py"""
+
 import re
 import sys
 
