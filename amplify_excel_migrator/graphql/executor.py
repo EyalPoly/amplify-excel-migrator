@@ -48,8 +48,8 @@ class QueryExecutor:
         next_token = None
 
         if not value:
-            query = QueryBuilder.build_list_query(model_name, fields=fields)
             query_name = self._get_list_query_name(model_name)
+            query = QueryBuilder.build_list_query(model_name, fields=fields, query_name=query_name)
 
             while True:
                 variables = QueryBuilder.build_variables_for_list(next_token=next_token)
@@ -99,7 +99,7 @@ class QueryExecutor:
         query_name = self._get_list_query_name(model_name)
 
         if not value:
-            query = QueryBuilder.build_list_query(model_name, fields=fields)
+            query = QueryBuilder.build_list_query(model_name, fields=fields, query_name=query_name)
 
             while True:
                 variables = QueryBuilder.build_variables_for_list(next_token=next_token)
@@ -116,7 +116,7 @@ class QueryExecutor:
                 else:
                     break
         else:
-            query = QueryBuilder.build_list_query_with_filter(model_name, fields=fields)
+            query = QueryBuilder.build_list_query_with_filter(model_name, fields=fields, query_name=query_name)
             filter_input = QueryBuilder.build_filter_equals(field_name, value)
 
             while True:
@@ -245,7 +245,9 @@ class QueryExecutor:
                     return None
         else:
             query_name = self._get_list_query_name(model_name)
-            query = QueryBuilder.build_list_query_with_filter(model_name, fields=["id"], with_pagination=False)
+            query = QueryBuilder.build_list_query_with_filter(
+                model_name, fields=["id"], with_pagination=False, query_name=query_name
+            )
             filter_input = QueryBuilder.build_filter_equals(primary_field, value)
             variables = {"filter": filter_input}
 
