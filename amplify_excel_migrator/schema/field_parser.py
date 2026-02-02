@@ -32,7 +32,7 @@ class FieldParser:
     def parse_model_structure(self, introspection_result: Dict) -> Dict[str, Any]:
         if not introspection_result:
             logger.error("Empty introspection result received", exc_info=True)
-            raise ValueError("Introspection result cannot be empty")
+            raise ValueError("Introspection result cannot be empty - Invalid sheet name or model does not exist")
 
         if "data" in introspection_result and "__type" in introspection_result["data"]:
             type_data = introspection_result["data"]["__type"]

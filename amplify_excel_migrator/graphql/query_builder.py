@@ -12,12 +12,14 @@ class QueryBuilder:
         fields: Optional[List[str]] = None,
         limit: int = 1000,
         with_pagination: bool = True,
+        query_name: Optional[str] = None,
     ) -> str:
         if fields is None:
             fields = ["id"]
 
         fields_str = "\n".join(f"            {field}" for field in fields)
-        query_name = f"list{model_name}s"
+        if query_name is None:
+            query_name = f"list{model_name}s"
 
         if with_pagination:
             query = f"""
@@ -48,12 +50,14 @@ query List{model_name}s($limit: Int) {{
         fields: Optional[List[str]] = None,
         limit: int = 1000,
         with_pagination: bool = True,
+        query_name: Optional[str] = None,
     ) -> str:
         if fields is None:
             fields = ["id"]
 
         fields_str = "\n".join(f"            {field}" for field in fields)
-        query_name = f"list{model_name}s"
+        if query_name is None:
+            query_name = f"list{model_name}s"
 
         if with_pagination:
             query = f"""
