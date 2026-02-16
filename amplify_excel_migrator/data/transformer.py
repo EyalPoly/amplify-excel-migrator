@@ -55,7 +55,10 @@ class DataTransformer:
         return records, row_dict_by_primary, failed_rows
 
     def transform_row_to_record(
-        self, row_dict: Dict, parsed_model_structure: Dict[str, Any], fk_lookup_cache: Dict[str, Dict[str, str]]
+        self,
+        row_dict: Dict,
+        parsed_model_structure: Dict[str, Any],
+        fk_lookup_cache: Dict[str, Dict[str, str]],
     ) -> Optional[Dict]:
         model_record = {}
 

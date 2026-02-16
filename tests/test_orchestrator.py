@@ -167,7 +167,13 @@ class TestProcessSheet:
         parsed_model = {"fields": []}
         records = [{"name": "Test1"}, {"name": "Test2"}]
         row_dict = {"Test1": {"name": "Test1"}, "Test2": {"name": "Test2"}}
-        failed_uploads = [{"primary_field": "name", "primary_field_value": "Test2", "error": "Upload failed"}]
+        failed_uploads = [
+            {
+                "primary_field": "name",
+                "primary_field_value": "Test2",
+                "error": "Upload failed",
+            }
+        ]
 
         orchestrator._get_parsed_model_structure = MagicMock(return_value=parsed_model)
         orchestrator._transform_rows_to_records = MagicMock(return_value=(records, row_dict))

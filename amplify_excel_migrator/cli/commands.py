@@ -13,7 +13,7 @@ from amplify_excel_migrator.migration import (
     BatchUploader,
     MigrationOrchestrator,
 )
-from amplify_excel_migrator.auth import CognitoAuthProvider
+from amplify_auth import CognitoAuthProvider
 
 
 def cmd_show(args=None):
@@ -98,7 +98,7 @@ def cmd_migrate(args=None):
     print("-" * 54)
     password = config_manager.prompt_for_value("Admin Password", secret=True)
 
-    from amplify_excel_migrator.auth import CognitoAuthProvider
+    from amplify_auth import CognitoAuthProvider
 
     auth_provider = CognitoAuthProvider(
         user_pool_id=user_pool_id,

@@ -4,9 +4,14 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from pycognito.exceptions import ForceChangePasswordException
 from pycognito import MFAChallengeException
-from botocore.exceptions import NoCredentialsError, ProfileNotFound, NoRegionError, ClientError
+from botocore.exceptions import (
+    NoCredentialsError,
+    ProfileNotFound,
+    NoRegionError,
+    ClientError,
+)
 
-from amplify_excel_migrator.auth import CognitoAuthProvider
+from amplify_auth import CognitoAuthProvider
 
 
 @pytest.fixture
@@ -56,8 +61,8 @@ class TestCognitoAuthProviderInitialization:
 class TestStandardAuthentication:
     """Test standard Cognito authentication"""
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_successful_authentication(self, mock_jwt_decode, mock_cognito_class, cognito_provider, mock_id_token):
         """Test successful authentication"""
         mock_cognito = Mock()
@@ -71,8 +76,8 @@ class TestStandardAuthentication:
         assert cognito_provider._id_token == mock_id_token
         mock_cognito.authenticate.assert_called_once_with(password="password123")
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_authentication_not_in_admin_group(self, mock_jwt_decode, mock_cognito_class, cognito_provider):
         """Test authentication fails when user not in admin group"""
         mock_cognito = Mock()
@@ -83,8 +88,8 @@ class TestStandardAuthentication:
         result = cognito_provider.authenticate("test@example.com", "password123")
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
-    @patch("amplify_excel_migrator.auth.cognito_auth.input")
+    @patch("amplify_auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.input")
     def test_authentication_with_mfa_challenge(self, mock_input, mock_cognito_class, cognito_provider, mock_id_token):
         """Test authentication with MFA challenge"""
         mock_cognito = Mock()
@@ -103,8 +108,8 @@ class TestStandardAuthentication:
 
         assert result is True
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
-    @patch("amplify_excel_migrator.auth.cognito_auth.input")
+    @patch("amplify_auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.input")
     def test_authentication_with_password_change(self, mock_input, mock_cognito_class, cognito_provider, mock_id_token):
         """Test authentication with force password change"""
         mock_cognito = Mock()
@@ -120,8 +125,8 @@ class TestStandardAuthentication:
         assert result is True
         mock_cognito.new_password_challenge.assert_called_once()
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
-    @patch("amplify_excel_migrator.auth.cognito_auth.input")
+    @patch("amplify_auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.input")
     def test_authentication_password_mismatch(self, mock_input, mock_cognito_class, cognito_provider):
         """Test authentication fails when new passwords don't match"""
         mock_cognito = Mock()
@@ -133,7 +138,7 @@ class TestStandardAuthentication:
 
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.Cognito")
+    @patch("amplify_auth.cognito_auth.Cognito")
     def test_authentication_general_error(self, mock_cognito_class, cognito_provider):
         """Test authentication handles general errors"""
         mock_cognito = Mock()
@@ -148,8 +153,8 @@ class TestStandardAuthentication:
 class TestAdminAuthentication:
     """Test admin authentication"""
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.client")
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.boto3.client")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_successful_admin_authentication(self, mock_jwt_decode, mock_boto_client, cognito_provider, mock_id_token):
         """Test successful admin authentication"""
         mock_cognito_admin = Mock()
@@ -157,7 +162,10 @@ class TestAdminAuthentication:
         mock_jwt_decode.return_value = {"cognito:groups": ["ADMINS"]}
 
         mock_cognito_admin.admin_initiate_auth.return_value = {
-            "AuthenticationResult": {"IdToken": mock_id_token, "AccessToken": "access_token"}
+            "AuthenticationResult": {
+                "IdToken": mock_id_token,
+                "AccessToken": "access_token",
+            }
         }
 
         result = cognito_provider.authenticate_admin("test@example.com", "password123")
@@ -166,7 +174,7 @@ class TestAdminAuthentication:
         assert cognito_provider._id_token == mock_id_token
         mock_cognito_admin.admin_initiate_auth.assert_called_once()
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.Session")
+    @patch("amplify_auth.cognito_auth.boto3.Session")
     def test_admin_authentication_with_profile(self, mock_session_class, cognito_provider, mock_id_token):
         """Test admin authentication with AWS profile"""
         mock_session = Mock()
@@ -176,14 +184,14 @@ class TestAdminAuthentication:
 
         mock_cognito_admin.admin_initiate_auth.return_value = {"AuthenticationResult": {"IdToken": mock_id_token}}
 
-        with patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode") as mock_jwt:
+        with patch("amplify_auth.cognito_auth.jwt.decode") as mock_jwt:
             mock_jwt.return_value = {"cognito:groups": ["ADMINS"]}
             result = cognito_provider.authenticate_admin("test@example.com", "password", aws_profile="my-profile")
 
         assert result is True
         mock_session_class.assert_called_once_with(profile_name="my-profile")
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.client")
+    @patch("amplify_auth.cognito_auth.boto3.client")
     def test_admin_authentication_no_credentials(self, mock_boto_client, cognito_provider):
         """Test admin authentication fails with no AWS credentials"""
         mock_boto_client.side_effect = NoCredentialsError()
@@ -191,7 +199,7 @@ class TestAdminAuthentication:
         result = cognito_provider.authenticate_admin("test@example.com", "password123")
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.Session")
+    @patch("amplify_auth.cognito_auth.boto3.Session")
     def test_admin_authentication_profile_not_found(self, mock_session_class, cognito_provider):
         """Test admin authentication fails with invalid profile"""
         mock_session_class.side_effect = ProfileNotFound(profile="invalid")
@@ -199,7 +207,7 @@ class TestAdminAuthentication:
         result = cognito_provider.authenticate_admin("test@example.com", "password", aws_profile="invalid")
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.client")
+    @patch("amplify_auth.cognito_auth.boto3.client")
     def test_admin_authentication_no_region(self, mock_boto_client, cognito_provider):
         """Test admin authentication fails with no region"""
         mock_boto_client.side_effect = NoRegionError()
@@ -207,7 +215,7 @@ class TestAdminAuthentication:
         result = cognito_provider.authenticate_admin("test@example.com", "password123")
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.client")
+    @patch("amplify_auth.cognito_auth.boto3.client")
     def test_admin_authentication_client_error(self, mock_boto_client, cognito_provider):
         """Test admin authentication handles AWS client errors"""
         error_response = {"Error": {"Code": "AccessDenied", "Message": "Access denied"}}
@@ -216,7 +224,7 @@ class TestAdminAuthentication:
         result = cognito_provider.authenticate_admin("test@example.com", "password123")
         assert result is False
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.boto3.client")
+    @patch("amplify_auth.cognito_auth.boto3.client")
     def test_admin_authentication_no_result(self, mock_boto_client, cognito_provider):
         """Test admin authentication fails when no AuthenticationResult"""
         mock_cognito_admin = Mock()
@@ -236,7 +244,10 @@ class TestMFAChallenge:
         """Test completing SMS MFA challenge"""
         mock_cognito = Mock()
         cognito_provider.cognito_client = mock_cognito
-        cognito_provider._mfa_tokens = {"ChallengeName": "SMS_MFA", "Session": "test-session"}
+        cognito_provider._mfa_tokens = {
+            "ChallengeName": "SMS_MFA",
+            "Session": "test-session",
+        }
 
         result = cognito_provider._complete_mfa_challenge("123456")
 
@@ -249,7 +260,10 @@ class TestMFAChallenge:
         """Test completing Software Token MFA challenge"""
         mock_cognito = Mock()
         cognito_provider.cognito_client = mock_cognito
-        cognito_provider._mfa_tokens = {"ChallengeName": "SOFTWARE_TOKEN_MFA", "Session": "test-session"}
+        cognito_provider._mfa_tokens = {
+            "ChallengeName": "SOFTWARE_TOKEN_MFA",
+            "Session": "test-session",
+        }
 
         result = cognito_provider._complete_mfa_challenge("123456")
 
@@ -279,7 +293,7 @@ class TestMFAChallenge:
 class TestCheckForMFAChallenges:
     """Test _check_for_mfa_challenges method"""
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.input")
+    @patch("amplify_auth.cognito_auth.input")
     def test_sms_mfa_challenge(self, mock_input, cognito_provider):
         """Test handling SMS MFA challenge"""
         mock_admin_client = Mock()
@@ -292,7 +306,7 @@ class TestCheckForMFAChallenges:
 
         mock_admin_client.admin_respond_to_auth_challenge.assert_called_once()
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.getpass")
+    @patch("amplify_auth.cognito_auth.getpass")
     def test_new_password_required_challenge(self, mock_getpass, cognito_provider):
         """Test handling NEW_PASSWORD_REQUIRED challenge"""
         mock_admin_client = Mock()
@@ -317,14 +331,14 @@ class TestCheckForMFAChallenges:
 class TestCheckUserInAdminsGroup:
     """Test _check_user_in_admins_group method"""
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_user_in_admin_group(self, mock_jwt_decode, cognito_provider):
         """Test user is in admin group"""
         mock_jwt_decode.return_value = {"cognito:groups": ["ADMINS", "USERS"]}
 
         cognito_provider._check_user_in_admins_group("test_token")
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_user_not_in_admin_group(self, mock_jwt_decode, cognito_provider):
         """Test user is not in admin group"""
         mock_jwt_decode.return_value = {"cognito:groups": ["USERS"]}
@@ -332,7 +346,7 @@ class TestCheckUserInAdminsGroup:
         with pytest.raises(PermissionError, match="User is not in ADMINS group"):
             cognito_provider._check_user_in_admins_group("test_token")
 
-    @patch("amplify_excel_migrator.auth.cognito_auth.jwt.decode")
+    @patch("amplify_auth.cognito_auth.jwt.decode")
     def test_user_no_groups(self, mock_jwt_decode, cognito_provider):
         """Test user has no groups"""
         mock_jwt_decode.return_value = {}

@@ -23,7 +23,14 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"photographer": ["John Doe", "Jane Smith"]})
         parsed_model_structure = {
-            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
+            "fields": [
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                }
+            ]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -68,7 +75,14 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"title": ["Story 1"]})
         parsed_model_structure = {
-            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
+            "fields": [
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                }
+            ]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -109,7 +123,14 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
-            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
+            "fields": [
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                }
+            ]
         }
 
         # Should not raise exception
@@ -128,8 +149,18 @@ class TestBuildForeignKeyLookups:
         df = pd.DataFrame({"photographer": ["John Doe"], "editor": ["Jane Smith"]})
         parsed_model_structure = {
             "fields": [
-                {"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"},
-                {"name": "editorId", "is_id": True, "is_required": True, "related_model": "Reporter"},
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                },
+                {
+                    "name": "editorId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                },
             ]
         }
 
@@ -152,7 +183,14 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"photographer": ["John Doe"]})
         parsed_model_structure = {
-            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
+            "fields": [
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                }
+            ]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)
@@ -176,7 +214,14 @@ class TestBuildForeignKeyLookups:
 
         df = pd.DataFrame({"photographer": ["John Doe", "Jane Smith"]})
         parsed_model_structure = {
-            "fields": [{"name": "photographerId", "is_id": True, "is_required": True, "related_model": "Reporter"}]
+            "fields": [
+                {
+                    "name": "photographerId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Reporter",
+                }
+            ]
         }
 
         result = client.build_foreign_key_lookups(df, parsed_model_structure)

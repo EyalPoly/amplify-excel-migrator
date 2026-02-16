@@ -222,7 +222,12 @@ class TestExportToExcel:
         mock_df_class.return_value = mock_df
 
         tracker.set_current_sheet("Users")
-        tracker.record_failure("email", "test@example.com", "Duplicate", {"email": "test@example.com", "name": "John"})
+        tracker.record_failure(
+            "email",
+            "test@example.com",
+            "Duplicate",
+            {"email": "test@example.com", "name": "John"},
+        )
 
         tracker.export_to_excel("/path/to/input.xlsx")
 

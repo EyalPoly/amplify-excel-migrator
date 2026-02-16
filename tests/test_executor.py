@@ -87,7 +87,14 @@ class TestListRecordsBySecondaryIndex:
 
     def test_lists_records_with_specific_value(self, executor):
         executor.client.request = MagicMock(
-            return_value={"data": {"listStoryByTitle": {"items": [{"id": "1", "title": "Test"}], "nextToken": None}}}
+            return_value={
+                "data": {
+                    "listStoryByTitle": {
+                        "items": [{"id": "1", "title": "Test"}],
+                        "nextToken": None,
+                    }
+                }
+            }
         )
 
         result = executor.list_records_by_secondary_index("Story", "title", value="Test")
@@ -127,7 +134,14 @@ class TestListRecordsByField:
     def test_lists_records_with_filter(self, executor):
         executor._get_list_query_name = MagicMock(return_value="listStories")
         executor.client.request = MagicMock(
-            return_value={"data": {"listStories": {"items": [{"id": "1", "title": "Test"}], "nextToken": None}}}
+            return_value={
+                "data": {
+                    "listStories": {
+                        "items": [{"id": "1", "title": "Test"}],
+                        "nextToken": None,
+                    }
+                }
+            }
         )
 
         result = executor.list_records_by_field("Story", "title", value="Test")
@@ -214,7 +228,10 @@ class TestGetRecord:
 
     def test_gets_record_by_primary_field(self, executor):
         executor.get_records = MagicMock(
-            return_value=[{"id": "1", "title": "Story 1"}, {"id": "2", "title": "Story 2"}]
+            return_value=[
+                {"id": "1", "title": "Story 1"},
+                {"id": "2", "title": "Story 2"},
+            ]
         )
 
         result = executor.get_record("Story", primary_field="title", value="Story 2")
@@ -277,7 +294,10 @@ class TestBuildForeignKeyLookups:
 
         executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         executor.get_records = MagicMock(
-            return_value=[{"id": "1", "name": "John Doe"}, {"id": "2", "name": "Jane Smith"}]
+            return_value=[
+                {"id": "1", "name": "John Doe"},
+                {"id": "2", "name": "Jane Smith"},
+            ]
         )
 
         result = executor.build_foreign_key_lookups(df, model_structure)

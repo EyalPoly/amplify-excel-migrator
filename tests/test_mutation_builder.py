@@ -199,7 +199,11 @@ class TestBuildUpdateVariables:
 
     def test_update_variables_complex_updates(self):
         """Test update variables with complex updates"""
-        updates = {"status": "published", "updatedAt": "2024-01-01T00:00:00Z", "tags": ["featured", "trending"]}
+        updates = {
+            "status": "published",
+            "updatedAt": "2024-01-01T00:00:00Z",
+            "tags": ["featured", "trending"],
+        }
         variables = MutationBuilder.build_update_variables("post-111", updates)
 
         assert variables["input"]["id"] == "post-111"
@@ -220,7 +224,13 @@ class TestBuildUpdateVariables:
 
     def test_update_variables_preserves_data_types(self):
         """Test that update variables preserve data types"""
-        updates = {"name": "Test", "age": 25, "isActive": True, "score": 95.5, "tags": ["a", "b"]}
+        updates = {
+            "name": "Test",
+            "age": 25,
+            "isActive": True,
+            "score": 95.5,
+            "tags": ["a", "b"],
+        }
         variables = MutationBuilder.build_update_variables("user-999", updates)
 
         assert isinstance(variables["input"]["age"], int)

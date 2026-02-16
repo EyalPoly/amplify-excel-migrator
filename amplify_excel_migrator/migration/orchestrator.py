@@ -9,7 +9,11 @@ import pandas as pd
 from amplify_excel_migrator.client import AmplifyClient
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
 from amplify_excel_migrator.schema import FieldParser
-from amplify_excel_migrator.migration import FailureTracker, ProgressReporter, BatchUploader
+from amplify_excel_migrator.migration import (
+    FailureTracker,
+    ProgressReporter,
+    BatchUploader,
+)
 from amplify_excel_migrator.core import ConfigManager
 
 logger = logging.getLogger(__name__)
