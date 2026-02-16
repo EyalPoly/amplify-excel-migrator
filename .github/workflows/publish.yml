@@ -1,6 +1,7 @@
 name: Publish to PyPI
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches:
@@ -8,7 +9,7 @@ on:
 
 jobs:
   build-and-publish:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -33,9 +34,17 @@ jobs:
 
     - name: Check if version bump should be skipped
       id: check_skip
+      env:
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
-        # Check if PR title or any commit in the PR contains [skip bump]
-        PR_TITLE="${{ github.event.pull_request.title }}"
+        # Always skip bump on manual dispatch
+        if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "Skipping version bump (manual workflow dispatch)"
+          exit 0
+        fi
 
         # Check PR title
         if echo "$PR_TITLE" | grep -q "\[skip bump\]"; then
@@ -45,7 +54,7 @@ jobs:
         fi
 
         # Check all commits in the PR (from merge base to HEAD)
-        MERGE_BASE=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
+        MERGE_BASE=$(git merge-base "origin/$BASE_REF" HEAD)
         if git log "$MERGE_BASE..HEAD" --pretty=%B | grep -q "\[skip bump\]"; then
           echo "skip=true" >> $GITHUB_OUTPUT
           echo "Skipping version bump (found [skip bump] in commit messages)"
