@@ -5,10 +5,12 @@ import sys
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+import pandas as pd
 from amplify_excel_migrator.cli.commands import (
     cmd_show,
     cmd_config,
     cmd_migrate,
+    cmd_export_data,
 )
 from amplify_excel_migrator.core import ConfigManager
 
@@ -304,3 +306,137 @@ class TestCmdMigrate:
 
                         # Verify run() was NOT called
                         mock_orchestrator_instance.run.assert_not_called()
+
+
+class TestCmdExportData:
+    """Test 'export-data' command"""
+
+    def test_export_data_fails_without_config(self, capsys, tmp_path):
+        test_config_file = tmp_path / "config.json"
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        args = MagicMock()
+        args.model = "Reporter"
+        args.output = None
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_export_data(args)
+
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "❌ No configuration found!" in captured.out
+
+    def test_export_data_stops_if_authentication_fails(self, tmp_path, sample_config, capsys):
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        args = MagicMock()
+        args.model = "Reporter"
+        args.output = None
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_excel_migrator.cli.commands.CognitoAuthProvider") as mock_auth_class:
+                with patch(
+                    "amplify_excel_migrator.core.config.getpass",
+                    return_value="wrong",
+                ):
+                    mock_auth_instance = MagicMock()
+                    mock_auth_instance.authenticate.return_value = False
+                    mock_auth_class.return_value = mock_auth_instance
+
+                    cmd_export_data(args)
+
+        captured = capsys.readouterr()
+        assert "Exported" not in captured.out
+
+    def test_export_data_exports_records_to_excel(self, tmp_path, sample_config):
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        output_file = str(tmp_path / "Reporter_records.xlsx")
+
+        args = MagicMock()
+        args.model = "Reporter"
+        args.output = output_file
+
+        records = [
+            {"id": "2", "name": "Zara"},
+            {"id": "1", "name": "Alice"},
+            {"id": "3", "name": "Bob"},
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_excel_migrator.cli.commands.CognitoAuthProvider") as mock_auth_class:
+                with patch(
+                    "amplify_excel_migrator.core.config.getpass",
+                    return_value="password",
+                ):
+                    with patch("amplify_excel_migrator.cli.commands.AmplifyClient") as mock_client_class:
+                        mock_auth_instance = MagicMock()
+                        mock_auth_instance.authenticate.return_value = True
+                        mock_auth_class.return_value = mock_auth_instance
+
+                        mock_client_instance = MagicMock()
+                        mock_client_instance.get_model_records.return_value = (records, "name")
+                        mock_client_class.return_value = mock_client_instance
+
+                        cmd_export_data(args)
+
+        assert Path(output_file).exists()
+        df = pd.read_excel(output_file, engine="openpyxl")
+        assert list(df.columns)[0] == "name"
+        assert list(df["name"]) == ["Alice", "Bob", "Zara"]
+
+    def test_export_data_handles_no_records(self, tmp_path, sample_config, capsys):
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        args = MagicMock()
+        args.model = "Reporter"
+        args.output = None
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_excel_migrator.cli.commands.CognitoAuthProvider") as mock_auth_class:
+                with patch(
+                    "amplify_excel_migrator.core.config.getpass",
+                    return_value="password",
+                ):
+                    with patch("amplify_excel_migrator.cli.commands.AmplifyClient") as mock_client_class:
+                        mock_auth_instance = MagicMock()
+                        mock_auth_instance.authenticate.return_value = True
+                        mock_auth_class.return_value = mock_auth_instance
+
+                        mock_client_instance = MagicMock()
+                        mock_client_instance.get_model_records.return_value = ([], "name")
+                        mock_client_class.return_value = mock_client_instance
+
+                        cmd_export_data(args)
+
+        captured = capsys.readouterr()
+        assert "No records found" in captured.out

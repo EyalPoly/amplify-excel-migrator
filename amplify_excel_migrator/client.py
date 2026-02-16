@@ -41,8 +41,24 @@ class AmplifyClient:
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         return self._executor.get_primary_field_name(model_name, parsed_model_structure)
 
-    def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         return self._executor.build_foreign_key_lookups(df, parsed_model_structure)
+
+    def get_model_records(self, model_name: str, field_parser) -> tuple[List[Dict], str]:
+        raw_structure = self.get_model_structure(model_name)
+        parsed_structure = field_parser.parse_model_structure(raw_structure)
+        primary_field, is_secondary_index, _ = self.get_primary_field_name(model_name, parsed_structure)
+
+        fields = ["id"]
+        for field in parsed_structure["fields"]:
+            if field["name"] in field_parser.metadata_fields:
+                continue
+            if field["is_scalar"] or field["is_enum"] or field["is_id"]:
+                fields.append(field["name"])
+
+        records = self._executor.get_records(model_name, primary_field, is_secondary_index, fields=fields)
+
+        return records or [], primary_field
 
     def upload(
         self,
