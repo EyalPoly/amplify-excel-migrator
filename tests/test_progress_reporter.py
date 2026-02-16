@@ -12,7 +12,11 @@ class TestPrintSheetResult:
     @patch("sys.stdout", new_callable=StringIO)
     def test_prints_success_and_failure_counts(self, mock_stdout):
         ProgressReporter.print_sheet_result(
-            sheet_name="Users", success_count=10, total_rows=15, parsing_failures=3, upload_failures=2
+            sheet_name="Users",
+            success_count=10,
+            total_rows=15,
+            parsing_failures=3,
+            upload_failures=2,
         )
 
         output = mock_stdout.getvalue()
@@ -26,7 +30,11 @@ class TestPrintSheetResult:
     @patch("sys.stdout", new_callable=StringIO)
     def test_prints_sheet_name_in_header(self, mock_stdout):
         ProgressReporter.print_sheet_result(
-            sheet_name="Products", success_count=5, total_rows=5, parsing_failures=0, upload_failures=0
+            sheet_name="Products",
+            success_count=5,
+            total_rows=5,
+            parsing_failures=0,
+            upload_failures=0,
         )
 
         output = mock_stdout.getvalue()
@@ -36,7 +44,11 @@ class TestPrintSheetResult:
     @patch("sys.stdout", new_callable=StringIO)
     def test_handles_zero_failures(self, mock_stdout):
         ProgressReporter.print_sheet_result(
-            sheet_name="Orders", success_count=20, total_rows=20, parsing_failures=0, upload_failures=0
+            sheet_name="Orders",
+            success_count=20,
+            total_rows=20,
+            parsing_failures=0,
+            upload_failures=0,
         )
 
         output = mock_stdout.getvalue()
@@ -45,7 +57,11 @@ class TestPrintSheetResult:
     @patch("sys.stdout", new_callable=StringIO)
     def test_sums_parsing_and_upload_failures(self, mock_stdout):
         ProgressReporter.print_sheet_result(
-            sheet_name="Test", success_count=0, total_rows=10, parsing_failures=7, upload_failures=3
+            sheet_name="Test",
+            success_count=0,
+            total_rows=10,
+            parsing_failures=7,
+            upload_failures=3,
         )
 
         output = mock_stdout.getvalue()

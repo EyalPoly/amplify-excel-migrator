@@ -11,7 +11,10 @@ class BatchUploader:
         self.amplify_client = amplify_client
 
     def upload_records(
-        self, records: List[Dict], sheet_name: str, parsed_model_structure: Dict[str, Any]
+        self,
+        records: List[Dict],
+        sheet_name: str,
+        parsed_model_structure: Dict[str, Any],
     ) -> Tuple[int, int, List[Dict]]:
         if not records:
             return 0, 0, []

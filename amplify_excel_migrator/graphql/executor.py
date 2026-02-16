@@ -72,7 +72,11 @@ class QueryExecutor:
             query_name = f"list{model_name}By{secondary_index[0].upper() + secondary_index[1:]}"
 
             while True:
-                variables = {secondary_index: value, "limit": 1000, "nextToken": next_token}
+                variables = {
+                    secondary_index: value,
+                    "limit": 1000,
+                    "nextToken": next_token,
+                }
                 result = self.client.request(query, variables)
 
                 if result and "data" in result:
@@ -89,7 +93,11 @@ class QueryExecutor:
         return all_items if all_items else None
 
     def list_records_by_field(
-        self, model_name: str, field_name: str, value: Optional[str] = None, fields: Optional[List[str]] = None
+        self,
+        model_name: str,
+        field_name: str,
+        value: Optional[str] = None,
+        fields: Optional[List[str]] = None,
     ) -> Optional[List[Dict]]:
         if fields is None:
             fields = ["id", field_name]
@@ -120,7 +128,11 @@ class QueryExecutor:
             filter_input = QueryBuilder.build_filter_equals(field_name, value)
 
             while True:
-                variables = {"filter": filter_input, "limit": 1000, "nextToken": next_token}
+                variables = {
+                    "filter": filter_input,
+                    "limit": 1000,
+                    "nextToken": next_token,
+                }
                 result = self.client.request(query, variables)
 
                 if result and "data" in result:
@@ -200,7 +212,11 @@ class QueryExecutor:
         return next((record for record in records if record.get(primary_field) == value), None)
 
     async def create_record_async(
-        self, session: aiohttp.ClientSession, data: Dict, model_name: str, primary_field: str
+        self,
+        session: aiohttp.ClientSession,
+        data: Dict,
+        model_name: str,
+        primary_field: str,
     ) -> Optional[Dict]:
         mutation = MutationBuilder.build_create_mutation(model_name, return_fields=["id", primary_field])
         variables = MutationBuilder.build_create_variables(data)
@@ -232,7 +248,11 @@ class QueryExecutor:
 
         if is_secondary_index:
             query = QueryBuilder.build_secondary_index_query(
-                model_name, primary_field, fields=["id"], field_type=field_type, with_pagination=False
+                model_name,
+                primary_field,
+                fields=["id"],
+                field_type=field_type,
+                with_pagination=False,
             )
             variables = {primary_field: value}
             query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
@@ -271,7 +291,13 @@ class QueryExecutor:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
                 self.check_record_exists_async(
-                    session, model_name, primary_field, record[primary_field], is_secondary_index, record, field_type
+                    session,
+                    model_name,
+                    primary_field,
+                    record[primary_field],
+                    is_secondary_index,
+                    record,
+                    field_type,
                 )
                 for record in batch
             ]
@@ -327,7 +353,10 @@ class QueryExecutor:
             return success_count, error_count, failed_records
 
     def upload(
-        self, records: List[Dict], model_name: str, parsed_model_structure: Dict[str, Any]
+        self,
+        records: List[Dict],
+        model_name: str,
+        parsed_model_structure: Dict[str, Any],
     ) -> tuple[int, int, List[Dict]]:
         logger.info("Uploading to Amplify backend...")
 
@@ -402,7 +431,10 @@ class QueryExecutor:
                         for record in records
                         if record.get(primary_field)
                     }
-                    fk_lookup_cache[related_model] = {"lookup": lookup, "primary_field": primary_field}
+                    fk_lookup_cache[related_model] = {
+                        "lookup": lookup,
+                        "primary_field": primary_field,
+                    }
                     logger.debug(f"  📦 Cached {len(lookup)} {related_model} records")
             except Exception as e:
                 logger.warning(f"  ⚠️  Could not pre-fetch {related_model}: {e}")

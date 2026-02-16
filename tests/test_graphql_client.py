@@ -4,7 +4,11 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 import aiohttp
 import requests
-from amplify_excel_migrator.graphql.client import GraphQLClient, AuthenticationError, GraphQLError
+from amplify_excel_migrator.graphql.client import (
+    GraphQLClient,
+    AuthenticationError,
+    GraphQLError,
+)
 
 
 @pytest.fixture
@@ -80,7 +84,10 @@ class TestRequest:
         mock_response.json.return_value = {"data": {"getUser": {"id": "123"}}}
         mock_post.return_value = mock_response
 
-        result = client.request("query GetUser($id: ID!) { getUser(id: $id) { id } }", variables={"id": "123"})
+        result = client.request(
+            "query GetUser($id: ID!) { getUser(id: $id) { id } }",
+            variables={"id": "123"},
+        )
 
         assert result == {"data": {"getUser": {"id": "123"}}}
         called_json = mock_post.call_args[1]["json"]
@@ -200,7 +207,9 @@ class TestRequestAsync:
         mock_session.post.return_value.__aexit__ = AsyncMock()
 
         result = await client.request_async(
-            mock_session, "query GetUser($id: ID!) { getUser(id: $id) { id } }", variables={"id": "123"}
+            mock_session,
+            "query GetUser($id: ID!) { getUser(id: $id) { id } }",
+            variables={"id": "123"},
         )
 
         assert result == {"data": {"getUser": {"id": "123"}}}

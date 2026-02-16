@@ -145,7 +145,16 @@ class TestGetPrimaryFieldName:
 
     def test_defaults_to_string_type_when_secondary_index_field_not_found(self, introspector):
         introspector._get_secondary_index = MagicMock(return_value="email")
-        parsed_model = {"fields": [{"name": "name", "type": "String", "is_required": True, "is_scalar": True}]}
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "String",
+                    "is_required": True,
+                    "is_scalar": True,
+                }
+            ]
+        }
 
         field_name, is_secondary, field_type = introspector.get_primary_field_name("User", parsed_model)
 

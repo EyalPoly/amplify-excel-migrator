@@ -6,7 +6,11 @@ from typing import Dict, List
 class ProgressReporter:
     @staticmethod
     def print_sheet_result(
-        sheet_name: str, success_count: int, total_rows: int, parsing_failures: int, upload_failures: int
+        sheet_name: str,
+        success_count: int,
+        total_rows: int,
+        parsing_failures: int,
+        upload_failures: int,
     ) -> None:
         print(f"=== Upload of Excel sheet: {sheet_name} Complete ===")
         print(f"✅ Success: {success_count}")
@@ -16,7 +20,9 @@ class ProgressReporter:
 
     @staticmethod
     def print_migration_summary(
-        sheets_processed: int, total_success: int, failures_by_sheet: Dict[str, List[Dict]]
+        sheets_processed: int,
+        total_success: int,
+        failures_by_sheet: Dict[str, List[Dict]],
     ) -> None:
         total_failed = sum(len(failures) for failures in failures_by_sheet.values())
 

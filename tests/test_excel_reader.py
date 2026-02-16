@@ -42,7 +42,10 @@ class TestReadAllSheets:
 
     @patch("amplify_excel_migrator.data.excel_reader.pd.read_excel")
     def test_logs_file_path_and_sheet_count(self, mock_read_excel):
-        mock_read_excel.return_value = {"Sheet1": pd.DataFrame(), "Sheet2": pd.DataFrame()}
+        mock_read_excel.return_value = {
+            "Sheet1": pd.DataFrame(),
+            "Sheet2": pd.DataFrame(),
+        }
 
         reader = ExcelReader(file_path="/path/to/test.xlsx")
         result = reader.read_all_sheets()

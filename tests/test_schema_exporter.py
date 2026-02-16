@@ -544,42 +544,72 @@ class TestFormatTypeDisplay:
     """Test _format_type_display static method"""
 
     def test_formats_basic_type(self):
-        field = {"type": "String", "is_list": False, "is_enum": False, "is_custom_type": False}
+        field = {
+            "type": "String",
+            "is_list": False,
+            "is_enum": False,
+            "is_custom_type": False,
+        }
 
         result = SchemaExporter._format_type_display(field)
 
         assert result == "`String`"
 
     def test_formats_list_type(self):
-        field = {"type": "String", "is_list": True, "is_enum": False, "is_custom_type": False}
+        field = {
+            "type": "String",
+            "is_list": True,
+            "is_enum": False,
+            "is_custom_type": False,
+        }
 
         result = SchemaExporter._format_type_display(field)
 
         assert result == "`[String]`"
 
     def test_formats_enum_type(self):
-        field = {"type": "Status", "is_list": False, "is_enum": True, "is_custom_type": False}
+        field = {
+            "type": "Status",
+            "is_list": False,
+            "is_enum": True,
+            "is_custom_type": False,
+        }
 
         result = SchemaExporter._format_type_display(field)
 
         assert result == "`Status` (Enum)"
 
     def test_formats_custom_type(self):
-        field = {"type": "Address", "is_list": False, "is_enum": False, "is_custom_type": True}
+        field = {
+            "type": "Address",
+            "is_list": False,
+            "is_enum": False,
+            "is_custom_type": True,
+        }
 
         result = SchemaExporter._format_type_display(field)
 
         assert result == "`Address` (Custom Type)"
 
     def test_formats_list_of_enums(self):
-        field = {"type": "Status", "is_list": True, "is_enum": True, "is_custom_type": False}
+        field = {
+            "type": "Status",
+            "is_list": True,
+            "is_enum": True,
+            "is_custom_type": False,
+        }
 
         result = SchemaExporter._format_type_display(field)
 
         assert result == "`[Status]` (Enum)"
 
     def test_formats_list_of_custom_types(self):
-        field = {"type": "Address", "is_list": True, "is_enum": False, "is_custom_type": True}
+        field = {
+            "type": "Address",
+            "is_list": True,
+            "is_enum": False,
+            "is_custom_type": True,
+        }
 
         result = SchemaExporter._format_type_display(field)
 

@@ -131,7 +131,12 @@ class TestValidateForeignKey:
     """Test validate_foreign_key static method"""
 
     def test_returns_empty_list_when_fk_exists_in_cache(self):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"John Doe": "author-123"}}}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)
@@ -139,7 +144,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_returns_error_when_required_fk_not_in_cache(self):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)
@@ -148,7 +158,12 @@ class TestValidateForeignKey:
         assert "Author: John Doe does not exist" in errors[0]
 
     def test_returns_empty_list_when_optional_fk_not_in_cache(self):
-        field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": False,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)
@@ -156,7 +171,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_returns_error_when_related_model_not_in_cache_required(self):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)
@@ -165,7 +185,12 @@ class TestValidateForeignKey:
         assert "No pre-fetched data for required foreign key Author" in errors[0]
 
     def test_returns_empty_list_when_related_model_not_in_cache_optional(self):
-        field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": False,
+            "related_model": "Author",
+        }
         fk_cache = {}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)
@@ -189,7 +214,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_converts_value_to_string_for_lookup(self):
-        field = {"name": "categoryId", "is_id": True, "is_required": True, "related_model": "Category"}
+        field = {
+            "name": "categoryId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Category",
+        }
         fk_cache = {"Category": {"lookup": {"123": "cat-abc"}}}
 
         errors = RecordValidator.validate_foreign_key(field, 123, fk_cache)
@@ -197,7 +227,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_handles_numeric_fk_values(self):
-        field = {"name": "userId", "is_id": True, "is_required": True, "related_model": "User"}
+        field = {
+            "name": "userId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "User",
+        }
         fk_cache = {"User": {"lookup": {"42": "user-xyz"}}}
 
         errors = RecordValidator.validate_foreign_key(field, 42, fk_cache)
@@ -205,7 +240,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_validates_with_explicit_related_model(self):
-        field = {"name": "createdById", "is_id": True, "is_required": True, "related_model": "User"}
+        field = {
+            "name": "createdById",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "User",
+        }
         fk_cache = {"User": {"lookup": {"admin": "user-1"}}}
 
         errors = RecordValidator.validate_foreign_key(field, "admin", fk_cache)
@@ -213,7 +253,12 @@ class TestValidateForeignKey:
         assert errors == []
 
     def test_error_message_includes_model_and_value(self):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {}}}
 
         errors = RecordValidator.validate_foreign_key(field, "Unknown Author", fk_cache)
@@ -223,7 +268,12 @@ class TestValidateForeignKey:
         assert "Unknown Author" in errors[0]
 
     def test_handles_empty_lookup_dict(self):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {}}}
 
         errors = RecordValidator.validate_foreign_key(field, "John Doe", fk_cache)

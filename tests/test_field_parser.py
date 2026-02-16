@@ -11,7 +11,11 @@ class TestExtractRelationshipInfo:
         """Test extracting belongsTo relationship info"""
         parser = FieldParser()
 
-        field = {"name": "photographer", "type": {"kind": "OBJECT", "name": "Reporter", "ofType": None}, "args": []}
+        field = {
+            "name": "photographer",
+            "type": {"kind": "OBJECT", "name": "Reporter", "ofType": None},
+            "args": [],
+        }
 
         result = parser._extract_relationship_info(field)
 
@@ -25,7 +29,11 @@ class TestExtractRelationshipInfo:
 
         field = {
             "name": "author",
-            "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "OBJECT", "name": "User", "ofType": None}},
+            "type": {
+                "kind": "NON_NULL",
+                "name": None,
+                "ofType": {"kind": "OBJECT", "name": "User", "ofType": None},
+            },
             "args": [],
         }
 
@@ -40,7 +48,11 @@ class TestExtractRelationshipInfo:
         parser = FieldParser()
 
         # Connection types should be filtered out by _extract_relationship_info
-        field = {"name": "posts", "type": {"kind": "OBJECT", "name": "ModelPostConnection", "ofType": None}, "args": []}
+        field = {
+            "name": "posts",
+            "type": {"kind": "OBJECT", "name": "ModelPostConnection", "ofType": None},
+            "args": [],
+        }
 
         result = parser._extract_relationship_info(field)
 
@@ -72,12 +84,20 @@ class TestParseModelStructure:
             "fields": [
                 {
                     "name": "id",
-                    "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "ID"}},
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "SCALAR", "name": "ID"},
+                    },
                     "description": None,
                 },
                 {
                     "name": "photographerId",
-                    "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "ID"}},
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "SCALAR", "name": "ID"},
+                    },
                     "description": None,
                 },
                 {
@@ -86,7 +106,11 @@ class TestParseModelStructure:
                     "description": None,
                     "args": [],
                 },
-                {"name": "title", "type": {"kind": "SCALAR", "name": "String", "ofType": None}, "description": None},
+                {
+                    "name": "title",
+                    "type": {"kind": "SCALAR", "name": "String", "ofType": None},
+                    "description": None,
+                },
             ],
         }
 
@@ -111,7 +135,11 @@ class TestParseModelStructure:
             "fields": [
                 {
                     "name": "photographerId",
-                    "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "ID"}},
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "SCALAR", "name": "ID"},
+                    },
                     "description": None,
                 },
                 {
@@ -139,14 +167,22 @@ class TestParseModelStructure:
             "kind": "OBJECT",
             "description": None,
             "fields": [
-                {"name": "authorId", "type": {"kind": "SCALAR", "name": "ID", "ofType": None}, "description": None},
+                {
+                    "name": "authorId",
+                    "type": {"kind": "SCALAR", "name": "ID", "ofType": None},
+                    "description": None,
+                },
                 {
                     "name": "author",
                     "type": {"kind": "OBJECT", "name": "User", "ofType": None},
                     "description": None,
                     "args": [],
                 },
-                {"name": "editorId", "type": {"kind": "SCALAR", "name": "ID", "ofType": None}, "description": None},
+                {
+                    "name": "editorId",
+                    "type": {"kind": "SCALAR", "name": "ID", "ofType": None},
+                    "description": None,
+                },
                 {
                     "name": "editor",
                     "type": {"kind": "OBJECT", "name": "User", "ofType": None},
@@ -182,7 +218,11 @@ class TestParseModelStructure:
             "kind": "OBJECT",
             "description": None,
             "fields": [
-                {"name": "name", "type": {"kind": "SCALAR", "name": "String", "ofType": None}, "description": None},
+                {
+                    "name": "name",
+                    "type": {"kind": "SCALAR", "name": "String", "ofType": None},
+                    "description": None,
+                },
                 {
                     "name": "addresses",
                     "type": {
@@ -213,7 +253,11 @@ class TestParseFieldWithRelationships:
         """Test that custom type fields are marked correctly"""
         parser = FieldParser()
 
-        field = {"name": "address", "type": {"kind": "OBJECT", "name": "Address", "ofType": None}, "description": None}
+        field = {
+            "name": "address",
+            "type": {"kind": "OBJECT", "name": "Address", "ofType": None},
+            "description": None,
+        }
 
         result = parser._parse_field(field)
 
@@ -355,7 +399,11 @@ class TestIntegrationBelongsToFlow:
                             "type": {
                                 "kind": "NON_NULL",
                                 "name": None,
-                                "ofType": {"kind": "SCALAR", "name": "ID", "ofType": None},
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "ID",
+                                    "ofType": None,
+                                },
                             },
                             "description": None,
                         },
@@ -364,7 +412,11 @@ class TestIntegrationBelongsToFlow:
                             "type": {
                                 "kind": "NON_NULL",
                                 "name": None,
-                                "ofType": {"kind": "SCALAR", "name": "String", "ofType": None},
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "String",
+                                    "ofType": None,
+                                },
                             },
                             "description": None,
                         },
@@ -373,13 +425,21 @@ class TestIntegrationBelongsToFlow:
                             "type": {
                                 "kind": "NON_NULL",
                                 "name": None,
-                                "ofType": {"kind": "SCALAR", "name": "ID", "ofType": None},
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "ID",
+                                    "ofType": None,
+                                },
                             },
                             "description": None,
                         },
                         {
                             "name": "photographer",
-                            "type": {"kind": "OBJECT", "name": "Reporter", "ofType": None},
+                            "type": {
+                                "kind": "OBJECT",
+                                "name": "Reporter",
+                                "ofType": None,
+                            },
                             "description": None,
                             "args": [],
                         },
@@ -388,7 +448,11 @@ class TestIntegrationBelongsToFlow:
                             "type": {
                                 "kind": "NON_NULL",
                                 "name": None,
-                                "ofType": {"kind": "SCALAR", "name": "AWSDateTime", "ofType": None},
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "AWSDateTime",
+                                    "ofType": None,
+                                },
                             },
                             "description": None,
                         },
@@ -397,7 +461,11 @@ class TestIntegrationBelongsToFlow:
                             "type": {
                                 "kind": "NON_NULL",
                                 "name": None,
-                                "ofType": {"kind": "SCALAR", "name": "AWSDateTime", "ofType": None},
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "AWSDateTime",
+                                    "ofType": None,
+                                },
                             },
                             "description": None,
                         },
@@ -443,15 +511,27 @@ class TestIntegrationBelongsToFlow:
             "fields": [
                 {
                     "name": "id",
-                    "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "ID"}},
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "SCALAR", "name": "ID"},
+                    },
                     "description": None,
                 },
                 {
                     "name": "name",
-                    "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "String"}},
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "SCALAR", "name": "String"},
+                    },
                     "description": None,
                 },
-                {"name": "email", "type": {"kind": "SCALAR", "name": "String", "ofType": None}, "description": None},
+                {
+                    "name": "email",
+                    "type": {"kind": "SCALAR", "name": "String", "ofType": None},
+                    "description": None,
+                },
             ],
         }
 
@@ -478,7 +558,9 @@ class TestParseScalarArray:
         field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
 
         result = parser.parse_scalar_array(
-            field, "urls", '["https://url1.com", "https://url2.com", "https://url3.com"]'
+            field,
+            "urls",
+            '["https://url1.com", "https://url2.com", "https://url3.com"]',
         )
 
         assert result == ["https://url1.com", "https://url2.com", "https://url3.com"]
@@ -608,7 +690,13 @@ class TestParseScalarArray:
     def test_handles_enum_array(self):
         """Test parsing enum array"""
         parser = FieldParser()
-        field = {"name": "statuses", "type": "Status", "is_list": True, "is_scalar": True, "is_enum": True}
+        field = {
+            "name": "statuses",
+            "type": "Status",
+            "is_list": True,
+            "is_scalar": True,
+            "is_enum": True,
+        }
 
         result = parser.parse_scalar_array(field, "statuses", "active, pending, completed")
 

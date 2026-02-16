@@ -49,7 +49,13 @@ class TestUploadRecords:
     def test_returns_upload_errors(self, uploader, mock_amplify_client):
         records = [{"name": "John"}, {"name": "Jane"}]
         parsed_model = {"fields": []}
-        failed_uploads = [{"primary_field": "name", "primary_field_value": "Jane", "error": "Upload error"}]
+        failed_uploads = [
+            {
+                "primary_field": "name",
+                "primary_field_value": "Jane",
+                "error": "Upload error",
+            }
+        ]
         mock_amplify_client.upload.return_value = (1, 1, failed_uploads)
 
         success, errors, failed = uploader.upload_records(records, "TestSheet", parsed_model)

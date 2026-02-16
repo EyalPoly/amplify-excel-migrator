@@ -36,7 +36,15 @@ class TestTransformRowsToRecords:
     def test_transforms_all_rows_successfully(self, transformer):
         df = pd.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
         parsed_model = {
-            "fields": [{"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}]
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                }
+            ]
         }
 
         records, row_dict, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
@@ -49,7 +57,15 @@ class TestTransformRowsToRecords:
     def test_creates_row_dict_by_primary_field(self, transformer):
         df = pd.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
         parsed_model = {
-            "fields": [{"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}]
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                }
+            ]
         }
 
         records, row_dict, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
@@ -62,7 +78,15 @@ class TestTransformRowsToRecords:
     def test_handles_transformation_errors(self, transformer):
         df = pd.DataFrame({"name": ["John", "Jane"], "age": [25, 30]})
         parsed_model = {
-            "fields": [{"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}]
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                }
+            ]
         }
 
         transformer.transform_row_to_record = MagicMock(side_effect=[{"name": "John"}, Exception("Transform error")])
@@ -78,7 +102,15 @@ class TestTransformRowsToRecords:
     def test_uses_row_count_when_primary_field_missing(self, transformer):
         df = pd.DataFrame({"age": [25, 30]})
         parsed_model = {
-            "fields": [{"name": "age", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}]
+            "fields": [
+                {
+                    "name": "age",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                }
+            ]
         }
 
         records, row_dict, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
@@ -89,7 +121,15 @@ class TestTransformRowsToRecords:
     def test_skips_none_records(self, transformer):
         df = pd.DataFrame({"name": ["John", "Jane"]})
         parsed_model = {
-            "fields": [{"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}]
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                }
+            ]
         }
 
         transformer.transform_row_to_record = MagicMock(side_effect=[{"name": "John"}, None])
@@ -107,8 +147,20 @@ class TestTransformRowToRecord:
         row_dict = {"name": "John", "age": 25}
         parsed_model = {
             "fields": [
-                {"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False},
-                {"name": "age", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False},
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
+                {
+                    "name": "age",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
             ]
         }
 
@@ -121,8 +173,20 @@ class TestTransformRowToRecord:
         row_dict = {"name": "John", "age": 25}
         parsed_model = {
             "fields": [
-                {"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False},
-                {"name": "email", "is_id": False, "is_required": False, "is_list": False, "is_scalar": False},
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
+                {
+                    "name": "email",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
             ]
         }
 
@@ -138,9 +202,27 @@ class TestTransformRowToRecord:
         row_dict = {"name": "John", "age": 25, "city": "NYC"}
         parsed_model = {
             "fields": [
-                {"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False},
-                {"name": "age", "is_id": False, "is_required": False, "is_list": False, "is_scalar": False},
-                {"name": "city", "is_id": False, "is_required": False, "is_list": False, "is_scalar": False},
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
+                {
+                    "name": "age",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
+                {
+                    "name": "city",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                },
             ]
         }
 
@@ -154,7 +236,13 @@ class TestParseInput:
 
     def test_parses_regular_field(self, transformer):
         row_dict = {"name": "John"}
-        field = {"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "name",
+            "is_id": False,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": False,
+        }
 
         result = transformer.parse_input(row_dict, field, {})
 
@@ -162,7 +250,13 @@ class TestParseInput:
 
     def test_returns_none_for_missing_optional_field(self, transformer):
         row_dict = {"name": "John"}
-        field = {"name": "email", "is_id": False, "is_required": False, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "email",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+        }
 
         result = transformer.parse_input(row_dict, field, {})
 
@@ -170,14 +264,26 @@ class TestParseInput:
 
     def test_raises_error_for_missing_required_field(self, transformer):
         row_dict = {"name": "John"}
-        field = {"name": "age", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "age",
+            "is_id": False,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": False,
+        }
 
         with pytest.raises(ValueError, match="Required field 'age' is missing"):
             transformer.parse_input(row_dict, field, {})
 
     def test_returns_none_for_nan_values(self, transformer):
         row_dict = {"name": "John", "age": float("nan")}
-        field = {"name": "age", "is_id": False, "is_required": False, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "age",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+        }
 
         result = transformer.parse_input(row_dict, field, {})
 
@@ -185,7 +291,13 @@ class TestParseInput:
 
     def test_cleans_input_value(self, transformer, mock_field_parser):
         row_dict = {"name": "  John  "}
-        field = {"name": "name", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "name",
+            "is_id": False,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": False,
+        }
         mock_field_parser.clean_input.return_value = "John"
 
         result = transformer.parse_input(row_dict, field, {})
@@ -194,7 +306,12 @@ class TestParseInput:
 
     def test_resolves_foreign_key_field(self, transformer):
         row_dict = {"author": "John Doe"}
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"John Doe": "author-123"}}}
 
         result = transformer.parse_input(row_dict, field, fk_cache)
@@ -203,7 +320,13 @@ class TestParseInput:
 
     def test_parses_scalar_array_field(self, transformer, mock_field_parser):
         row_dict = {"tags": "tag1,tag2,tag3"}
-        field = {"name": "tags", "is_id": False, "is_required": False, "is_list": True, "is_scalar": True}
+        field = {
+            "name": "tags",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": True,
+        }
         mock_field_parser.parse_scalar_array.return_value = ["tag1", "tag2", "tag3"]
 
         result = transformer.parse_input(row_dict, field, {})
@@ -212,7 +335,13 @@ class TestParseInput:
 
     def test_uses_field_parser_for_regular_fields(self, transformer, mock_field_parser):
         row_dict = {"age": "25"}
-        field = {"name": "age", "is_id": False, "is_required": True, "is_list": False, "is_scalar": False}
+        field = {
+            "name": "age",
+            "is_id": False,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": False,
+        }
         mock_field_parser.parse_field_input.return_value = 25
 
         result = transformer.parse_input(row_dict, field, {})
@@ -224,7 +353,12 @@ class TestResolveForeignKey:
     """Test _resolve_foreign_key static method"""
 
     def test_resolves_fk_with_explicit_related_model(self, transformer):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"John Doe": "author-123"}}}
 
         result = transformer._resolve_foreign_key(field, "John Doe", fk_cache)
@@ -240,35 +374,60 @@ class TestResolveForeignKey:
         assert result == "author-123"
 
     def test_raises_error_for_missing_optional_fk(self, transformer):
-        field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": False,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
         with pytest.raises(ValueError, match="Author: John Doe does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_required_fk(self, transformer):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
         with pytest.raises(ValueError, match="Author: John Doe does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_cache_optional_field(self, transformer):
-        field = {"name": "authorId", "is_id": True, "is_required": False, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": False,
+            "related_model": "Author",
+        }
         fk_cache = {}
 
         with pytest.raises(ValueError, match="No pre-fetched data for Author"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_cache_required_field(self, transformer):
-        field = {"name": "authorId", "is_id": True, "is_required": True, "related_model": "Author"}
+        field = {
+            "name": "authorId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Author",
+        }
         fk_cache = {}
 
         with pytest.raises(ValueError, match="No pre-fetched data for Author"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_converts_value_to_string_for_lookup(self, transformer):
-        field = {"name": "categoryId", "is_id": True, "is_required": True, "related_model": "Category"}
+        field = {
+            "name": "categoryId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Category",
+        }
         fk_cache = {"Category": {"lookup": {"123": "cat-abc"}}}
 
         result = transformer._resolve_foreign_key(field, 123, fk_cache)

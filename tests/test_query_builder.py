@@ -107,7 +107,11 @@ class TestBuildSecondaryIndexQuery:
     def test_secondary_index_query_without_pagination(self):
         """Test secondary index query without pagination"""
         query = QueryBuilder.build_secondary_index_query(
-            "Product", "sku", fields=["id", "sku"], field_type="String", with_pagination=False
+            "Product",
+            "sku",
+            fields=["id", "sku"],
+            field_type="String",
+            with_pagination=False,
         )
 
         assert "query listProductBySku" in query
@@ -179,7 +183,15 @@ class TestBuildGetByIdQuery:
 
     def test_get_by_id_many_fields(self):
         """Test get by ID with many fields"""
-        fields = ["id", "title", "content", "authorID", "createdAt", "updatedAt", "published"]
+        fields = [
+            "id",
+            "title",
+            "content",
+            "authorID",
+            "createdAt",
+            "updatedAt",
+            "published",
+        ]
         query = QueryBuilder.build_get_by_id_query("Article", fields=fields)
 
         for field in fields:
@@ -255,7 +267,11 @@ class TestBuildVariablesForFilter:
         filter_dict = {"status": {"eq": "active"}}
         variables = QueryBuilder.build_variables_for_filter(filter_dict, limit=50, next_token="xyz789")
 
-        assert variables == {"filter": {"status": {"eq": "active"}}, "limit": 50, "nextToken": "xyz789"}
+        assert variables == {
+            "filter": {"status": {"eq": "active"}},
+            "limit": 50,
+            "nextToken": "xyz789",
+        }
 
     def test_variables_with_complex_filter(self):
         """Test variables with complex filter"""
