@@ -21,6 +21,16 @@ This document specifies the exact format requirements for Excel files used with 
 
 ## Quick Start Guide
 
+### Exporting Existing Data
+
+You can export existing records from your Amplify backend to see the expected format:
+
+```bash
+amplify-migrator export-data --model Reporter --output reporter_example.xlsx
+```
+
+The exported file serves as a reference for column names, data types, and field ordering.
+
 ### Basic Checklist
 
 Before running your migration, ensure:

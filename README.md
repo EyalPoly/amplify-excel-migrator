@@ -30,7 +30,7 @@ pip install .
 
 ## Usage
 
-The tool has four subcommands:
+The tool has five subcommands:
 
 ### 1. Configure (First Time Setup)
 
@@ -84,7 +84,21 @@ Perfect for sharing with team members who need to prepare Excel files for migrat
 
 💡 The exported schema reference can help you prepare your Excel file. For detailed formatting guidelines, see the [Excel Format Specification](docs/EXCEL_FORMAT_SPECIFICATION.md).
 
-### 4. Run Migration
+### 4. Export Data
+
+Export all records of a model from your Amplify backend to an Excel file:
+
+```bash
+# Export a model's records to Excel
+amplify-migrator export-data --model Reporter
+
+# Export to a specific file
+amplify-migrator export-data --model Reporter --output reporter_backup.xlsx
+```
+
+Records are sorted by primary field and exported with scalar, enum, and ID fields. This is useful for backing up data, auditing records, or preparing corrections for re-migration.
+
+### 5. Run Migration
 
 Run the migration using your saved configuration:
 
@@ -105,6 +119,9 @@ amplify-migrator show
 
 # Export schema documentation (share with team)
 amplify-migrator export-schema
+
+# Export existing records to Excel
+amplify-migrator export-data --model Reporter
 
 # Run migration (uses saved config)
 amplify-migrator migrate
@@ -179,6 +196,7 @@ Admin Password: ********
 - **Progress reporting** - Real-time feedback on migration status
 - **Detailed error messages** - Clear context for troubleshooting failures
 - **Schema export** - Generate markdown documentation of your GraphQL schema to share with team members
+- **Data export** - Export existing model records to Excel for backup, auditing, or correction
 
 ## Excel Format Requirements
 

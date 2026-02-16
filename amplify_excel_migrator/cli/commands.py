@@ -3,6 +3,8 @@
 import argparse
 import sys
 
+import pandas as pd
+
 from amplify_excel_migrator.client import AmplifyClient
 from amplify_excel_migrator.core import ConfigManager
 from amplify_excel_migrator.schema import FieldParser, SchemaExporter
@@ -185,6 +187,83 @@ def cmd_export_schema(args=None):
         sys.exit(1)
 
 
+def cmd_export_data(args=None):
+    print("""
+    ╔════════════════════════════════════════════════════╗
+    ║         Amplify Migrator - Export Data             ║
+    ╚════════════════════════════════════════════════════╝
+    """)
+
+    config_manager = ConfigManager()
+    cached_config = config_manager.load()
+
+    if not cached_config:
+        print("\n❌ No configuration found!")
+        print("💡 Run 'amplify-migrator config' first to set up your configuration.")
+        sys.exit(1)
+
+    model_name = args.model
+    output_path = args.output if args.output else f"{model_name}_records.xlsx"
+
+    api_endpoint = config_manager.get_or_prompt("api_endpoint", "AWS Amplify API endpoint")
+    region = config_manager.get_or_prompt("region", "AWS Region", "us-east-1")
+    user_pool_id = config_manager.get_or_prompt("user_pool_id", "Cognito User Pool ID")
+    client_id = config_manager.get_or_prompt("client_id", "Cognito Client ID")
+    username = config_manager.get_or_prompt("username", "Admin Username")
+
+    print("\n🔐 Authentication:")
+    print("-" * 54)
+    password = config_manager.prompt_for_value("Admin Password", secret=True)
+
+    auth_provider = CognitoAuthProvider(
+        user_pool_id=user_pool_id,
+        client_id=client_id,
+        region=region,
+    )
+
+    amplify_client = AmplifyClient(
+        api_endpoint=api_endpoint,
+        auth_provider=auth_provider,
+    )
+
+    if not auth_provider.authenticate(username, password):
+        return
+
+    print(f"\n📋 Exporting {model_name} records...")
+    print("-" * 54)
+
+    field_parser = FieldParser()
+
+    try:
+        records, primary_field = amplify_client.get_model_records(model_name, field_parser)
+    except Exception as e:
+        print(f"\n❌ Failed to fetch records: {e}")
+        sys.exit(1)
+
+    if not records:
+        print(f"\n⚠️  No records found for model '{model_name}'.")
+        return
+
+    df = pd.DataFrame(records)
+
+    cols = list(df.columns)
+    if primary_field in cols:
+        cols.remove(primary_field)
+        cols = [primary_field] + cols
+
+    df = df[cols]
+
+    if primary_field in df.columns:
+        sort_key = df[primary_field].apply(lambda x: str(x).lower())
+        df = df.iloc[sort_key.argsort()]
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=model_name)
+
+    print(f"\n✅ Exported {len(records)} records to: {output_path}")
+    print(f"💡 Primary key: '{primary_field}' (sorted, first column)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Amplify Excel Migrator - Migrate Excel data to AWS Amplify GraphQL API",
@@ -216,6 +295,21 @@ def main():
         help="Specific models to export (default: all models)",
     )
     export_parser.set_defaults(func=cmd_export_schema)
+
+    export_data_parser = subparsers.add_parser("export-data", help="Export all records of a model to Excel")
+    export_data_parser.add_argument(
+        "--model",
+        "-m",
+        required=True,
+        help="Model name to export (e.g., Reporter)",
+    )
+    export_data_parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Output file path (default: {model}_records.xlsx)",
+    )
+    export_data_parser.set_defaults(func=cmd_export_data)
 
     args = parser.parse_args()
 

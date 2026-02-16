@@ -4,6 +4,7 @@ import pytest
 import pandas as pd
 from unittest.mock import MagicMock
 from amplify_excel_migrator.client import AmplifyClient
+from amplify_excel_migrator.schema import FieldParser
 
 
 class TestBuildForeignKeyLookups:
@@ -230,3 +231,102 @@ class TestBuildForeignKeyLookups:
         assert len(result["Reporter"]["lookup"]) == 2
         assert "John Doe" in result["Reporter"]["lookup"]
         assert "Jane Smith" in result["Reporter"]["lookup"]
+
+
+class TestGetModelRecords:
+    """Test get_model_records method"""
+
+    def _make_parsed_structure(self, fields):
+        return {
+            "name": "Reporter",
+            "kind": "OBJECT",
+            "description": None,
+            "fields": fields,
+        }
+
+    def test_get_model_records_returns_records_and_primary_field(self):
+        client = AmplifyClient(api_endpoint="https://test.com")
+
+        parsed = self._make_parsed_structure(
+            [
+                {"name": "name", "is_scalar": True, "is_enum": False, "is_id": False, "is_list": False},
+            ]
+        )
+        records = [
+            {"id": "1", "name": "Alice"},
+            {"id": "2", "name": "Bob"},
+        ]
+
+        field_parser = MagicMock(spec=FieldParser)
+        field_parser.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
+        field_parser.parse_model_structure.return_value = parsed
+        client._executor.get_model_structure = MagicMock(return_value={"data": {}})
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", True, "String"))
+        client._executor.get_records = MagicMock(return_value=records)
+
+        result_records, primary_field = client.get_model_records("Reporter", field_parser)
+
+        assert result_records == records
+        assert primary_field == "name"
+        client._executor.get_records.assert_called_once_with("Reporter", "name", True, fields=["id", "name"])
+
+    def test_get_model_records_raises_on_missing_model(self):
+        client = AmplifyClient(api_endpoint="https://test.com")
+
+        field_parser = MagicMock(spec=FieldParser)
+        field_parser.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
+        field_parser.parse_model_structure.side_effect = ValueError("Invalid sheet name or model does not exist")
+        client._executor.get_model_structure = MagicMock(return_value=None)
+
+        with pytest.raises(ValueError, match="model does not exist"):
+            client.get_model_records("NonExistent", field_parser)
+
+    def test_get_model_records_returns_empty_list_when_no_records(self):
+        client = AmplifyClient(api_endpoint="https://test.com")
+
+        parsed = self._make_parsed_structure(
+            [
+                {"name": "name", "is_scalar": True, "is_enum": False, "is_id": False, "is_list": False},
+            ]
+        )
+
+        field_parser = MagicMock(spec=FieldParser)
+        field_parser.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
+        field_parser.parse_model_structure.return_value = parsed
+        client._executor.get_model_structure = MagicMock(return_value={"data": {}})
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(return_value=None)
+
+        result_records, primary_field = client.get_model_records("Reporter", field_parser)
+
+        assert result_records == []
+        assert primary_field == "name"
+
+    def test_get_model_records_includes_enum_and_id_fields(self):
+        client = AmplifyClient(api_endpoint="https://test.com")
+
+        parsed = self._make_parsed_structure(
+            [
+                {"name": "name", "is_scalar": True, "is_enum": False, "is_id": False, "is_list": False},
+                {"name": "status", "is_scalar": False, "is_enum": True, "is_id": False, "is_list": False},
+                {"name": "editorId", "is_scalar": False, "is_enum": False, "is_id": True, "is_list": False},
+                {"name": "bio", "is_scalar": False, "is_enum": False, "is_id": False, "is_list": False},
+            ]
+        )
+
+        field_parser = MagicMock(spec=FieldParser)
+        field_parser.metadata_fields = {"id", "createdAt", "updatedAt", "owner"}
+        field_parser.parse_model_structure.return_value = parsed
+        client._executor.get_model_structure = MagicMock(return_value={"data": {}})
+        client._executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        client._executor.get_records = MagicMock(return_value=[])
+
+        client.get_model_records("Reporter", field_parser)
+
+        call_args = client._executor.get_records.call_args
+        fields = call_args[1]["fields"]
+        assert "id" in fields
+        assert "name" in fields
+        assert "status" in fields
+        assert "editorId" in fields
+        assert "bio" not in fields
