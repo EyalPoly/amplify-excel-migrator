@@ -84,7 +84,8 @@ class ConfigManager:
             self.load()
 
         if key in self._config:
-            return self._config[key]
+            value: str = self._config[key]
+            return value
 
         return self.prompt_for_value(prompt_text, default, secret)
 

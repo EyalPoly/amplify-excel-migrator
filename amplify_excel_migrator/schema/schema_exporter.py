@@ -75,8 +75,8 @@ class SchemaExporter:
         lines.append("---")
         lines.append("")
 
-        enums = {}
-        custom_types = {}
+        enums: Dict[str, List[str]] = {}
+        custom_types: Dict[str, List[Dict[str, Any]]] = {}
 
         for model in models:
             logger.info(f"Processing model: {model}")

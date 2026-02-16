@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -30,7 +30,7 @@ class FailureTracker:
         if self._current_sheet is None:
             raise RuntimeError("No current sheet set. Call set_current_sheet() first.")
 
-        failure_record = {
+        failure_record: Dict[str, Any] = {
             "primary_field": primary_field,
             "primary_field_value": primary_field_value,
             "error": error,
