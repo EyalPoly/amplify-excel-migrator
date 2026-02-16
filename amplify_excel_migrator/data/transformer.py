@@ -20,7 +20,7 @@ class DataTransformer:
         df: pd.DataFrame,
         parsed_model_structure: Dict[str, Any],
         primary_field: str,
-        fk_lookup_cache: Dict[str, Dict[str, str]],
+        fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Tuple[List[Dict], Dict[str, Dict], List[Dict]]:
         records = []
         row_dict_by_primary = {}
@@ -58,7 +58,7 @@ class DataTransformer:
         self,
         row_dict: Dict,
         parsed_model_structure: Dict[str, Any],
-        fk_lookup_cache: Dict[str, Dict[str, str]],
+        fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Optional[Dict]:
         model_record = {}
 
@@ -73,7 +73,7 @@ class DataTransformer:
         self,
         row_dict: Dict,
         field: Dict[str, Any],
-        fk_lookup_cache: Dict[str, Dict[str, str]],
+        fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Any:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
 
@@ -93,7 +93,7 @@ class DataTransformer:
 
     @staticmethod
     def _resolve_foreign_key(
-        field: Dict[str, Any], value: Any, fk_lookup_cache: Dict[str, Dict[str, str]]
+        field: Dict[str, Any], value: Any, fk_lookup_cache: Dict[str, Dict[str, Any]]
     ) -> Optional[str]:
         if "related_model" in field:
             related_model = field["related_model"]
@@ -101,7 +101,7 @@ class DataTransformer:
             related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
 
         if related_model in fk_lookup_cache:
-            lookup_dict = fk_lookup_cache[related_model]["lookup"]
+            lookup_dict: Dict[str, str] = fk_lookup_cache[related_model]["lookup"]
             record_id = lookup_dict.get(str(value))
 
             if record_id:

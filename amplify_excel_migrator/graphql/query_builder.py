@@ -179,7 +179,7 @@ query IntrospectSchema {
         limit: int = 1000,
         next_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        variables = {"limit": limit}
+        variables: Dict[str, Any] = {"limit": limit}
         if next_token:
             variables["nextToken"] = next_token
         return variables

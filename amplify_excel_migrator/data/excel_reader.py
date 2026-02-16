@@ -14,7 +14,7 @@ class ExcelReader:
 
     def read_all_sheets(self) -> Dict[str, pd.DataFrame]:
         logger.info(f"Reading Excel file: {self.file_path}")
-        all_sheets = pd.read_excel(self.file_path, sheet_name=None)
+        all_sheets: Dict[str, pd.DataFrame] = pd.read_excel(self.file_path, sheet_name=None)
         logger.info(f"Loaded {len(all_sheets)} sheets from Excel")
         return all_sheets
 

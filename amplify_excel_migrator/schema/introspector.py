@@ -20,7 +20,8 @@ class SchemaIntrospector:
         response = self.client.request(query)
 
         if response and "data" in response and "__type" in response["data"]:
-            return response["data"]["__type"]
+            type_data: Dict[str, Any] = response["data"]["__type"]
+            return type_data
 
         return {}
 
@@ -29,7 +30,8 @@ class SchemaIntrospector:
         response = self.client.request(query)
 
         if response and "data" in response and "__schema" in response["data"]:
-            return response["data"]["__schema"].get("types", [])
+            types: list[Dict[str, Any]] = response["data"]["__schema"].get("types", [])
+            return types
 
         return []
 
@@ -98,7 +100,7 @@ class SchemaIntrospector:
         for query in query_fields:
             query_name = query["name"]
             if query_name in candidates and "By" not in query_name:
-                return query_name
+                return str(query_name)
 
         logger.error(f"No list query found for model {model_name}, tried: {candidates}")
         return None

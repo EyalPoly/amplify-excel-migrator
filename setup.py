@@ -39,6 +39,8 @@ setup(
             "setuptools>=80.0.0",
             "wheel>=0.40.0",
             "twine>=4.0.0",
+            "mypy>=1.0.0",
+            "types-requests>=2.31.0",
         ],
     },
     entry_points={

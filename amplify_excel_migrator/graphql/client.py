@@ -49,7 +49,7 @@ class GraphQLClient:
             response = requests.post(self.api_endpoint, headers=headers, json=payload)
 
             if response.status_code == 200:
-                result = response.json()
+                result: Dict[str, Any] = response.json()
 
                 if "errors" in result:
                     raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")
@@ -101,7 +101,7 @@ class GraphQLClient:
         try:
             async with session.post(self.api_endpoint, headers=headers, json=payload) as response:
                 if response.status == 200:
-                    result = await response.json()
+                    result: Dict[str, Any] = await response.json()
 
                     if "errors" in result:
                         raise GraphQLError(f"GraphQL errors{context_msg}: {result['errors']}")

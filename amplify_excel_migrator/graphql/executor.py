@@ -158,7 +158,8 @@ class QueryExecutor:
         result = self.client.request(query, {"id": record_id})
 
         if result and "data" in result:
-            return result["data"].get(query_name)
+            record: Optional[Dict] = result["data"].get(query_name)
+            return record
 
         return None
 
@@ -225,7 +226,7 @@ class QueryExecutor:
         result = await self.client.request_async(session, mutation, variables, context)
 
         if result and "data" in result:
-            created = result["data"].get(f"create{model_name}")
+            created: Optional[Dict] = result["data"].get(f"create{model_name}")
             if created:
                 logger.info(f'Created {model_name} with {primary_field}="{data[primary_field]}" (ID: {created["id"]})')
             return created
@@ -254,24 +255,24 @@ class QueryExecutor:
                 field_type=field_type,
                 with_pagination=False,
             )
-            variables = {primary_field: value}
-            query_name = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
+            check_variables: Dict[str, Any] = {primary_field: value}
+            query_name: str = f"list{model_name}By{primary_field[0].upper() + primary_field[1:]}"
 
-            result = await self.client.request_async(session, query, variables, context)
+            result = await self.client.request_async(session, query, check_variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
                     logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
                     return None
         else:
-            query_name = self._get_list_query_name(model_name)
+            query_name = self._get_list_query_name(model_name) or f"list{model_name}s"
             query = QueryBuilder.build_list_query_with_filter(
                 model_name, fields=["id"], with_pagination=False, query_name=query_name
             )
             filter_input = QueryBuilder.build_filter_equals(primary_field, value)
-            variables = {"filter": filter_input}
+            check_variables = {"filter": filter_input}
 
-            result = await self.client.request_async(session, query, variables, context)
+            result = await self.client.request_async(session, query, check_variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
                 if len(items) > 0:
@@ -303,11 +304,11 @@ class QueryExecutor:
             ]
             check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
 
-            filtered_batch = []
-            failed_records = []
+            filtered_batch: List[Dict] = []
+            failed_records: List[Dict] = []
 
             for i, result in enumerate(check_results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     error_msg = str(result)
                     failed_records.append(
                         {
@@ -326,11 +327,11 @@ class QueryExecutor:
             create_tasks = [
                 self.create_record_async(session, record, model_name, primary_field) for record in filtered_batch
             ]
-            results = await asyncio.gather(*create_tasks, return_exceptions=True)
+            create_results = await asyncio.gather(*create_tasks, return_exceptions=True)
 
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    error_msg = str(result)
+            for i, create_result in enumerate(create_results):
+                if isinstance(create_result, BaseException):
+                    error_msg = str(create_result)
                     failed_records.append(
                         {
                             "primary_field": primary_field,
@@ -338,7 +339,7 @@ class QueryExecutor:
                             "error": error_msg,
                         }
                     )
-                elif not result:
+                elif not create_result:
                     failed_records.append(
                         {
                             "primary_field": primary_field,
@@ -347,7 +348,7 @@ class QueryExecutor:
                         }
                     )
 
-            success_count = sum(1 for r in results if r and not isinstance(r, Exception))
+            success_count = sum(1 for r in create_results if r and not isinstance(r, BaseException))
             error_count = len(batch) - success_count
 
             return success_count, error_count, failed_records
@@ -387,7 +388,7 @@ class QueryExecutor:
 
         return success_count, error_count, all_failed_records
 
-    def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Build a cache of foreign key lookups for all ID fields in the DataFrame.
 

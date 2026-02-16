@@ -5,3 +5,11 @@ repos:
       - id: black
         args: [--line-length=120]
         language_version: python3
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.0
+    hooks:
+      - id: mypy
+        args: [--explicit-package-bases]
+        additional_dependencies: [types-requests]
+        pass_filenames: false
+        entry: mypy amplify_excel_migrator/

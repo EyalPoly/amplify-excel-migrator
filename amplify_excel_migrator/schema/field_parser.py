@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import logging
 import pandas as pd
 import unicodedata
@@ -111,8 +111,9 @@ class FieldParser:
         if not type_obj:
             return "Unknown"
 
-        if type_obj.get("name"):
-            return type_obj["name"]
+        name = type_obj.get("name")
+        if name:
+            return str(name)
 
         if type_obj.get("ofType"):
             return self.get_base_type_name(type_obj["ofType"])
@@ -126,11 +127,11 @@ class FieldParser:
         if type_obj["kind"] in ["NON_NULL", "LIST"] and type_obj.get("ofType"):
             return self._get_type_kind(type_obj["ofType"])
 
-        return type_obj.get("kind", "UNKNOWN")
+        return str(type_obj.get("kind", "UNKNOWN"))
 
     @staticmethod
     def _is_required_field(type_obj: Dict) -> bool:
-        return type_obj and type_obj.get("kind") == "NON_NULL"
+        return bool(type_obj and type_obj.get("kind") == "NON_NULL")
 
     def _is_list_type(self, type_obj: Dict) -> bool:
         if not type_obj:
@@ -144,7 +145,9 @@ class FieldParser:
 
         return False
 
-    def build_custom_type_from_columns(self, row: pd.Series, custom_type_fields: list, custom_type_name: str) -> list:
+    def build_custom_type_from_columns(
+        self, row: pd.Series, custom_type_fields: list, custom_type_name: str
+    ) -> Optional[list]:
         """Build custom type objects from Excel columns, handling multi-value fields"""
 
         field_values, max_count = self._collect_custom_type_fields_values(row, custom_type_fields)
@@ -156,8 +159,10 @@ class FieldParser:
         return custom_type_objects if custom_type_objects else None
 
     @staticmethod
-    def _collect_custom_type_fields_values(row: pd.Series, custom_type_fields: list) -> tuple[Dict[str, list], int]:
-        field_values = {}
+    def _collect_custom_type_fields_values(
+        row: pd.Series, custom_type_fields: list
+    ) -> tuple[Dict[str, List[Optional[str]]], int]:
+        field_values: Dict[str, List[Optional[str]]] = {}
         max_count = 1
 
         for custom_field in custom_type_fields:
@@ -166,7 +171,7 @@ class FieldParser:
                 value = row[custom_field_name]
 
                 if isinstance(value, str) and "-" in str(value):
-                    parts = [p.strip() for p in str(value).split("-") if p.strip()]
+                    parts: List[Optional[str]] = [p.strip() for p in str(value).split("-") if p.strip()]
                     if len(parts) > 1:
                         field_values[custom_field_name] = parts
                         max_count = max(max_count, len(parts))
@@ -226,7 +231,7 @@ class FieldParser:
         field_name: str,
         input_value: Any,
         use_dash_notation: bool = False,
-        index: int = None,
+        index: Optional[int] = None,
     ) -> Any:
         if field["type"] in ["Int", "Integer"]:
             if use_dash_notation:
@@ -308,7 +313,7 @@ class FieldParser:
 
         return self._convert_array_elements(field, field_name, [input_str])
 
-    def _convert_array_elements(self, field: Dict[str, Any], field_name: str, values: list) -> list:
+    def _convert_array_elements(self, field: Dict[str, Any], field_name: str, values: list) -> Optional[list]:
         converted = []
         for i, value in enumerate(values):
             cleaned_value = self.clean_input(value)
@@ -357,7 +362,7 @@ class FieldParser:
         if isinstance(input_value, str) and "-" in str(input_value):
             return sum([int(p.strip()) for p in str(input_value).split("-") if p.strip()])
 
-        return input_value
+        return int(input_value) if isinstance(input_value, int) else float(input_value)
 
     @staticmethod
     def clean_input(input_value: Any) -> Any:
@@ -375,18 +380,21 @@ class FieldParser:
     @staticmethod
     def parse_date(input: Any) -> str | None:
         if isinstance(input, (pd.Timestamp, datetime)):
-            return input.date().isoformat()
+            return str(input.date().isoformat())
 
         input_str = str(input).strip()
 
         try:
-            return pd.to_datetime(input_str, format="%d/%m/%Y").date().isoformat()
+            result: str = pd.to_datetime(input_str, format="%d/%m/%Y").date().isoformat()
+            return result
         except (ValueError, OverflowError):
             try:
-                return pd.to_datetime(input_str, format="%d-%m-%Y").date().isoformat()
+                result = pd.to_datetime(input_str, format="%d-%m-%Y").date().isoformat()
+                return result
             except (ValueError, OverflowError):
                 try:
-                    return pd.to_datetime(input_str).date().isoformat()
+                    result = pd.to_datetime(input_str).date().isoformat()
+                    return result
                 except (ValueError, OverflowError) as e:
                     logger.error(f"Failed to parse date '{input}': {e}")
                     return None
