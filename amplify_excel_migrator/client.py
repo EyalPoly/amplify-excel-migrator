@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from amplify_excel_migrator.graphql import GraphQLClient, QueryExecutor
-from amplify_excel_migrator.auth import AuthenticationProvider
+from amplify_auth import AuthenticationProvider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -45,6 +45,9 @@ class AmplifyClient:
         return self._executor.build_foreign_key_lookups(df, parsed_model_structure)
 
     def upload(
-        self, records: List[Dict], model_name: str, parsed_model_structure: Dict[str, Any]
+        self,
+        records: List[Dict],
+        model_name: str,
+        parsed_model_structure: Dict[str, Any],
     ) -> tuple[int, int, List[Dict]]:
         return self._executor.upload(records, model_name, parsed_model_structure)

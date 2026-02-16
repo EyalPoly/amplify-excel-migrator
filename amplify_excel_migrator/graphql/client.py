@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import aiohttp
 import requests
 
-from amplify_excel_migrator.auth import AuthenticationProvider
+from amplify_auth import AuthenticationProvider
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,10 @@ class GraphQLClient:
         self.auth_provider = auth_provider
 
     def request(
-        self, query: str, variables: Optional[Dict[str, Any]] = None, context: Optional[str] = None
+        self,
+        query: str,
+        variables: Optional[Dict[str, Any]] = None,
+        context: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         if not self.auth_provider or not self.auth_provider.is_authenticated():
             raise AuthenticationError("Not authenticated. Call authenticate() on the auth provider first.")
@@ -124,7 +127,10 @@ class GraphQLClient:
             error_msg = f"HTTP response error{context_msg}: {e}"
             logger.error(error_msg)
             raise aiohttp.ClientResponseError(
-                request_info=e.request_info, history=e.history, status=e.status, message=error_msg
+                request_info=e.request_info,
+                history=e.history,
+                status=e.status,
+                message=error_msg,
             )
 
         except GraphQLError as e:

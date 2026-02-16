@@ -28,6 +28,7 @@ setup(
         "aiohttp>=3.8.0",
         "openpyxl>=3.0.0",
         "inflect>=7.0.0",
+        "amplify-auth>=0.1.0",
     ],
     extras_require={
         "dev": [
