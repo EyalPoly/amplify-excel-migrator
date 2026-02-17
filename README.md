@@ -86,17 +86,24 @@ Perfect for sharing with team members who need to prepare Excel files for migrat
 
 ### 4. Export Data
 
-Export all records of a model from your Amplify backend to an Excel file:
+Export model records from your Amplify backend to an Excel file:
 
 ```bash
-# Export a model's records to Excel
+# Export a single model's records
 amplify-migrator export-data --model Reporter
+
+# Export multiple models (each as a separate sheet)
+amplify-migrator export-data --model Reporter Article Comment
+
+# Export all models
+amplify-migrator export-data --all
 
 # Export to a specific file
 amplify-migrator export-data --model Reporter --output reporter_backup.xlsx
+amplify-migrator export-data --all --output full_backup.xlsx
 ```
 
-Records are sorted by primary field and exported with scalar, enum, and ID fields. This is useful for backing up data, auditing records, or preparing corrections for re-migration.
+Records are sorted by primary field and exported with scalar, enum, and ID fields. When exporting multiple models, each model gets its own sheet in the Excel file. This is useful for backing up data, auditing records, or preparing corrections for re-migration.
 
 ### 5. Run Migration
 
@@ -122,6 +129,7 @@ amplify-migrator export-schema
 
 # Export existing records to Excel
 amplify-migrator export-data --model Reporter
+amplify-migrator export-data --all
 
 # Run migration (uses saved config)
 amplify-migrator migrate
