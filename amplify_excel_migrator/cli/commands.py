@@ -202,9 +202,6 @@ def cmd_export_data(args=None):
         print("💡 Run 'amplify-migrator config' first to set up your configuration.")
         sys.exit(1)
 
-    model_name = args.model
-    output_path = args.output if args.output else f"{model_name}_records.xlsx"
-
     api_endpoint = config_manager.get_or_prompt("api_endpoint", "AWS Amplify API endpoint")
     region = config_manager.get_or_prompt("region", "AWS Region", "us-east-1")
     user_pool_id = config_manager.get_or_prompt("user_pool_id", "Cognito User Pool ID")
@@ -229,39 +226,68 @@ def cmd_export_data(args=None):
     if not auth_provider.authenticate(username, password):
         return
 
-    print(f"\n📋 Exporting {model_name} records...")
-    print("-" * 54)
-
     field_parser = FieldParser()
 
-    try:
-        records, primary_field = amplify_client.get_model_records(model_name, field_parser)
-    except Exception as e:
-        print(f"\n❌ Failed to fetch records: {e}")
-        sys.exit(1)
+    if getattr(args, "all", False):
+        schema_exporter = SchemaExporter(amplify_client, field_parser)
+        model_names = schema_exporter.discover_models()
+        if not model_names:
+            print("\n⚠️  No models discovered.")
+            return
+    else:
+        model_names = args.model
 
-    if not records:
-        print(f"\n⚠️  No records found for model '{model_name}'.")
+    is_multi = len(model_names) > 1
+    if args.output:
+        output_path = args.output
+    elif is_multi:
+        output_path = "all_models_records.xlsx"
+    else:
+        output_path = f"{model_names[0]}_records.xlsx"
+
+    print(f"\n📋 Exporting {len(model_names)} model(s)...")
+    print("-" * 54)
+
+    dataframes: dict[str, pd.DataFrame] = {}
+
+    for model_name in model_names:
+        try:
+            records, primary_field = amplify_client.get_model_records(model_name, field_parser)
+        except Exception as e:
+            print(f"\n❌ Failed to fetch records for '{model_name}': {e}")
+            continue
+
+        if not records:
+            print(f"  ⚠️  No records found for model '{model_name}', skipping.")
+            continue
+
+        df = pd.DataFrame(records)
+
+        cols = list(df.columns)
+        if primary_field in cols:
+            cols.remove(primary_field)
+            cols = [primary_field] + cols
+        df = df[cols]
+
+        if primary_field in df.columns:
+            sort_key = df[primary_field].apply(lambda x: str(x).lower())
+            df = df.iloc[sort_key.argsort()]
+
+        dataframes[model_name] = df
+        print(f"  ✅ {model_name}: {len(records)} records")
+
+    if not dataframes:
+        print("\n⚠️  No records found for any model.")
         return
 
-    df = pd.DataFrame(records)
-
-    cols = list(df.columns)
-    if primary_field in cols:
-        cols.remove(primary_field)
-        cols = [primary_field] + cols
-
-    df = df[cols]
-
-    if primary_field in df.columns:
-        sort_key = df[primary_field].apply(lambda x: str(x).lower())
-        df = df.iloc[sort_key.argsort()]
-
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=model_name)
+        for model_name, df in dataframes.items():
+            df.to_excel(writer, index=False, sheet_name=model_name)
 
-    print(f"\n✅ Exported {len(records)} records to: {output_path}")
-    print(f"💡 Primary key: '{primary_field}' (sorted, first column)")
+    print(f"\n✅ Exported to: {output_path}")
+    if is_multi:
+        total = sum(len(df) for df in dataframes.values())
+        print(f"💡 {len(dataframes)} model(s), {total} total records")
 
 
 def main():
@@ -296,18 +322,25 @@ def main():
     )
     export_parser.set_defaults(func=cmd_export_schema)
 
-    export_data_parser = subparsers.add_parser("export-data", help="Export all records of a model to Excel")
-    export_data_parser.add_argument(
+    export_data_parser = subparsers.add_parser("export-data", help="Export model records to Excel")
+    export_data_model_group = export_data_parser.add_mutually_exclusive_group(required=True)
+    export_data_model_group.add_argument(
         "--model",
         "-m",
-        required=True,
-        help="Model name to export (e.g., Reporter)",
+        nargs="+",
+        help="Model name(s) to export (e.g., Reporter User)",
+    )
+    export_data_model_group.add_argument(
+        "--all",
+        "-a",
+        action="store_true",
+        help="Export all models",
     )
     export_data_parser.add_argument(
         "--output",
         "-o",
         default=None,
-        help="Output file path (default: {model}_records.xlsx)",
+        help="Output file path (default: {model}_records.xlsx or all_models_records.xlsx)",
     )
     export_data_parser.set_defaults(func=cmd_export_data)
 

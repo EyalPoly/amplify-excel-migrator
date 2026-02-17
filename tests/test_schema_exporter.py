@@ -36,7 +36,7 @@ class TestExportToMarkdown:
 
     @patch("builtins.open", new_callable=mock_open)
     def test_exports_to_specified_path(self, mock_file, exporter):
-        exporter._discover_models = MagicMock(return_value=["User"])
+        exporter.discover_models = MagicMock(return_value=["User"])
         exporter._generate_markdown = MagicMock(return_value="# Schema")
 
         exporter.export_to_markdown("output.md")
@@ -46,27 +46,27 @@ class TestExportToMarkdown:
 
     @patch("builtins.open", new_callable=mock_open)
     def test_discovers_models_when_none_provided(self, mock_file, exporter):
-        exporter._discover_models = MagicMock(return_value=["User", "Post"])
+        exporter.discover_models = MagicMock(return_value=["User", "Post"])
         exporter._generate_markdown = MagicMock(return_value="# Schema")
 
         exporter.export_to_markdown("output.md", models=None)
 
-        exporter._discover_models.assert_called_once()
+        exporter.discover_models.assert_called_once()
         exporter._generate_markdown.assert_called_once_with(["User", "Post"])
 
     @patch("builtins.open", new_callable=mock_open)
     def test_uses_provided_models(self, mock_file, exporter):
-        exporter._discover_models = MagicMock()
+        exporter.discover_models = MagicMock()
         exporter._generate_markdown = MagicMock(return_value="# Schema")
 
         exporter.export_to_markdown("output.md", models=["User", "Post"])
 
-        exporter._discover_models.assert_not_called()
+        exporter.discover_models.assert_not_called()
         exporter._generate_markdown.assert_called_once_with(["User", "Post"])
 
     @patch("builtins.open", new_callable=mock_open)
     def test_writes_generated_markdown(self, mock_file, exporter):
-        exporter._discover_models = MagicMock(return_value=["User"])
+        exporter.discover_models = MagicMock(return_value=["User"])
         exporter._generate_markdown = MagicMock(return_value="## User\n| Field | Type |\n|---|---|")
 
         exporter.export_to_markdown("output.md")
@@ -75,7 +75,7 @@ class TestExportToMarkdown:
 
 
 class TestDiscoverModels:
-    """Test _discover_models method"""
+    """Test discover_models method"""
 
     def test_discovers_models_from_schema(self, exporter, mock_client):
         mock_client.get_all_types.return_value = [
@@ -92,7 +92,7 @@ class TestDiscoverModels:
             ]
         }
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert set(result) == {"User", "Post"}
         mock_client.get_all_types.assert_called_once()
@@ -106,7 +106,7 @@ class TestDiscoverModels:
         ]
         mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["User"]
 
@@ -118,7 +118,7 @@ class TestDiscoverModels:
         ]
         mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["User"]
 
@@ -130,7 +130,7 @@ class TestDiscoverModels:
         ]
         mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["User"]
 
@@ -142,7 +142,7 @@ class TestDiscoverModels:
         ]
         mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["User"]
 
@@ -155,14 +155,14 @@ class TestDiscoverModels:
         ]
         mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["User"]
 
     def test_returns_empty_list_when_no_types(self, exporter, mock_client):
         mock_client.get_all_types.return_value = []
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == []
 
@@ -180,7 +180,7 @@ class TestDiscoverModels:
             ]
         }
 
-        result = exporter._discover_models()
+        result = exporter.discover_models()
 
         assert result == ["Apple", "Banana", "Zebra"]
 

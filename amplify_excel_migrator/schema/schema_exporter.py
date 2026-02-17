@@ -13,7 +13,7 @@ class SchemaExporter:
         logger.info(f"Exporting schema to {output_path}")
 
         if models is None:
-            models = self._discover_models()
+            models = self.discover_models()
 
         markdown_content = self._generate_markdown(models)
 
@@ -22,7 +22,7 @@ class SchemaExporter:
 
         logger.info(f"Schema exported successfully to {output_path}")
 
-    def _discover_models(self) -> List[str]:
+    def discover_models(self) -> List[str]:
         logger.info("Discovering models from schema")
         all_types = self.client.get_all_types()
 
