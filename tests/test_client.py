@@ -268,7 +268,7 @@ class TestGetModelRecords:
 
         assert result_records == records
         assert primary_field == "name"
-        client._executor.get_records.assert_called_once_with("Reporter", "name", True, fields=["id", "name"])
+        client._executor.get_records.assert_called_once_with("Reporter", "name", True, fields=["name"])
 
     def test_get_model_records_raises_on_missing_model(self):
         client = AmplifyClient(api_endpoint="https://test.com")
@@ -325,7 +325,7 @@ class TestGetModelRecords:
 
         call_args = client._executor.get_records.call_args
         fields = call_args[1]["fields"]
-        assert "id" in fields
+        assert "id" not in fields
         assert "name" in fields
         assert "status" in fields
         assert "editorId" in fields
