@@ -49,7 +49,7 @@ class AmplifyClient:
         parsed_structure = field_parser.parse_model_structure(raw_structure)
         primary_field, is_secondary_index, _ = self.get_primary_field_name(model_name, parsed_structure)
 
-        fields = ["id"]
+        fields = []
         for field in parsed_structure["fields"]:
             if field["name"] in field_parser.metadata_fields:
                 continue

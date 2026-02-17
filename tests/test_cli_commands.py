@@ -379,9 +379,9 @@ class TestCmdExportData:
         args.output = output_file
 
         records = [
-            {"id": "2", "name": "Zara"},
-            {"id": "1", "name": "Alice"},
-            {"id": "3", "name": "Bob"},
+            {"name": "Zara"},
+            {"name": "Alice"},
+            {"name": "Bob"},
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
