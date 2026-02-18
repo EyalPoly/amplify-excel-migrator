@@ -60,6 +60,31 @@ class AmplifyClient:
 
         return records or [], primary_field
 
+    def create_record(
+        self,
+        model_name: str,
+        data: Dict[str, Any],
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        return self._executor.create_record(model_name, data, return_fields)
+
+    def update_record(
+        self,
+        model_name: str,
+        record_id: str,
+        updates: Dict[str, Any],
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        return self._executor.update_record(model_name, record_id, updates, return_fields)
+
+    def delete_record(
+        self,
+        model_name: str,
+        record_id: str,
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        return self._executor.delete_record(model_name, record_id, return_fields)
+
     def upload(
         self,
         records: List[Dict],
