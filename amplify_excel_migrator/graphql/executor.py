@@ -388,6 +388,67 @@ class QueryExecutor:
 
         return success_count, error_count, all_failed_records
 
+    def create_record(
+        self,
+        model_name: str,
+        data: Dict[str, Any],
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        if return_fields is None:
+            return_fields = ["id"]
+
+        mutation = MutationBuilder.build_create_mutation(model_name, return_fields=return_fields)
+        variables = MutationBuilder.build_create_variables(data)
+
+        result = self.client.request(mutation, variables)
+
+        if result and "data" in result:
+            created: Optional[Dict] = result["data"].get(f"create{model_name}")
+            return created
+
+        return None
+
+    def update_record(
+        self,
+        model_name: str,
+        record_id: str,
+        updates: Dict[str, Any],
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        if return_fields is None:
+            return_fields = ["id"]
+
+        mutation = MutationBuilder.build_update_mutation(model_name, return_fields=return_fields)
+        variables = MutationBuilder.build_update_variables(record_id, updates)
+
+        result = self.client.request(mutation, variables)
+
+        if result and "data" in result:
+            updated: Optional[Dict] = result["data"].get(f"update{model_name}")
+            return updated
+
+        return None
+
+    def delete_record(
+        self,
+        model_name: str,
+        record_id: str,
+        return_fields: Optional[List[str]] = None,
+    ) -> Optional[Dict]:
+        if return_fields is None:
+            return_fields = ["id"]
+
+        mutation = MutationBuilder.build_delete_mutation(model_name, return_fields=return_fields)
+        variables = MutationBuilder.build_delete_variables(record_id)
+
+        result = self.client.request(mutation, variables)
+
+        if result and "data" in result:
+            deleted: Optional[Dict] = result["data"].get(f"delete{model_name}")
+            return deleted
+
+        return None
+
     def build_foreign_key_lookups(self, df, parsed_model_structure: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
         Build a cache of foreign key lookups for all ID fields in the DataFrame.
