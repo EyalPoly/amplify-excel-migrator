@@ -59,13 +59,12 @@ class SchemaIntrospector:
             return ""
 
         query_fields = query_structure["fields"]
-        pattern = f"{model_name}By"
+        prefix = f"list{model_name}By"
 
         for query in query_fields:
             query_name = query["name"]
-            if pattern in query_name:
-                pattern_index = query_name.index(pattern)
-                field_name = query_name[pattern_index + len(pattern) :]
+            if query_name.startswith(prefix):
+                field_name = query_name[len(prefix) :]
                 return field_name[0].lower() + field_name[1:] if field_name else ""
 
         return ""

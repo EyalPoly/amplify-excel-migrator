@@ -168,7 +168,7 @@ class TestGetSecondaryIndex:
         introspector.get_model_structure = MagicMock(
             return_value={
                 "fields": [
-                    {"name": "getUserByEmail", "args": []},
+                    {"name": "listUserByEmail", "args": []},
                     {"name": "listUsers", "args": []},
                 ]
             }
@@ -196,7 +196,7 @@ class TestGetSecondaryIndex:
         introspector.get_model_structure = MagicMock(
             return_value={
                 "fields": [
-                    {"name": "getProductBySku", "args": []},
+                    {"name": "listProductBySku", "args": []},
                 ]
             }
         )
@@ -209,7 +209,7 @@ class TestGetSecondaryIndex:
         introspector.get_model_structure = MagicMock(
             return_value={
                 "fields": [
-                    {"name": "getOrderByOrderNumber", "args": []},
+                    {"name": "listOrderByOrderNumber", "args": []},
                 ]
             }
         )
@@ -222,8 +222,8 @@ class TestGetSecondaryIndex:
         introspector.get_model_structure = MagicMock(
             return_value={
                 "fields": [
-                    {"name": "getUserByEmail", "args": []},
-                    {"name": "getUserByUsername", "args": []},
+                    {"name": "listUserByEmail", "args": []},
+                    {"name": "listUserByUsername", "args": []},
                 ]
             }
         )
@@ -231,6 +231,21 @@ class TestGetSecondaryIndex:
         result = introspector._get_secondary_index("User")
 
         assert result == "email"
+
+    def test_ignores_related_model_queries_with_similar_names(self, introspector):
+        introspector.get_model_structure = MagicMock(
+            return_value={
+                "fields": [
+                    {"name": "listMediaMediaLabelByMediaLabelId", "args": []},
+                    {"name": "listMediaLabelByName", "args": []},
+                    {"name": "listMediaLabels", "args": []},
+                ]
+            }
+        )
+
+        result = introspector._get_secondary_index("MediaLabel")
+
+        assert result == "name"
 
 
 class TestGetListQueryName:
