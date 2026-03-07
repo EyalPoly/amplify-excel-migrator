@@ -264,10 +264,12 @@ def cmd_export_data(args=None):
         df = pd.DataFrame(records)
 
         cols = list(df.columns)
-        if primary_field in cols:
-            cols.remove(primary_field)
-            cols = [primary_field] + cols
-        df = df[cols]
+        leading = []
+        for col in ["id", primary_field]:
+            if col in cols:
+                cols.remove(col)
+                leading.append(col)
+        df = df[leading + cols]
 
         if primary_field in df.columns:
             sort_key = df[primary_field].apply(lambda x: str(x).lower())
