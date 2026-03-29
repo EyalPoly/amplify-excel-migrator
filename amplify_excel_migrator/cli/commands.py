@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -152,7 +153,7 @@ def cmd_export_schema(args=None):
     client_id = config_manager.get_or_prompt("client_id", "Cognito Client ID")
     username = config_manager.get_or_prompt("username", "Admin Username")
 
-    output_path = args.output if args else "schema-reference.md"
+    output_path = args.output if args else "schema-reference.xlsx"
 
     print("\n🔐 Authentication:")
     print("-" * 54)
@@ -179,9 +180,12 @@ def cmd_export_schema(args=None):
     schema_exporter = SchemaExporter(amplify_client, field_parser)
 
     try:
-        schema_exporter.export_to_markdown(output_path, models=args.models if args and args.models else None)
+        if Path(output_path).suffix.lower() == ".md":
+            schema_exporter.export_to_markdown(output_path, models=args.models if args and args.models else None)
+        else:
+            schema_exporter.export_to_excel(output_path, models=args.models if args and args.models else None)
         print(f"\n✅ Schema exported successfully to: {output_path}")
-        print("💡 Share this file with your team to help them prepare Excel files.")
+        print("💡 Open this file in Excel or Google Sheets to view your schema.")
     except Exception as e:
         print(f"\n❌ Failed to export schema: {e}")
         sys.exit(1)
@@ -309,12 +313,12 @@ def main():
     migrate_parser = subparsers.add_parser("migrate", help="Run the migration")
     migrate_parser.set_defaults(func=cmd_migrate)
 
-    export_parser = subparsers.add_parser("export-schema", help="Export GraphQL schema to markdown reference")
+    export_parser = subparsers.add_parser("export-schema", help="Export GraphQL schema to Excel reference workbook")
     export_parser.add_argument(
         "--output",
         "-o",
-        default="schema-reference.md",
-        help="Output file path (default: schema-reference.md)",
+        default="schema-reference.xlsx",
+        help="Output file path (.xlsx for Excel, .md for Markdown; default: schema-reference.xlsx)",
     )
     export_parser.add_argument(
         "--models",
