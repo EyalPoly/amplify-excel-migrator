@@ -60,27 +60,29 @@ amplify-migrator show
 
 ### 3. Export Schema
 
-Export your GraphQL schema to a markdown reference document:
+Export your GraphQL schema to an Excel reference workbook:
 
 ```bash
-# Export all models
+# Export all models (produces schema-reference.xlsx)
 amplify-migrator export-schema
 
 # Export to a specific file
+amplify-migrator export-schema --output my-schema.xlsx
+
+# Export as Markdown instead
 amplify-migrator export-schema --output my-schema.md
 
 # Export specific models only
 amplify-migrator export-schema --models User Post Comment
 ```
 
-This generates a comprehensive markdown document with:
-- All model fields with types and requirements
-- Enum definitions
-- Custom type structures
-- Foreign key relationships
-- Excel formatting guidelines
+This generates an Excel workbook with:
+- One sheet per model, listing all fields with types and requirements
+- An **Enums** sheet with all allowed enum values
+- A **Custom Types** sheet with nested type definitions
+- Foreign key column names and instructions
 
-Perfect for sharing with team members who need to prepare Excel files for migration.
+Open directly in Excel or Google Sheets — no special software needed.
 
 💡 The exported schema reference can help you prepare your Excel file. For detailed formatting guidelines, see the [Excel Format Specification](docs/EXCEL_FORMAT_SPECIFICATION.md).
 
@@ -203,7 +205,7 @@ Admin Password: ********
 - **Interactive prompts** - Easy step-by-step configuration
 - **Progress reporting** - Real-time feedback on migration status
 - **Detailed error messages** - Clear context for troubleshooting failures
-- **Schema export** - Generate markdown documentation of your GraphQL schema to share with team members
+- **Schema export** - Generate an Excel workbook documenting your GraphQL schema, viewable without special software
 - **Data export** - Export existing model records to Excel for backup, auditing, or correction
 
 ## Excel Format Requirements

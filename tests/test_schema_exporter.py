@@ -523,7 +523,7 @@ class TestGenerateModelSection:
         content = "\n".join(result)
 
         assert "(FK → Author)" in content
-        assert "Foreign key: Use `authorId` column with ID from Author model" in content
+        assert "Enter the primary identifier (e.g. name) of the Author record" in content
 
     def test_handles_no_user_definable_fields(self, exporter, mock_client, mock_field_parser):
         mock_client.get_model_structure.return_value = {"kind": "OBJECT"}
@@ -692,3 +692,166 @@ class TestGetCustomTypeFields:
         result = exporter._get_custom_type_fields("Address")
 
         assert result == []
+
+
+class TestTruncateSheetName:
+    def test_returns_name_unchanged_when_under_31_chars(self):
+        assert SchemaExporter._truncate_sheet_name("ShortName") == "ShortName"
+
+    def test_truncates_name_at_31_chars(self):
+        long_name = "A" * 40
+        assert SchemaExporter._truncate_sheet_name(long_name) == "A" * 31
+
+    def test_returns_exactly_31_chars_unchanged(self):
+        name = "B" * 31
+        assert SchemaExporter._truncate_sheet_name(name) == name
+
+
+class TestExportToExcel:
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_discovers_models_when_none_provided(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter.discover_models = MagicMock(return_value=[])
+
+        exporter.export_to_excel("out.xlsx")
+
+        exporter.discover_models.assert_called_once()
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_uses_provided_models_without_discovery(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter.discover_models = MagicMock()
+        exporter._parse_model_fields = MagicMock(return_value=[])
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        exporter.discover_models.assert_not_called()
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_creates_one_sheet_per_model(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter._parse_model_fields = MagicMock(return_value=[])
+
+        exporter.export_to_excel("out.xlsx", models=["User", "Post"])
+
+        assert mock_wb.create_sheet.call_count == 2
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_skips_model_when_parse_returns_none(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter._parse_model_fields = MagicMock(return_value=None)
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        mock_wb.create_sheet.assert_not_called()
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_creates_enums_sheet_when_enums_exist(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+
+        def populate_enums(model_name, enums, custom_types):
+            enums["Status"] = ["ACTIVE", "INACTIVE"]
+            return []
+
+        exporter._parse_model_fields = MagicMock(side_effect=populate_enums)
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        sheet_names = [call.kwargs.get("title") or call.args[0] for call in mock_wb.create_sheet.call_args_list]
+        assert "Enums" in sheet_names
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_omits_enums_sheet_when_no_enums(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter._parse_model_fields = MagicMock(return_value=[])
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        sheet_names = [call.kwargs.get("title") or call.args[0] for call in mock_wb.create_sheet.call_args_list]
+        assert "Enums" not in sheet_names
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_creates_custom_types_sheet_when_custom_types_exist(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+
+        def populate_custom_types(model_name, enums, custom_types):
+            custom_types["Address"] = [
+                {
+                    "name": "street",
+                    "type": "String",
+                    "is_required": True,
+                    "is_list": False,
+                    "is_enum": False,
+                    "is_custom_type": False,
+                }
+            ]
+            return []
+
+        exporter._parse_model_fields = MagicMock(side_effect=populate_custom_types)
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        sheet_names = [call.kwargs.get("title") or call.args[0] for call in mock_wb.create_sheet.call_args_list]
+        assert "Custom Types" in sheet_names
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_omits_custom_types_sheet_when_none(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter._parse_model_fields = MagicMock(return_value=[])
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        sheet_names = [call.kwargs.get("title") or call.args[0] for call in mock_wb.create_sheet.call_args_list]
+        assert "Custom Types" not in sheet_names
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_saves_workbook_to_output_path(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_openpyxl.Workbook.return_value = mock_wb
+        exporter._parse_model_fields = MagicMock(return_value=[])
+
+        exporter.export_to_excel("my-schema.xlsx", models=["User"])
+
+        mock_wb.save.assert_called_once_with("my-schema.xlsx")
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_required_field_uses_checkmark(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_ws = MagicMock()
+        mock_ws.__getitem__ = MagicMock(return_value=[])
+        mock_openpyxl.Workbook.return_value = mock_wb
+        mock_wb.create_sheet.return_value = mock_ws
+        exporter._parse_model_fields = MagicMock(
+            return_value=[{"field_name": "email", "type_display": "`String`", "is_required": True, "description": ""}]
+        )
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        appended_rows = [call.args[0] for call in mock_ws.append.call_args_list]
+        data_rows = [r for r in appended_rows if r[0] != "Field Name"]
+        assert data_rows[0][2] == "✅"
+
+    @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
+    def test_optional_field_uses_cross(self, mock_openpyxl, exporter):
+        mock_wb = MagicMock()
+        mock_ws = MagicMock()
+        mock_ws.__getitem__ = MagicMock(return_value=[])
+        mock_openpyxl.Workbook.return_value = mock_wb
+        mock_wb.create_sheet.return_value = mock_ws
+        exporter._parse_model_fields = MagicMock(
+            return_value=[{"field_name": "bio", "type_display": "`String`", "is_required": False, "description": ""}]
+        )
+
+        exporter.export_to_excel("out.xlsx", models=["User"])
+
+        appended_rows = [call.args[0] for call in mock_ws.append.call_args_list]
+        data_rows = [r for r in appended_rows if r[0] != "Field Name"]
+        assert data_rows[0][2] == "❌"

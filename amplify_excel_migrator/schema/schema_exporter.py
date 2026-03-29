@@ -1,7 +1,27 @@
 from typing import Dict, List, Any, Optional
 import logging
 
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+
 logger = logging.getLogger(__name__)
+
+_HEADER_FILL = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
+_HEADER_FONT = Font(bold=True)
+
+
+def _write_header(ws, columns: List[str]) -> None:
+    ws.append(columns)
+    for cell in ws[1]:
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.alignment = Alignment(horizontal="center")
+
+
+def _auto_size_columns(ws) -> None:
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or "")) for cell in col), default=0)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
 
 
 class SchemaExporter:
@@ -20,6 +40,54 @@ class SchemaExporter:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
+        logger.info(f"Schema exported successfully to {output_path}")
+
+    def export_to_excel(self, output_path: str, models: Optional[List[str]] = None) -> None:
+        logger.info(f"Exporting schema to {output_path}")
+
+        if models is None:
+            models = self.discover_models()
+
+        enums: Dict[str, List[str]] = {}
+        custom_types: Dict[str, List[Dict[str, Any]]] = {}
+
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)  # remove default empty sheet
+
+        for model_name in models:
+            logger.info(f"Processing model: {model_name}")
+            rows = self._parse_model_fields(model_name, enums, custom_types)
+            if rows is None:
+                continue
+            ws = wb.create_sheet(title=self._truncate_sheet_name(model_name))
+            _write_header(ws, ["Field Name", "Type", "Required", "Description"])
+            for row in rows:
+                ws.append(
+                    [
+                        row["field_name"],
+                        row["type_display"],
+                        "✅" if row["is_required"] else "❌",
+                        row["description"] or "",
+                    ]
+                )
+            _auto_size_columns(ws)
+
+        if enums:
+            ws = wb.create_sheet(title="Enums")
+            _write_header(ws, ["Enum Name", "Allowed Values"])
+            for enum_name, values in sorted(enums.items()):
+                ws.append([enum_name, ", ".join(values)])
+            _auto_size_columns(ws)
+
+        if custom_types:
+            ws = wb.create_sheet(title="Custom Types")
+            _write_header(ws, ["Type Name", "Field Name", "Type", "Required"])
+            for type_name, fields in sorted(custom_types.items()):
+                for f in fields:
+                    ws.append([type_name, f["name"], self._format_type_display(f), "✅" if f["is_required"] else "❌"])
+            _auto_size_columns(ws)
+
+        wb.save(output_path)
         logger.info(f"Schema exported successfully to {output_path}")
 
     def discover_models(self) -> List[str]:
@@ -115,15 +183,12 @@ class SchemaExporter:
         return "\n".join(lines)
 
     def _generate_model_section(self, model_name: str, enums: Dict, custom_types: Dict) -> Optional[List[str]]:
-        raw_structure = self.client.get_model_structure(model_name)
-        if not raw_structure:
-            logger.warning(f"Could not get structure for model: {model_name}")
+        rows = self._parse_model_fields(model_name, enums, custom_types)
+        if rows is None:
             return None
 
+        raw_structure = self.client.get_model_structure(model_name)
         parsed_model = self.field_parser.parse_model_structure(raw_structure)
-        if not parsed_model or "fields" not in parsed_model:
-            logger.warning(f"Could not parse model structure: {model_name}")
-            return None
 
         lines = [f"## {model_name}", ""]
 
@@ -134,9 +199,7 @@ class SchemaExporter:
         lines.append("**Excel Sheet Name:** `" + model_name + "`")
         lines.append("")
 
-        fields = [f for f in parsed_model["fields"] if f["name"] not in self.field_parser.metadata_fields]
-
-        if not fields:
+        if not rows:
             lines.append("*No user-definable fields*")
             lines.append("")
             return lines
@@ -144,11 +207,34 @@ class SchemaExporter:
         lines.append("| Field Name | Type | Required | Description |")
         lines.append("|------------|------|----------|-------------|")
 
+        for row in rows:
+            required = "✅ Yes" if row["is_required"] else "❌ No"
+            lines.append(f"| {row['field_name']} | {row['type_display']} | {required} | {row['description']} |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        return lines
+
+    def _parse_model_fields(self, model_name: str, enums: Dict, custom_types: Dict) -> Optional[List[Dict[str, Any]]]:
+        raw_structure = self.client.get_model_structure(model_name)
+        if not raw_structure:
+            logger.warning(f"Could not get structure for model: {model_name}")
+            return None
+
+        parsed_model = self.field_parser.parse_model_structure(raw_structure)
+        if not parsed_model or "fields" not in parsed_model:
+            logger.warning(f"Could not parse model structure: {model_name}")
+            return None
+
+        fields = [f for f in parsed_model["fields"] if f["name"] not in self.field_parser.metadata_fields]
+        rows = []
+
         for field in fields:
             field_name = field["name"]
-            required = "✅ Yes" if field["is_required"] else "❌ No"
             type_display = self._format_type_display(field)
-            description = field.get("description", "")
+            description = field.get("description") or ""
 
             if field["is_enum"]:
                 enum_values = self._get_enum_values(field["type"])
@@ -161,17 +247,24 @@ class SchemaExporter:
                     custom_types[field["type"]] = custom_type_fields
 
             if field.get("related_model"):
-                fk_field = field.get("foreign_key", f"{field_name}Id")
+                field_name = field_name[:-2] if field_name.endswith("Id") else field_name
                 type_display += f" (FK → {field['related_model']})"
-                description = f"Foreign key: Use `{fk_field}` column with ID from {field['related_model']} model"
+                description = f"Enter the primary identifier (e.g. name) of the {field['related_model']} record"
 
-            lines.append(f"| {field_name} | {type_display} | {required} | {description} |")
+            rows.append(
+                {
+                    "field_name": field_name,
+                    "type_display": type_display,
+                    "is_required": field["is_required"],
+                    "description": description,
+                }
+            )
 
-        lines.append("")
-        lines.append("---")
-        lines.append("")
+        return rows
 
-        return lines
+    @staticmethod
+    def _truncate_sheet_name(name: str) -> str:
+        return name[:31]
 
     @staticmethod
     def _format_type_display(field: Dict[str, Any]) -> str:
