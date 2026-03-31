@@ -129,7 +129,11 @@ def cmd_migrate(args=None):
         field_parser=field_parser,
     )
 
-    orchestrator.run()
+    try:
+        orchestrator.run()
+    except (FileNotFoundError, ConnectionError) as e:
+        print(f"\n❌ {e}")
+        sys.exit(1)
 
 
 def cmd_export_schema(args=None):

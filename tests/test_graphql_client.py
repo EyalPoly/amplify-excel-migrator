@@ -125,10 +125,10 @@ class TestRequest:
         assert result is None
 
     @patch("amplify_excel_migrator.graphql.client.requests.post")
-    def test_exits_on_connection_error(self, mock_post, client):
+    def test_raises_connection_error_on_connection_failure(self, mock_post, client):
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(ConnectionError, match="Unable to connect to API endpoint"):
             client.request("{ test }")
 
     @patch("amplify_excel_migrator.graphql.client.requests.post")

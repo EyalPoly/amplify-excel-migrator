@@ -1,7 +1,6 @@
 """GraphQL HTTP client for making requests to GraphQL APIs."""
 
 import logging
-import sys
 from typing import Dict, Any, Optional
 
 import aiohttp
@@ -60,10 +59,9 @@ class GraphQLClient:
                 return None
 
         except requests.exceptions.ConnectionError:
-            logger.error(
-                f"Connection error{context_msg}: Unable to connect to API endpoint. Check your internet connection or the API endpoint URL."
+            raise ConnectionError(
+                f"Unable to connect to API endpoint. Check your internet connection or the API endpoint URL."
             )
-            sys.exit(1)
 
         except requests.exceptions.Timeout as e:
             logger.error(f"Request timeout{context_msg}: {e}")

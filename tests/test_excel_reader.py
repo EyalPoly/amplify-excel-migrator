@@ -77,3 +77,23 @@ class TestReadSheet:
 
         mock_read_excel.assert_called_once_with("/path/to/file.xlsx", sheet_name="CustomSheet")
         assert result.equals(df)
+
+    @patch("amplify_excel_migrator.data.excel_reader.pd.read_excel")
+    def test_raises_file_not_found_with_clean_message(self, mock_read_excel):
+        mock_read_excel.side_effect = FileNotFoundError
+
+        reader = ExcelReader(file_path="/missing/file.xlsx")
+
+        with pytest.raises(FileNotFoundError, match="Excel file not found: /missing/file.xlsx"):
+            reader.read_sheet("Sheet1")
+
+
+class TestReadAllSheetsFileNotFound:
+    @patch("amplify_excel_migrator.data.excel_reader.pd.read_excel")
+    def test_raises_file_not_found_with_clean_message(self, mock_read_excel):
+        mock_read_excel.side_effect = FileNotFoundError
+
+        reader = ExcelReader(file_path="/missing/file.xlsx")
+
+        with pytest.raises(FileNotFoundError, match="Excel file not found: /missing/file.xlsx"):
+            reader.read_all_sheets()
