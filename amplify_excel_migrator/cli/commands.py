@@ -131,7 +131,7 @@ def cmd_migrate(args=None):
 
     try:
         orchestrator.run()
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ConnectionError) as e:
         print(f"\n❌ {e}")
         sys.exit(1)
 

@@ -220,6 +220,24 @@ class TestProcessSheet:
 
         assert result == 1
 
+    def test_skips_sheet_and_returns_zero_when_model_not_found(self, orchestrator):
+        df = pd.DataFrame({"name": ["Test"]})
+        orchestrator._get_parsed_model_structure = MagicMock(
+            side_effect=ValueError("Introspection result cannot be empty")
+        )
+
+        result = orchestrator.process_sheet(df, "UnknownSheet")
+
+        assert result == 0
+
+    def test_does_not_upload_when_model_not_found(self, orchestrator, mock_batch_uploader):
+        df = pd.DataFrame({"name": ["Test"]})
+        orchestrator._get_parsed_model_structure = MagicMock(side_effect=ValueError("not found"))
+
+        orchestrator.process_sheet(df, "UnknownSheet")
+
+        mock_batch_uploader.upload_records.assert_not_called()
+
 
 class TestTransformRowsToRecords:
     """Test _transform_rows_to_records method"""

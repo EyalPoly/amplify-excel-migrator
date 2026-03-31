@@ -56,7 +56,8 @@ class MigrationOrchestrator:
 
         try:
             parsed_model_structure = self._get_parsed_model_structure(sheet_name)
-        except ValueError:
+        except ValueError as e:
+            logger.warning(f"Skipping sheet '{sheet_name}': {e}")
             print(f"\n⚠️  Skipping sheet '{sheet_name}': no matching model found in schema.")
             return 0
 

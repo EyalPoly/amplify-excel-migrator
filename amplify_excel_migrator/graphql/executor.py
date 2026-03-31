@@ -470,8 +470,12 @@ class QueryExecutor:
 
             field_name = field["name"][:-2]
 
+            # Accept both reporter and reporterId as column names
             if field_name not in df.columns:
-                continue
+                if field["name"] in df.columns:
+                    field_name = field["name"]
+                else:
+                    continue
 
             if "related_model" in field:
                 related_model = field["related_model"]
