@@ -27,9 +27,8 @@ class DataTransformer:
         failed_rows = []
         row_count = 0
 
-        for row_tuple in df.itertuples(index=False, name="Row"):
+        for row_dict in df.to_dict("records"):
             row_count += 1
-            row_dict = {col: getattr(row_tuple, col) for col in df.columns}
             primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
 
             row_dict_by_primary[str(primary_field_value)] = row_dict.copy()
@@ -76,6 +75,10 @@ class DataTransformer:
         fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Any:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
+
+        # Also accept the full field name with Id suffix (e.g. reporterId as well as reporter)
+        if field["is_id"] and field_name not in row_dict and field["name"] in row_dict:
+            field_name = field["name"]
 
         if field_name not in row_dict or pd.isna(row_dict[field_name]):
             if field["is_required"]:
