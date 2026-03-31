@@ -54,7 +54,11 @@ class MigrationOrchestrator:
     def process_sheet(self, df: pd.DataFrame, sheet_name: str) -> int:
         self.failure_tracker.set_current_sheet(sheet_name)
 
-        parsed_model_structure = self._get_parsed_model_structure(sheet_name)
+        try:
+            parsed_model_structure = self._get_parsed_model_structure(sheet_name)
+        except ValueError:
+            print(f"\n⚠️  Skipping sheet '{sheet_name}': no matching model found in schema.")
+            return 0
 
         records, row_dict_by_primary = self._transform_rows_to_records(df, parsed_model_structure, sheet_name)
 
