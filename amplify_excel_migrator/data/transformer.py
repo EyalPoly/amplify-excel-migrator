@@ -76,6 +76,10 @@ class DataTransformer:
     ) -> Any:
         field_name = field["name"][:-2] if field["is_id"] else field["name"]
 
+        # Also accept the full field name with Id suffix (e.g. reporterId as well as reporter)
+        if field["is_id"] and field_name not in row_dict and field["name"] in row_dict:
+            field_name = field["name"]
+
         if field_name not in row_dict or pd.isna(row_dict[field_name]):
             if field["is_required"]:
                 raise ValueError(f"Required field '{field_name}' is missing")

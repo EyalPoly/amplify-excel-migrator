@@ -39,7 +39,7 @@ Before running your migration, ensure:
 - [ ] First row of each sheet contains column headers
 - [ ] Column names match field names in your schema (or use formats that auto-convert like `first_name`)
 - [ ] Required fields have values in every row (no blanks)
-- [ ] Foreign key fields end with `Id` (e.g., `authorId`, `reporterId`)
+- [ ] Foreign key column names omit the `Id` suffix (e.g., `author`, `reporter` — not `authorId`)
 - [ ] Foreign key values exist in the related model's data
 - [ ] Data types match your schema (numbers for Int, valid dates for AWSDate, etc.)
 
@@ -111,25 +111,25 @@ The tool automatically converts common naming conventions:
 
 ### Foreign Keys and Relationships
 
-**Rule:** Foreign key columns must end with `Id`.
+**Rule:** Foreign key column names use the relationship name without the `Id` suffix. Both forms are accepted (e.g. `reporter` or `reporterId`), but the name without `Id` is preferred and is what `export-schema` generates.
 
-| Foreign Key Field | Related Model | What It Means |
-|------------------|---------------|---------------|
-| `authorId` | `Author` | References an Author record |
-| `reporterId` | `Reporter` | References a Reporter record |
-| `photographerId` | `Photographer` | References a Photographer record |
+| Excel Column | Related Model | What It Means |
+|-------------|---------------|---------------|
+| `author` | `Author` | References an Author record |
+| `reporter` | `Reporter` | References a Reporter record |
+| `photographer` | `Photographer` | References a Photographer record |
 
 **Example:**
 
-| localId | reporterId  | photographerId |
-|---------|-------------|----------------|
-| 6000    | reporter_1  | photo_100      |
-| 6001    | reporter_2  |                |
+| localId | reporter    | photographer |
+|---------|-------------|--------------|
+| 6000    | reporter_1  | photo_100    |
+| 6001    | reporter_2  |              |
 
 **Requirements:**
 - `reporter_1` and `reporter_2` must exist in Reporter model
 - `photo_100` must exist in Photographer model
-- Empty `photographerId` is OK if field is optional
+- Empty `photographer` is OK if field is optional
 
 **Validation:**
 - **FK value doesn't exist:** Record is skipped and recorded as a failure
