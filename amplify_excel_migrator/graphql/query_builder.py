@@ -144,14 +144,39 @@ query Get{model_name}($id: ID!) {{
 query IntrospectModel {{
   __type(name: "{model_name}") {{
     name
+    kind
+    enumValues {{
+      name
+    }}
     fields {{
       name
+      description
       type {{
         name
         kind
+        enumValues {{
+          name
+        }}
         ofType {{
           name
           kind
+          enumValues {{
+            name
+          }}
+          ofType {{
+            name
+            kind
+            enumValues {{
+              name
+            }}
+            ofType {{
+              name
+              kind
+              enumValues {{
+                name
+              }}
+            }}
+          }}
         }}
       }}
     }}
@@ -168,6 +193,9 @@ query IntrospectSchema {
     types {
       name
       kind
+      enumValues {
+        name
+      }
     }
   }
 }

@@ -97,11 +97,22 @@ class FieldParser:
             "is_list": self._is_list_type(field.get("type", {})),
             "is_scalar": base_type in self.scalar_types,
             "is_id": base_type == "ID",
-            "is_enum": field.get("type", {}).get("kind") == "ENUM",
+            "is_enum": self._get_type_kind(field.get("type", {})) == "ENUM",
             "is_custom_type": type_kind == "OBJECT",
+            "inline_enum_values": self._extract_inline_enum_values(field.get("type", {})),
         }
 
         return field_info
+
+    def _extract_inline_enum_values(self, type_obj: Dict) -> List[str]:
+        if not type_obj:
+            return []
+        enum_values = type_obj.get("enumValues")
+        if enum_values:
+            return [ev["name"] for ev in enum_values]
+        if type_obj.get("ofType"):
+            return self._extract_inline_enum_values(type_obj["ofType"])
+        return []
 
     def get_base_type_name(self, type_obj: Dict) -> str:
         """

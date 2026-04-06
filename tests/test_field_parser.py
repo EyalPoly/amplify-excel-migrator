@@ -245,6 +245,99 @@ class TestParseModelStructure:
         assert addresses_field["is_custom_type"] is True
         assert addresses_field["is_list"] is True
 
+    def test_detects_enum_wrapped_in_non_null(self):
+        """Test that required (NON_NULL-wrapped) enum fields are correctly detected as enums"""
+        parser = FieldParser()
+
+        introspection_result = {
+            "name": "Individual",
+            "kind": "OBJECT",
+            "description": None,
+            "fields": [
+                {
+                    "name": "group",
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "ofType": {"kind": "ENUM", "name": "IndividualGroup", "ofType": None},
+                    },
+                    "description": None,
+                },
+            ],
+        }
+
+        result = parser.parse_model_structure(introspection_result)
+
+        group_field = next(f for f in result["fields"] if f["name"] == "group")
+        assert group_field["is_enum"] is True
+        assert group_field["is_required"] is True
+        assert group_field["type"] == "IndividualGroup"
+
+    def test_extracts_inline_enum_values_from_field_type(self):
+        """Inline enums (a.enum() inside custom types) embed enumValues in the field type — these must be extracted"""
+        parser = FieldParser()
+
+        introspection_result = {
+            "name": "IndividualGroup",
+            "kind": "OBJECT",
+            "description": None,
+            "fields": [
+                {
+                    "name": "stage",
+                    "type": {
+                        "kind": "ENUM",
+                        "name": "IndividualGroupStage",
+                        "enumValues": [
+                            {"name": "NA"},
+                            {"name": "JUVENILE"},
+                            {"name": "ADULT"},
+                        ],
+                        "ofType": None,
+                    },
+                    "description": None,
+                },
+            ],
+        }
+
+        result = parser.parse_model_structure(introspection_result)
+
+        stage_field = next(f for f in result["fields"] if f["name"] == "stage")
+        assert stage_field["is_enum"] is True
+        assert stage_field["inline_enum_values"] == ["NA", "JUVENILE", "ADULT"]
+
+    def test_extracts_inline_enum_values_through_non_null_wrapper(self):
+        """Inline enum values must be extracted even when the ENUM is wrapped in NON_NULL"""
+        parser = FieldParser()
+
+        introspection_result = {
+            "name": "IndividualGroup",
+            "kind": "OBJECT",
+            "description": None,
+            "fields": [
+                {
+                    "name": "stage",
+                    "type": {
+                        "kind": "NON_NULL",
+                        "name": None,
+                        "enumValues": None,
+                        "ofType": {
+                            "kind": "ENUM",
+                            "name": "IndividualGroupStage",
+                            "enumValues": [{"name": "NA"}, {"name": "JUVENILE"}],
+                            "ofType": None,
+                        },
+                    },
+                    "description": None,
+                },
+            ],
+        }
+
+        result = parser.parse_model_structure(introspection_result)
+
+        stage_field = next(f for f in result["fields"] if f["name"] == "stage")
+        assert stage_field["is_enum"] is True
+        assert stage_field["inline_enum_values"] == ["NA", "JUVENILE"]
+
 
 class TestParseFieldWithRelationships:
     """Test _parse_field method behavior with relationship fields"""

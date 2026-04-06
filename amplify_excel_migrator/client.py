@@ -38,6 +38,9 @@ class AmplifyClient:
     def get_all_types(self) -> list[Dict[str, Any]]:
         return self._executor.get_all_types()
 
+    def get_all_enums(self) -> Dict[str, list[str]]:
+        return self._executor.get_all_enums()
+
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         return self._executor.get_primary_field_name(model_name, parsed_model_structure)
 
