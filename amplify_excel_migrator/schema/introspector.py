@@ -35,6 +35,22 @@ class SchemaIntrospector:
 
         return []
 
+    def get_all_enums(self) -> Dict[str, list[str]]:
+        """Return all ENUM types in the schema with their values, keyed by type name.
+
+        Fetches directly from __schema.types so enum names are the canonical GraphQL names
+        rather than being discovered reactively through model field traversal.
+        """
+        all_types = self.get_all_types()
+        enums: Dict[str, list[str]] = {}
+        for type_info in all_types:
+            if type_info.get("kind") == "ENUM" and not type_info.get("name", "").startswith("__"):
+                enum_values = type_info.get("enumValues") or []
+                values = [ev["name"] for ev in enum_values]
+                if values:
+                    enums[type_info["name"]] = values
+        return enums
+
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         secondary_index = self._get_secondary_index(model_name)
         if secondary_index:

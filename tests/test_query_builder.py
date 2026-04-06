@@ -222,6 +222,33 @@ class TestBuildIntrospectionQuery:
             assert f'__type(name: "{model}")' in query
             assert "query IntrospectModel" in query
 
+    def test_introspection_query_includes_enum_values(self):
+        """Test that introspection query requests enumValues so enum sections can be populated"""
+        query = QueryBuilder.build_introspection_query("Status")
+
+        assert "enumValues {" in query
+        assert "name" in query
+
+    def test_introspection_query_includes_top_level_kind(self):
+        """Test that introspection query requests kind at the top level for type discrimination"""
+        query = QueryBuilder.build_introspection_query("User")
+
+        # kind should appear at top level (__type level), not just inside type wrappers
+        assert "kind" in query
+
+    def test_introspection_query_includes_field_description(self):
+        """Test that introspection query requests field descriptions"""
+        query = QueryBuilder.build_introspection_query("User")
+
+        assert "description" in query
+
+    def test_introspection_query_has_deep_of_type_nesting(self):
+        """Test that ofType nesting is deep enough for NON_NULL { LIST { NON_NULL { ENUM } } } patterns"""
+        query = QueryBuilder.build_introspection_query("User")
+
+        # Count ofType occurrences — need at least 3 levels for required list of required enums
+        assert query.count("ofType {") >= 3
+
 
 class TestBuildVariablesForList:
     """Test QueryBuilder.build_variables_for_list() method"""

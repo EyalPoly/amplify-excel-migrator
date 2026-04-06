@@ -185,10 +185,81 @@ class TestDiscoverModels:
         assert result == ["Apple", "Banana", "Zebra"]
 
 
+class TestDiscoverCustomTypes:
+    """Test discover_custom_types method"""
+
+    def test_returns_object_types_without_list_queries(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "Address", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}]}
+
+        result = exporter.discover_custom_types()
+
+        assert result == ["Address"]
+
+    def test_excludes_models_with_list_queries(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "User", "kind": "OBJECT"},
+            {"name": "Post", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": [{"name": "listUser"}, {"name": "listPost"}]}
+
+        result = exporter.discover_custom_types()
+
+        assert result == []
+
+    def test_excludes_amplify_generated_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "Address", "kind": "OBJECT"},
+            {"name": "ModelUserConnection", "kind": "OBJECT"},
+            {"name": "UserInput", "kind": "OBJECT"},
+            {"name": "__Schema", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": []}
+
+        result = exporter.discover_custom_types()
+
+        assert result == ["Address"]
+
+    def test_excludes_non_object_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "Address", "kind": "OBJECT"},
+            {"name": "Status", "kind": "ENUM"},
+            {"name": "String", "kind": "SCALAR"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": []}
+
+        result = exporter.discover_custom_types()
+
+        assert result == ["Address"]
+
+    def test_returns_sorted_list(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = [
+            {"name": "Zebra", "kind": "OBJECT"},
+            {"name": "Apple", "kind": "OBJECT"},
+        ]
+        mock_client.get_model_structure.return_value = {"fields": []}
+
+        result = exporter.discover_custom_types()
+
+        assert result == ["Apple", "Zebra"]
+
+    def test_returns_empty_when_no_types(self, exporter, mock_client):
+        mock_client.get_all_types.return_value = []
+
+        result = exporter.discover_custom_types()
+
+        assert result == []
+
+
 class TestGenerateMarkdown:
     """Test _generate_markdown method"""
 
-    def test_generates_basic_structure(self, exporter):
+    def test_generates_basic_structure(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._generate_model_section = MagicMock(return_value=["## User\n"])
 
         result = exporter._generate_markdown(["User"])
@@ -197,7 +268,9 @@ class TestGenerateMarkdown:
         assert "## Table of Contents" in result
         assert "## User" in result
 
-    def test_includes_table_of_contents(self, exporter):
+    def test_includes_table_of_contents(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._generate_model_section = MagicMock(return_value=["## User\n"])
 
         result = exporter._generate_markdown(["User", "Post"])
@@ -205,7 +278,9 @@ class TestGenerateMarkdown:
         assert "- [User](#user)" in result
         assert "- [Post](#post)" in result
 
-    def test_generates_sections_for_all_models(self, exporter):
+    def test_generates_sections_for_all_models(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._generate_model_section = MagicMock(
             side_effect=[
                 ["## User\n"],
@@ -219,7 +294,9 @@ class TestGenerateMarkdown:
         assert "## User" in result
         assert "## Post" in result
 
-    def test_skips_none_model_sections(self, exporter):
+    def test_skips_none_model_sections(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._generate_model_section = MagicMock(
             side_effect=[
                 ["## User\n"],
@@ -232,13 +309,10 @@ class TestGenerateMarkdown:
         assert "## User" in result
         assert "## Post" not in result
 
-    def test_includes_enums_section(self, exporter):
-        def side_effect(model, enums, custom_types):
-            if model == "User":
-                enums["Status"] = ["ACTIVE", "INACTIVE"]
-            return ["## User\n"]
-
-        exporter._generate_model_section = MagicMock(side_effect=side_effect)
+    def test_includes_enums_section(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {"Status": ["ACTIVE", "INACTIVE"]}
+        exporter.discover_custom_types = MagicMock(return_value=[])
+        exporter._generate_model_section = MagicMock(return_value=["## User\n"])
 
         result = exporter._generate_markdown(["User"])
 
@@ -247,16 +321,22 @@ class TestGenerateMarkdown:
         assert "- `ACTIVE`" in result
         assert "- `INACTIVE`" in result
 
-    def test_includes_custom_types_section(self, exporter):
-        def side_effect(model, enums, custom_types):
-            if model == "User":
-                custom_types["Address"] = [
-                    {"name": "street", "type": "String", "is_required": True},
-                ]
-            return ["## User\n"]
-
-        exporter._generate_model_section = MagicMock(side_effect=side_effect)
-        exporter._format_type_display = MagicMock(return_value="`String`")
+    def test_includes_custom_types_section(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=["Address"])
+        exporter._get_custom_type_fields = MagicMock(
+            return_value=[
+                {
+                    "name": "street",
+                    "type": "String",
+                    "is_required": True,
+                    "is_list": False,
+                    "is_enum": False,
+                    "is_custom_type": False,
+                }
+            ]
+        )
+        exporter._generate_model_section = MagicMock(return_value=["## User\n"])
 
         result = exporter._generate_markdown(["User"])
 
@@ -264,15 +344,22 @@ class TestGenerateMarkdown:
         assert "### Address" in result
         assert "| street |" in result
 
-    def test_sorts_enums_and_custom_types(self, exporter):
-        def side_effect(model, enums, custom_types):
-            enums["Zebra"] = ["A"]
-            enums["Apple"] = ["B"]
-            custom_types["Zinc"] = []
-            custom_types["Alpha"] = []
-            return ["## User\n"]
-
-        exporter._generate_model_section = MagicMock(side_effect=side_effect)
+    def test_sorts_enums_and_custom_types(self, exporter, mock_client):
+        mock_client.get_all_enums.return_value = {"Zebra": ["A"], "Apple": ["B"]}
+        exporter.discover_custom_types = MagicMock(return_value=["Zinc", "Alpha"])
+        exporter._get_custom_type_fields = MagicMock(
+            return_value=[
+                {
+                    "name": "field",
+                    "type": "String",
+                    "is_required": False,
+                    "is_list": False,
+                    "is_enum": False,
+                    "is_custom_type": False,
+                }
+            ]
+        )
+        exporter._generate_model_section = MagicMock(return_value=["## User\n"])
 
         result = exporter._generate_markdown(["User"])
 
@@ -291,7 +378,7 @@ class TestGenerateModelSection:
     def test_returns_none_when_no_structure(self, exporter, mock_client):
         mock_client.get_model_structure.return_value = None
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
 
         assert result is None
 
@@ -299,7 +386,7 @@ class TestGenerateModelSection:
         mock_client.get_model_structure.return_value = {"kind": "OBJECT"}
         mock_field_parser.parse_model_structure.return_value = None
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
 
         assert result is None
 
@@ -319,7 +406,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
 
         assert "## User" in "\n".join(result)
 
@@ -340,7 +427,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
 
         assert "User model description" in "\n".join(result)
 
@@ -360,7 +447,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
 
         assert "**Excel Sheet Name:** `User`" in "\n".join(result)
 
@@ -396,7 +483,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
         content = "\n".join(result)
 
         assert "| name |" in content
@@ -419,7 +506,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
         content = "\n".join(result)
 
         assert "| Field Name | Type | Required | Description |" in content
@@ -449,57 +536,11 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`String`")
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
         content = "\n".join(result)
 
         assert "| required_field | `String` | ✅ Yes |" in content
         assert "| optional_field | `String` | ❌ No |" in content
-
-    def test_tracks_enums(self, exporter, mock_client, mock_field_parser):
-        mock_client.get_model_structure.return_value = {"kind": "OBJECT"}
-        mock_field_parser.parse_model_structure.return_value = {
-            "fields": [
-                {
-                    "name": "status",
-                    "type": "Status",
-                    "is_required": True,
-                    "is_enum": True,
-                    "is_custom_type": False,
-                    "is_list": False,
-                }
-            ]
-        }
-        exporter._format_type_display = MagicMock(return_value="`Status` (Enum)")
-        exporter._get_enum_values = MagicMock(return_value=["ACTIVE", "INACTIVE"])
-
-        enums = {}
-        exporter._generate_model_section("User", enums, {})
-
-        assert "Status" in enums
-        assert enums["Status"] == ["ACTIVE", "INACTIVE"]
-
-    def test_tracks_custom_types(self, exporter, mock_client, mock_field_parser):
-        mock_client.get_model_structure.return_value = {"kind": "OBJECT"}
-        mock_field_parser.parse_model_structure.return_value = {
-            "fields": [
-                {
-                    "name": "address",
-                    "type": "Address",
-                    "is_required": False,
-                    "is_enum": False,
-                    "is_custom_type": True,
-                    "is_list": False,
-                }
-            ]
-        }
-        exporter._format_type_display = MagicMock(return_value="`Address` (Custom Type)")
-        exporter._get_custom_type_fields = MagicMock(return_value=[{"name": "street"}])
-
-        custom_types = {}
-        exporter._generate_model_section("User", {}, custom_types)
-
-        assert "Address" in custom_types
-        assert custom_types["Address"] == [{"name": "street"}]
 
     def test_adds_foreign_key_info(self, exporter, mock_client, mock_field_parser):
         mock_client.get_model_structure.return_value = {"kind": "OBJECT"}
@@ -519,7 +560,7 @@ class TestGenerateModelSection:
         }
         exporter._format_type_display = MagicMock(return_value="`Author`")
 
-        result = exporter._generate_model_section("Post", {}, {})
+        result = exporter._generate_model_section("Post")
         content = "\n".join(result)
 
         assert "(FK → Author)" in content
@@ -534,7 +575,7 @@ class TestGenerateModelSection:
             ]
         }
 
-        result = exporter._generate_model_section("User", {}, {})
+        result = exporter._generate_model_section("User")
         content = "\n".join(result)
 
         assert "*No user-definable fields*" in content
@@ -709,20 +750,24 @@ class TestTruncateSheetName:
 
 class TestExportToExcel:
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_discovers_models_when_none_provided(self, mock_openpyxl, exporter):
+    def test_discovers_models_when_none_provided(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
         exporter.discover_models = MagicMock(return_value=[])
+        exporter.discover_custom_types = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx")
 
         exporter.discover_models.assert_called_once()
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_uses_provided_models_without_discovery(self, mock_openpyxl, exporter):
+    def test_uses_provided_models_without_discovery(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
         exporter.discover_models = MagicMock()
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User"])
@@ -730,9 +775,11 @@ class TestExportToExcel:
         exporter.discover_models.assert_not_called()
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_creates_one_sheet_per_model(self, mock_openpyxl, exporter):
+    def test_creates_one_sheet_per_model(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User", "Post"])
@@ -740,9 +787,11 @@ class TestExportToExcel:
         assert mock_wb.create_sheet.call_count == 2
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_skips_model_when_parse_returns_none(self, mock_openpyxl, exporter):
+    def test_skips_model_when_parse_returns_none(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=None)
 
         exporter.export_to_excel("out.xlsx", models=["User"])
@@ -750,15 +799,12 @@ class TestExportToExcel:
         mock_wb.create_sheet.assert_not_called()
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_creates_enums_sheet_when_enums_exist(self, mock_openpyxl, exporter):
+    def test_creates_enums_sheet_when_enums_exist(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
-
-        def populate_enums(model_name, enums, custom_types):
-            enums["Status"] = ["ACTIVE", "INACTIVE"]
-            return []
-
-        exporter._parse_model_fields = MagicMock(side_effect=populate_enums)
+        mock_client.get_all_enums.return_value = {"Status": ["ACTIVE", "INACTIVE"]}
+        exporter.discover_custom_types = MagicMock(return_value=[])
+        exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User"])
 
@@ -766,9 +812,11 @@ class TestExportToExcel:
         assert "Enums" in sheet_names
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_omits_enums_sheet_when_no_enums(self, mock_openpyxl, exporter):
+    def test_omits_enums_sheet_when_no_enums(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User"])
@@ -777,12 +825,13 @@ class TestExportToExcel:
         assert "Enums" not in sheet_names
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_creates_custom_types_sheet_when_custom_types_exist(self, mock_openpyxl, exporter):
+    def test_creates_custom_types_sheet_when_custom_types_exist(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
-
-        def populate_custom_types(model_name, enums, custom_types):
-            custom_types["Address"] = [
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=["Address"])
+        exporter._get_custom_type_fields = MagicMock(
+            return_value=[
                 {
                     "name": "street",
                     "type": "String",
@@ -792,9 +841,8 @@ class TestExportToExcel:
                     "is_custom_type": False,
                 }
             ]
-            return []
-
-        exporter._parse_model_fields = MagicMock(side_effect=populate_custom_types)
+        )
+        exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User"])
 
@@ -802,9 +850,11 @@ class TestExportToExcel:
         assert "Custom Types" in sheet_names
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_omits_custom_types_sheet_when_none(self, mock_openpyxl, exporter):
+    def test_omits_custom_types_sheet_when_none(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("out.xlsx", models=["User"])
@@ -813,9 +863,11 @@ class TestExportToExcel:
         assert "Custom Types" not in sheet_names
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_saves_workbook_to_output_path(self, mock_openpyxl, exporter):
+    def test_saves_workbook_to_output_path(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_openpyxl.Workbook.return_value = mock_wb
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(return_value=[])
 
         exporter.export_to_excel("my-schema.xlsx", models=["User"])
@@ -823,12 +875,14 @@ class TestExportToExcel:
         mock_wb.save.assert_called_once_with("my-schema.xlsx")
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_required_field_uses_checkmark(self, mock_openpyxl, exporter):
+    def test_required_field_uses_checkmark(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_ws = MagicMock()
         mock_ws.__getitem__ = MagicMock(return_value=[])
         mock_openpyxl.Workbook.return_value = mock_wb
         mock_wb.create_sheet.return_value = mock_ws
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(
             return_value=[{"field_name": "email", "type_display": "`String`", "is_required": True, "description": ""}]
         )
@@ -840,12 +894,14 @@ class TestExportToExcel:
         assert data_rows[0][2] == "✅"
 
     @patch("amplify_excel_migrator.schema.schema_exporter.openpyxl")
-    def test_optional_field_uses_cross(self, mock_openpyxl, exporter):
+    def test_optional_field_uses_cross(self, mock_openpyxl, exporter, mock_client):
         mock_wb = MagicMock()
         mock_ws = MagicMock()
         mock_ws.__getitem__ = MagicMock(return_value=[])
         mock_openpyxl.Workbook.return_value = mock_wb
         mock_wb.create_sheet.return_value = mock_ws
+        mock_client.get_all_enums.return_value = {}
+        exporter.discover_custom_types = MagicMock(return_value=[])
         exporter._parse_model_fields = MagicMock(
             return_value=[{"field_name": "bio", "type_display": "`String`", "is_required": False, "description": ""}]
         )
@@ -855,3 +911,105 @@ class TestExportToExcel:
         appended_rows = [call.args[0] for call in mock_ws.append.call_args_list]
         data_rows = [r for r in appended_rows if r[0] != "Field Name"]
         assert data_rows[0][2] == "❌"
+
+
+class TestGetEnumDisplayNames:
+    """Test _get_enum_display_names — strips parent-type prefixes from Amplify-generated enum names."""
+
+    def test_solo_enum_keeps_original_name(self, exporter):
+        """Solo enums are never stripped — stripping a unique enum loses context with no benefit."""
+        enums = {"ObservationTimeSpecifier": ["MORNING", "EVENING"]}
+        result = exporter._get_enum_display_names(enums, {"Observation"})
+        assert result == {"ObservationTimeSpecifier": "ObservationTimeSpecifier"}
+
+    def test_solo_enum_with_custom_type_prefix_keeps_original(self, exporter):
+        """Each solo enum keeps its original compound name even when a prefix matches."""
+        enums = {
+            "IndividualGroupCondition": ["NA", "ALIVE"],
+            "IndividualGroupStage": ["JUVENILE", "ADULT"],
+        }
+        result = exporter._get_enum_display_names(enums, {"IndividualGroup"})
+        assert result["IndividualGroupCondition"] == "IndividualGroupCondition"
+        assert result["IndividualGroupStage"] == "IndividualGroupStage"
+
+    def test_multi_enum_group_strips_prefix(self, exporter):
+        """When multiple enums share identical values, strip the prefix to find the canonical name."""
+        values = ["NA", "FEMALE", "MALE"]
+        enums = {"IndividualSex": values, "IndividualGroupSex": values}
+        result = exporter._get_enum_display_names(enums, {"Individual", "IndividualGroup"})
+        # Both should strip to "Sex" — the longer prefix wins for IndividualGroupSex
+        assert result["IndividualSex"] == "Sex"
+        assert result["IndividualGroupSex"] == "Sex"
+
+    def test_same_stripped_name_same_values_deduplicates(self, exporter):
+        """Two enums that strip to the same name with identical values both map to the stripped name."""
+        values = ["NA", "FEMALE", "MALE", "BOTH"]
+        enums = {"IndividualSex": values, "IndividualGroupSex": values}
+        result = exporter._get_enum_display_names(enums, {"Individual", "IndividualGroup"})
+        assert result["IndividualSex"] == "Sex"
+        assert result["IndividualGroupSex"] == "Sex"
+
+    def test_same_stripped_name_different_values_keeps_originals(self, exporter):
+        """Two enums that strip to the same name with different values both keep their original names."""
+        enums = {
+            "MediaType": ["PHOTO", "VIDEO"],
+            "SpeciesType": ["SHARK", "RAY", "CHIMAERA"],
+        }
+        result = exporter._get_enum_display_names(enums, {"Media", "Species"})
+        assert result["MediaType"] == "MediaType"
+        assert result["SpeciesType"] == "SpeciesType"
+
+    def test_no_matching_prefix_keeps_original(self, exporter):
+        enums = {"Status": ["ACTIVE", "INACTIVE"]}
+        result = exporter._get_enum_display_names(enums, {"User", "Order"})
+        assert result["Status"] == "Status"
+
+
+class TestApplyDisplayNames:
+    """Test _apply_display_names — replaces backtick-quoted GraphQL names in strings."""
+
+    def test_replaces_quoted_name(self):
+        display_names = {"ObservationMediaPlatfrom": "MediaPlatfrom"}
+        result = SchemaExporter._apply_display_names("`ObservationMediaPlatfrom` (Enum)", display_names)
+        assert result == "`MediaPlatfrom` (Enum)"
+
+    def test_replaces_in_list_notation(self):
+        display_names = {"IndividualGroupStage": "Stage"}
+        result = SchemaExporter._apply_display_names("`[IndividualGroupStage]` (Enum)", display_names)
+        assert result == "`[IndividualGroupStage]` (Enum)"  # list notation uses different backtick pattern
+
+    def test_skips_unchanged_names(self):
+        display_names = {"Status": "Status"}
+        result = SchemaExporter._apply_display_names("`Status` (Enum)", display_names)
+        assert result == "`Status` (Enum)"
+
+    def test_longer_names_replaced_first_to_avoid_partial_match(self):
+        """IndividualGroupSex must not be partially replaced by IndividualSex → Sex."""
+        display_names = {"IndividualSex": "Sex", "IndividualGroupSex": "Sex"}
+        result = SchemaExporter._apply_display_names("`IndividualGroupSex` (Enum)", display_names)
+        assert result == "`Sex` (Enum)"
+
+
+class TestBuildDisplayEnums:
+    """Test _build_display_enums — deduplicates enums keyed by display name."""
+
+    def test_maps_display_name_to_values(self):
+        enums = {"IndividualGroupCondition": ["NA", "ALIVE"]}
+        display_names = {"IndividualGroupCondition": "Condition"}
+        result = SchemaExporter._build_display_enums(enums, display_names)
+        assert result == {"Condition": ["NA", "ALIVE"]}
+
+    def test_deduplicates_same_display_name(self):
+        values = ["NA", "FEMALE", "MALE"]
+        enums = {"IndividualSex": values, "IndividualGroupSex": values}
+        display_names = {"IndividualSex": "Sex", "IndividualGroupSex": "Sex"}
+        result = SchemaExporter._build_display_enums(enums, display_names)
+        assert list(result.keys()) == ["Sex"]
+        assert result["Sex"] == values
+
+    def test_conflict_keeps_both_under_original_names(self):
+        enums = {"MediaType": ["PHOTO", "VIDEO"], "SpeciesType": ["SHARK", "RAY"]}
+        display_names = {"MediaType": "MediaType", "SpeciesType": "SpeciesType"}
+        result = SchemaExporter._build_display_enums(enums, display_names)
+        assert "MediaType" in result
+        assert "SpeciesType" in result
