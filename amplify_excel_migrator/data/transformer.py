@@ -92,7 +92,10 @@ class DataTransformer:
         elif field["is_list"] and field["is_scalar"]:
             return self.field_parser.parse_scalar_array(field, field_name, row_dict[field_name])
         else:
-            return self.field_parser.parse_field_input(field, field_name, value)
+            result = self.field_parser.parse_field_input(field, field_name, value)
+            if result is None:
+                raise ValueError(f"'{field_name}' could not be parsed as {field['type']} (value: '{value}')")
+            return result
 
     @staticmethod
     def _resolve_foreign_key(

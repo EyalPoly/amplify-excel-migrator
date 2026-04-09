@@ -348,6 +348,110 @@ class TestParseInput:
 
         mock_field_parser.parse_field_input.assert_called_once()
 
+    def test_raises_for_optional_field_when_parse_returns_none(self, transformer, mock_field_parser):
+        """Optional field with a present value that fails to parse must raise, not silently drop."""
+        row_dict = {"depth": "5-4"}
+        field = {
+            "name": "depth",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Float",
+        }
+        mock_field_parser.parse_field_input.side_effect = None
+        mock_field_parser.parse_field_input.return_value = None
+
+        with pytest.raises(ValueError, match="'depth'"):
+            transformer.parse_input(row_dict, field, {})
+
+    def test_error_message_includes_field_name_type_and_value(self, transformer, mock_field_parser):
+        row_dict = {"temperature": "warm"}
+        field = {
+            "name": "temperature",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Float",
+        }
+        mock_field_parser.parse_field_input.side_effect = None
+        mock_field_parser.parse_field_input.return_value = None
+
+        with pytest.raises(ValueError) as exc_info:
+            transformer.parse_input(row_dict, field, {})
+
+        error = str(exc_info.value)
+        assert "'temperature'" in error
+        assert "Float" in error
+        assert "warm" in error
+
+    def test_does_not_raise_for_optional_field_absent_from_row(self, transformer):
+        """Missing optional field → None is correct, must not raise."""
+        row_dict = {}
+        field = {
+            "name": "depth",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Float",
+        }
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result is None
+
+    def test_does_not_raise_for_optional_field_with_nan_value(self, transformer):
+        """NaN optional field → None is correct, must not raise."""
+        row_dict = {"depth": float("nan")}
+        field = {
+            "name": "depth",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Float",
+        }
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result is None
+
+    def test_returns_falsy_non_none_values_correctly(self, transformer, mock_field_parser):
+        """parse_field_input returning 0 must not be treated as a parse failure."""
+        row_dict = {"count": 0}
+        field = {
+            "name": "count",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Int",
+        }
+        mock_field_parser.parse_field_input.return_value = 0
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result == 0
+
+    def test_returns_false_boolean_correctly(self, transformer, mock_field_parser):
+        row_dict = {"pregnant": "N"}
+        field = {
+            "name": "pregnant",
+            "is_id": False,
+            "is_required": False,
+            "is_list": False,
+            "is_scalar": False,
+            "type": "Boolean",
+        }
+        mock_field_parser.parse_field_input.side_effect = None
+        mock_field_parser.parse_field_input.return_value = False
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result is False
+
 
 class TestResolveForeignKey:
     """Test _resolve_foreign_key static method"""
