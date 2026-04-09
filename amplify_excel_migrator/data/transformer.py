@@ -60,11 +60,18 @@ class DataTransformer:
         fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Optional[Dict]:
         model_record = {}
+        field_errors = []
 
         for field in parsed_model_structure["fields"]:
-            input_value = self.parse_input(row_dict, field, fk_lookup_cache)
-            if input_value is not None:
-                model_record[field["name"]] = input_value
+            try:
+                input_value = self.parse_input(row_dict, field, fk_lookup_cache)
+                if input_value is not None:
+                    model_record[field["name"]] = input_value
+            except ValueError as e:
+                field_errors.append(str(e))
+
+        if field_errors:
+            raise ValueError(" | ".join(field_errors))
 
         return model_record
 

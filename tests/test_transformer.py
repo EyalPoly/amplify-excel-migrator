@@ -230,6 +230,275 @@ class TestTransformRowToRecord:
 
         assert len(result) == 3
 
+    def test_collects_all_field_errors_before_raising(self, transformer):
+        """A row with 2 bad fields must report both errors, not just the first."""
+        row_dict = {"name": "John", "depth": "bad", "temperature": "also_bad"}
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+                {
+                    "name": "temperature",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+
+        def parse_side_effect(row, field, cache):
+            if field["name"] == "depth":
+                raise ValueError("'depth' could not be parsed as Float (value: 'bad')")
+            if field["name"] == "temperature":
+                raise ValueError("'temperature' could not be parsed as Float (value: 'also_bad')")
+            return row.get(field["name"])
+
+        transformer.parse_input = MagicMock(side_effect=parse_side_effect)
+
+        with pytest.raises(ValueError) as exc_info:
+            transformer.transform_row_to_record(row_dict, parsed_model, {})
+
+        error = str(exc_info.value)
+        assert "'depth' could not be parsed as Float (value: 'bad')" in error
+        assert "'temperature' could not be parsed as Float (value: 'also_bad')" in error
+
+    def test_field_errors_joined_with_pipe_separator(self, transformer):
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "a",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Int",
+                },
+                {
+                    "name": "b",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Int",
+                },
+            ]
+        }
+        transformer.parse_input = MagicMock(
+            side_effect=[
+                ValueError("error A"),
+                ValueError("error B"),
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"error A \| error B"):
+            transformer.transform_row_to_record({}, parsed_model, {})
+
+    def test_raises_on_single_optional_field_error(self, transformer):
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+        transformer.parse_input = MagicMock(
+            side_effect=[
+                "John",
+                ValueError("'depth' could not be parsed as Float (value: 'invalid')"),
+            ]
+        )
+
+        with pytest.raises(ValueError, match="depth"):
+            transformer.transform_row_to_record({"name": "John", "depth": "invalid"}, parsed_model, {})
+
+    def test_all_fields_are_attempted_even_after_error(self, transformer):
+        """The loop must not stop at the first failing field."""
+        call_order = []
+
+        def parse_side_effect(row, field, cache):
+            call_order.append(field["name"])
+            if field["name"] == "depth":
+                raise ValueError("bad depth")
+            return row.get(field["name"])
+
+        transformer.parse_input = MagicMock(side_effect=parse_side_effect)
+
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+                {
+                    "name": "temperature",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+
+        with pytest.raises(ValueError):
+            transformer.transform_row_to_record(
+                {"name": "John", "depth": "bad", "temperature": 25.0},
+                parsed_model,
+                {},
+            )
+
+        assert call_order == ["name", "depth", "temperature"]
+
+    def test_no_error_raised_when_all_fields_parse_successfully(self, transformer):
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+        transformer.parse_input = MagicMock(side_effect=["John", 10.5])
+
+        result = transformer.transform_row_to_record({"name": "John", "depth": 10.5}, parsed_model, {})
+
+        assert result == {"name": "John", "depth": 10.5}
+
+    def test_required_and_optional_errors_both_collected(self, transformer):
+        """Required field error and optional field error appear together in combined message."""
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "date",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "AWSDate",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+        transformer.parse_input = MagicMock(
+            side_effect=[
+                ValueError("Required field 'date' is missing"),
+                ValueError("'depth' could not be parsed as Float (value: 'bad')"),
+            ]
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            transformer.transform_row_to_record({}, parsed_model, {})
+
+        error = str(exc_info.value)
+        assert "date" in error
+        assert "depth" in error
+
+    def test_combined_error_ends_up_in_failed_rows(self, transformer):
+        """End-to-end: transform_rows_to_records stores the combined error string."""
+        df = pd.DataFrame([{"name": "John", "depth": "bad", "temperature": "bad"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+                {
+                    "name": "temperature",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                },
+            ]
+        }
+
+        def raise_on_bad(row, field, cache):
+            if field["name"] in ("depth", "temperature"):
+                raise ValueError(f"'{field['name']}' could not be parsed as Float (value: 'bad')")
+            return row.get(field["name"])
+
+        transformer.parse_input = MagicMock(side_effect=raise_on_bad)
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
+
+        assert len(failed) == 1
+        error = failed[0]["error"]
+        assert "depth" in error
+        assert "temperature" in error
+
 
 class TestParseInput:
     """Test parse_input method"""
