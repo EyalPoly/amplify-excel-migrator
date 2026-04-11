@@ -330,7 +330,7 @@ class TestGetParsedModelStructure:
     def test_gets_model_structure_from_client(self, orchestrator, mock_amplify_client):
         model_structure = {"fields": [{"name": "id"}]}
         mock_amplify_client.get_model_structure.return_value = model_structure
-        orchestrator.field_parser.parse_model_structure = MagicMock(return_value={"parsed": True})
+        orchestrator.field_parser.parse_model_structure = MagicMock(return_value={"fields": [{"name": "id"}]})
 
         orchestrator._get_parsed_model_structure("TestModel")
 
@@ -339,83 +339,13 @@ class TestGetParsedModelStructure:
     def test_parses_model_structure(self, orchestrator, mock_field_parser):
         model_structure = {"fields": [{"name": "id"}]}
         orchestrator.amplify_client.get_model_structure = MagicMock(return_value=model_structure)
-        mock_field_parser.parse_model_structure = MagicMock(return_value={"parsed": True})
+        expected_result = {"fields": [{"name": "id"}]}
+        mock_field_parser.parse_model_structure = MagicMock(return_value=expected_result)
 
         result = orchestrator._get_parsed_model_structure("TestModel")
 
         mock_field_parser.parse_model_structure.assert_called_once_with(model_structure)
-        assert result == {"parsed": True}
-
-
-class TestDisplaySummary:
-    """Test _display_summary method"""
-
-    def test_prints_migration_summary(self, orchestrator, mock_progress_reporter, mock_failure_tracker):
-        failures_by_sheet = {"Sheet1": [{"error": "fail"}]}
-        mock_failure_tracker.get_failures_by_sheet.return_value = failures_by_sheet
-
-        orchestrator._display_summary(2, 10)
-
-        mock_progress_reporter.print_migration_summary.assert_called_once_with(2, 10, failures_by_sheet)
-
-    @patch("builtins.input", return_value="no")
-    def test_skips_export_when_no_failures(self, mock_input, orchestrator, mock_failure_tracker):
-        mock_failure_tracker.has_failures.return_value = False
-        mock_failure_tracker.get_failures_by_sheet.return_value = {}
-
-        orchestrator._display_summary(1, 5)
-
-        mock_failure_tracker.export_to_excel.assert_not_called()
-
-    @patch("builtins.input", return_value="yes")
-    def test_exports_failures_when_confirmed(self, mock_input, orchestrator, mock_failure_tracker, mock_excel_reader):
-        mock_failure_tracker.has_failures.return_value = True
-        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
-        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
-
-        orchestrator._display_summary(1, 5)
-
-        mock_failure_tracker.export_to_excel.assert_called_once_with(mock_excel_reader.file_path)
-
-    @patch("builtins.input", side_effect=["yes", "yes"])
-    @patch("amplify_excel_migrator.migration.orchestrator.ConfigManager")
-    def test_updates_config_when_confirmed(self, mock_config_manager, mock_input, orchestrator, mock_failure_tracker):
-        mock_failure_tracker.has_failures.return_value = True
-        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
-        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
-
-        mock_config_instance = MagicMock()
-        mock_config_manager.return_value = mock_config_instance
-
-        orchestrator._display_summary(1, 5)
-
-        mock_config_instance.update.assert_called_once_with({"excel_path": "/path/to/failures.xlsx"})
-
-    @patch("builtins.input", side_effect=["yes", "no"])
-    @patch("amplify_excel_migrator.migration.orchestrator.ConfigManager")
-    def test_skips_config_update_when_declined(
-        self, mock_config_manager, mock_input, orchestrator, mock_failure_tracker
-    ):
-        mock_failure_tracker.has_failures.return_value = True
-        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
-        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
-
-        orchestrator._display_summary(1, 5)
-
-        mock_config_manager.assert_not_called()
-
-    @patch("builtins.input", return_value="no")
-    def test_skips_export_when_declined(self, mock_input, orchestrator, mock_failure_tracker):
-        mock_failure_tracker.has_failures.return_value = True
-        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
-
-        orchestrator._display_summary(1, 5)
-
-        mock_failure_tracker.export_to_excel.assert_not_called()
-
-
-class TestGetParsedModelStructure:
-    """Test _get_parsed_model_structure enriches custom type fields with sub-fields."""
+        assert result == expected_result
 
     def test_returns_parsed_structure_for_simple_model(self, orchestrator, mock_amplify_client, mock_field_parser):
         raw_structure = {"name": "SimpleModel"}
@@ -496,3 +426,70 @@ class TestGetParsedModelStructure:
         calls = mock_amplify_client.get_model_structure.call_args_list
         assert calls[0][0][0] == "Observation"
         assert calls[1][0][0] == "IndividualGroup"
+
+
+class TestDisplaySummary:
+    """Test _display_summary method"""
+
+    def test_prints_migration_summary(self, orchestrator, mock_progress_reporter, mock_failure_tracker):
+        failures_by_sheet = {"Sheet1": [{"error": "fail"}]}
+        mock_failure_tracker.get_failures_by_sheet.return_value = failures_by_sheet
+
+        orchestrator._display_summary(2, 10)
+
+        mock_progress_reporter.print_migration_summary.assert_called_once_with(2, 10, failures_by_sheet)
+
+    @patch("builtins.input", return_value="no")
+    def test_skips_export_when_no_failures(self, mock_input, orchestrator, mock_failure_tracker):
+        mock_failure_tracker.has_failures.return_value = False
+        mock_failure_tracker.get_failures_by_sheet.return_value = {}
+
+        orchestrator._display_summary(1, 5)
+
+        mock_failure_tracker.export_to_excel.assert_not_called()
+
+    @patch("builtins.input", return_value="yes")
+    def test_exports_failures_when_confirmed(self, mock_input, orchestrator, mock_failure_tracker, mock_excel_reader):
+        mock_failure_tracker.has_failures.return_value = True
+        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
+        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
+
+        orchestrator._display_summary(1, 5)
+
+        mock_failure_tracker.export_to_excel.assert_called_once_with(mock_excel_reader.file_path)
+
+    @patch("builtins.input", side_effect=["yes", "yes"])
+    @patch("amplify_excel_migrator.migration.orchestrator.ConfigManager")
+    def test_updates_config_when_confirmed(self, mock_config_manager, mock_input, orchestrator, mock_failure_tracker):
+        mock_failure_tracker.has_failures.return_value = True
+        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
+        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
+
+        mock_config_instance = MagicMock()
+        mock_config_manager.return_value = mock_config_instance
+
+        orchestrator._display_summary(1, 5)
+
+        mock_config_instance.update.assert_called_once_with({"excel_path": "/path/to/failures.xlsx"})
+
+    @patch("builtins.input", side_effect=["yes", "no"])
+    @patch("amplify_excel_migrator.migration.orchestrator.ConfigManager")
+    def test_skips_config_update_when_declined(
+        self, mock_config_manager, mock_input, orchestrator, mock_failure_tracker
+    ):
+        mock_failure_tracker.has_failures.return_value = True
+        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
+        mock_failure_tracker.export_to_excel.return_value = "/path/to/failures.xlsx"
+
+        orchestrator._display_summary(1, 5)
+
+        mock_config_manager.assert_not_called()
+
+    @patch("builtins.input", return_value="no")
+    def test_skips_export_when_declined(self, mock_input, orchestrator, mock_failure_tracker):
+        mock_failure_tracker.has_failures.return_value = True
+        mock_failure_tracker.get_failures_by_sheet.return_value = {"Sheet1": [{"error": "fail"}]}
+
+        orchestrator._display_summary(1, 5)
+
+        mock_failure_tracker.export_to_excel.assert_not_called()
