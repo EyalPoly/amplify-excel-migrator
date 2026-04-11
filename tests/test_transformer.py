@@ -855,7 +855,7 @@ class TestResolveForeignKey:
         }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
-        with pytest.raises(ValueError, match="Author: John Doe does not exist"):
+        with pytest.raises(ValueError, match="'author': 'John Doe' does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_required_fk(self, transformer):
@@ -867,7 +867,7 @@ class TestResolveForeignKey:
         }
         fk_cache = {"Author": {"lookup": {"Jane Doe": "author-456"}}}
 
-        with pytest.raises(ValueError, match="Author: John Doe does not exist"):
+        with pytest.raises(ValueError, match="'author': 'John Doe' does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_cache_optional_field(self, transformer):
@@ -879,7 +879,7 @@ class TestResolveForeignKey:
         }
         fk_cache = {}
 
-        with pytest.raises(ValueError, match="No pre-fetched data for Author"):
+        with pytest.raises(ValueError, match="No pre-fetched data for 'author'"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_raises_error_for_missing_cache_required_field(self, transformer):
@@ -891,7 +891,7 @@ class TestResolveForeignKey:
         }
         fk_cache = {}
 
-        with pytest.raises(ValueError, match="No pre-fetched data for Author"):
+        with pytest.raises(ValueError, match="No pre-fetched data for 'author'"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
 
     def test_converts_value_to_string_for_lookup(self, transformer):

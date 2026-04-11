@@ -119,6 +119,8 @@ class DataTransformer:
         else:
             related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
 
+        column_name = field["name"][:-2] if field["name"].endswith("Id") else field["name"]
+
         if related_model in fk_lookup_cache:
             lookup_dict: Dict[str, str] = fk_lookup_cache[related_model]["lookup"]
             record_id = lookup_dict.get(str(value))
@@ -126,9 +128,9 @@ class DataTransformer:
             if record_id:
                 return record_id
             else:
-                raise ValueError(f"{related_model}: {value} does not exist")
+                raise ValueError(f"'{column_name}': '{value}' does not exist")
         else:
-            raise ValueError(f"No pre-fetched data for {related_model}")
+            raise ValueError(f"No pre-fetched data for '{column_name}'")
 
     @staticmethod
     def to_camel_case(s: str) -> str:
