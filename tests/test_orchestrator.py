@@ -330,7 +330,7 @@ class TestGetParsedModelStructure:
     def test_gets_model_structure_from_client(self, orchestrator, mock_amplify_client):
         model_structure = {"fields": [{"name": "id"}]}
         mock_amplify_client.get_model_structure.return_value = model_structure
-        orchestrator.field_parser.parse_model_structure = MagicMock(return_value={"parsed": True})
+        orchestrator.field_parser.parse_model_structure = MagicMock(return_value={"fields": [{"name": "id"}]})
 
         orchestrator._get_parsed_model_structure("TestModel")
 
@@ -339,12 +339,110 @@ class TestGetParsedModelStructure:
     def test_parses_model_structure(self, orchestrator, mock_field_parser):
         model_structure = {"fields": [{"name": "id"}]}
         orchestrator.amplify_client.get_model_structure = MagicMock(return_value=model_structure)
-        mock_field_parser.parse_model_structure = MagicMock(return_value={"parsed": True})
+        expected_result = {"fields": [{"name": "id"}]}
+        mock_field_parser.parse_model_structure = MagicMock(return_value=expected_result)
 
         result = orchestrator._get_parsed_model_structure("TestModel")
 
         mock_field_parser.parse_model_structure.assert_called_once_with(model_structure)
-        assert result == {"parsed": True}
+        assert result == expected_result
+
+    def test_returns_parsed_structure_for_simple_model(self, orchestrator, mock_amplify_client, mock_field_parser):
+        raw_structure = {"name": "SimpleModel"}
+        parsed_structure = {
+            "name": "SimpleModel",
+            "fields": [{"name": "date", "type": "AWSDate", "is_custom_type": False}],
+        }
+        mock_amplify_client.get_model_structure.return_value = raw_structure
+        mock_field_parser.parse_model_structure.return_value = parsed_structure
+
+        result = orchestrator._get_parsed_model_structure("SimpleModel")
+
+        assert result == parsed_structure
+
+    def test_embeds_custom_type_sub_fields_into_field(self, orchestrator, mock_amplify_client, mock_field_parser):
+        observation_raw = {"name": "Observation"}
+        individual_group_raw = {"name": "IndividualGroup"}
+
+        mock_amplify_client.get_model_structure.side_effect = [
+            observation_raw,
+            individual_group_raw,
+        ]
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                    {"name": "date", "type": "AWSDate", "is_custom_type": False},
+                ],
+            },
+            {
+                "name": "IndividualGroup",
+                "fields": [
+                    {"name": "length", "type": "Float", "is_required": False},
+                    {"name": "stage", "type": "Stage", "is_required": False},
+                ],
+            },
+        ]
+
+        result = orchestrator._get_parsed_model_structure("Observation")
+
+        individual_groups_field = next(f for f in result["fields"] if f["name"] == "individualGroups")
+        assert "custom_type_fields" in individual_groups_field
+        assert individual_groups_field["custom_type_fields"] == [
+            {"name": "length", "type": "Float", "is_required": False},
+            {"name": "stage", "type": "Stage", "is_required": False},
+        ]
+
+    def test_non_custom_type_fields_are_not_enriched(self, orchestrator, mock_amplify_client, mock_field_parser):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.return_value = {
+            "name": "Observation",
+            "fields": [
+                {"name": "date", "type": "AWSDate", "is_custom_type": False},
+            ],
+        }
+
+        result = orchestrator._get_parsed_model_structure("Observation")
+
+        date_field = next(f for f in result["fields"] if f["name"] == "date")
+        assert "custom_type_fields" not in date_field
+
+    def test_calls_get_model_structure_for_each_custom_type(self, orchestrator, mock_amplify_client, mock_field_parser):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                ],
+            },
+            {"name": "IndividualGroup", "fields": []},
+        ]
+
+        orchestrator._get_parsed_model_structure("Observation")
+
+        assert mock_amplify_client.get_model_structure.call_count == 2
+        calls = mock_amplify_client.get_model_structure.call_args_list
+        assert calls[0][0][0] == "Observation"
+        assert calls[1][0][0] == "IndividualGroup"
+
+    def test_raises_clear_error_when_custom_type_not_in_schema(
+        self, orchestrator, mock_amplify_client, mock_field_parser
+    ):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                ],
+            },
+            ValueError("Introspection result cannot be empty - Invalid sheet name or model does not exist"),
+        ]
+
+        with pytest.raises(ValueError, match="IndividualGroup"):
+            orchestrator._get_parsed_model_structure("Observation")
 
 
 class TestDisplaySummary:

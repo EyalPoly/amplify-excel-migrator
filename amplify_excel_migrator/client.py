@@ -58,6 +58,12 @@ class AmplifyClient:
                 continue
             if field["is_scalar"] or field["is_enum"] or field["is_id"]:
                 fields.append(field["name"])
+            elif field.get("is_custom_type"):
+                custom_raw = self.get_model_structure(field["type"])
+                custom_parsed = field_parser.parse_model_structure(custom_raw)
+                sub_fields = [f["name"] for f in custom_parsed["fields"] if f.get("is_scalar") or f.get("is_enum")]
+                if sub_fields:
+                    fields.append(f"{field['name']} {{ {' '.join(sub_fields)} }}")
 
         records = self._executor.get_records(model_name, primary_field, is_secondary_index, fields=fields)
 

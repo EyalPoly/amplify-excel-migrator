@@ -228,8 +228,11 @@ class FieldParser:
                     continue
 
                 parsed_value = self.parse_field_input(custom_field, custom_field_name, value)
-                if parsed_value is not None:
-                    obj[custom_field_name] = parsed_value
+                if parsed_value is None:
+                    raise ValueError(
+                        f"'{custom_field_name}' could not be parsed as {custom_field['type']} (value: '{value}')"
+                    )
+                obj[custom_field_name] = parsed_value
 
             if obj:
                 custom_type_objects.append(obj)

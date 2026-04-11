@@ -1,6 +1,7 @@
 """Tests for FieldParser class"""
 
 import pytest
+import pandas as pd
 from amplify_excel_migrator.schema import FieldParser
 
 
@@ -794,3 +795,68 @@ class TestParseScalarArray:
         result = parser.parse_scalar_array(field, "statuses", "active, pending, completed")
 
         assert result == ["ACTIVE", "PENDING", "COMPLETED"]
+
+
+class TestBuildCustomTypeFromColumns:
+    """Tests for build_custom_type_from_columns and its error handling"""
+
+    def test_builds_single_object_from_valid_value(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "length", "type": "Float", "is_required": False, "is_enum": False, "is_scalar": True}
+        ]
+        row = pd.Series({"length": "80.5"})
+
+        result = parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup")
+
+        assert result == [{"length": 80.5}]
+
+    def test_dash_notation_creates_two_objects(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "length", "type": "Float", "is_required": False, "is_enum": False, "is_scalar": True}
+        ]
+        row = pd.Series({"length": "80-130"})
+
+        result = parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup")
+
+        assert result is not None
+        assert len(result) == 2
+        assert result[0]["length"] == 80
+        assert result[1]["length"] == 130
+
+    def test_returns_none_when_all_sub_fields_absent(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "length", "type": "Float", "is_required": False, "is_enum": False, "is_scalar": True}
+        ]
+        row = pd.Series({})  # length column not present
+
+        result = parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup")
+
+        assert result is None
+
+    def test_raises_when_present_sub_field_value_fails_to_parse(self):
+        """A present value that fails to parse must raise, not silently drop."""
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "length", "type": "Float", "is_required": False, "is_enum": False, "is_scalar": True}
+        ]
+        row = pd.Series({"length": "abc"})  # "abc" cannot be parsed as Float
+
+        with pytest.raises(ValueError, match="'length'"):
+            parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup")
+
+    def test_error_message_includes_type_and_value(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "length", "type": "Float", "is_required": False, "is_enum": False, "is_scalar": True}
+        ]
+        row = pd.Series({"length": "not_a_number"})
+
+        with pytest.raises(ValueError) as exc_info:
+            parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup")
+
+        error = str(exc_info.value)
+        assert "Float" in error
+        assert "not_a_number" in error

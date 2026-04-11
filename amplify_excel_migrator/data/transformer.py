@@ -87,6 +87,12 @@ class DataTransformer:
         if field["is_id"] and field_name not in row_dict and field["name"] in row_dict:
             field_name = field["name"]
 
+        if field.get("is_custom_type"):
+            custom_type_fields = field.get("custom_type_fields", [])
+            return self.field_parser.build_custom_type_from_columns(
+                pd.Series(row_dict), custom_type_fields, field["type"]
+            )
+
         if field_name not in row_dict or pd.isna(row_dict[field_name]):
             if field["is_required"]:
                 raise ValueError(f"Required field '{field_name}' is missing")

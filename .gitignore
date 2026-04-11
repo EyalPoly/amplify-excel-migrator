@@ -28,3 +28,6 @@ var/
 *.xls
 *.xlsx
 *.csv
+
+# Superpowers planning docs
+docs/superpowers/
