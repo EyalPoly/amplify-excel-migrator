@@ -126,7 +126,15 @@ class MigrationOrchestrator:
 
     def _get_parsed_model_structure(self, sheet_name: str) -> Dict[str, Any]:
         model_structure = self.amplify_client.get_model_structure(sheet_name)
-        return self.field_parser.parse_model_structure(model_structure)
+        parsed_structure = self.field_parser.parse_model_structure(model_structure)
+
+        for field in parsed_structure["fields"]:
+            if field.get("is_custom_type"):
+                custom_type_raw = self.amplify_client.get_model_structure(field["type"])
+                custom_type_parsed = self.field_parser.parse_model_structure(custom_type_raw)
+                field["custom_type_fields"] = custom_type_parsed["fields"]
+
+        return parsed_structure
 
     def _display_summary(self, sheets_processed: int, total_success: int) -> None:
         failures_by_sheet = self.failure_tracker.get_failures_by_sheet()

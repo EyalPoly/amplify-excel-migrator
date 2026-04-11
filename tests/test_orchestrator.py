@@ -412,3 +412,87 @@ class TestDisplaySummary:
         orchestrator._display_summary(1, 5)
 
         mock_failure_tracker.export_to_excel.assert_not_called()
+
+
+class TestGetParsedModelStructure:
+    """Test _get_parsed_model_structure enriches custom type fields with sub-fields."""
+
+    def test_returns_parsed_structure_for_simple_model(self, orchestrator, mock_amplify_client, mock_field_parser):
+        raw_structure = {"name": "SimpleModel"}
+        parsed_structure = {
+            "name": "SimpleModel",
+            "fields": [{"name": "date", "type": "AWSDate", "is_custom_type": False}],
+        }
+        mock_amplify_client.get_model_structure.return_value = raw_structure
+        mock_field_parser.parse_model_structure.return_value = parsed_structure
+
+        result = orchestrator._get_parsed_model_structure("SimpleModel")
+
+        assert result == parsed_structure
+
+    def test_embeds_custom_type_sub_fields_into_field(self, orchestrator, mock_amplify_client, mock_field_parser):
+        observation_raw = {"name": "Observation"}
+        individual_group_raw = {"name": "IndividualGroup"}
+
+        mock_amplify_client.get_model_structure.side_effect = [
+            observation_raw,
+            individual_group_raw,
+        ]
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                    {"name": "date", "type": "AWSDate", "is_custom_type": False},
+                ],
+            },
+            {
+                "name": "IndividualGroup",
+                "fields": [
+                    {"name": "length", "type": "Float", "is_required": False},
+                    {"name": "stage", "type": "Stage", "is_required": False},
+                ],
+            },
+        ]
+
+        result = orchestrator._get_parsed_model_structure("Observation")
+
+        individual_groups_field = next(f for f in result["fields"] if f["name"] == "individualGroups")
+        assert "custom_type_fields" in individual_groups_field
+        assert individual_groups_field["custom_type_fields"] == [
+            {"name": "length", "type": "Float", "is_required": False},
+            {"name": "stage", "type": "Stage", "is_required": False},
+        ]
+
+    def test_non_custom_type_fields_are_not_enriched(self, orchestrator, mock_amplify_client, mock_field_parser):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.return_value = {
+            "name": "Observation",
+            "fields": [
+                {"name": "date", "type": "AWSDate", "is_custom_type": False},
+            ],
+        }
+
+        result = orchestrator._get_parsed_model_structure("Observation")
+
+        date_field = next(f for f in result["fields"] if f["name"] == "date")
+        assert "custom_type_fields" not in date_field
+
+    def test_calls_get_model_structure_for_each_custom_type(self, orchestrator, mock_amplify_client, mock_field_parser):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                ],
+            },
+            {"name": "IndividualGroup", "fields": []},
+        ]
+
+        orchestrator._get_parsed_model_structure("Observation")
+
+        assert mock_amplify_client.get_model_structure.call_count == 2
+        calls = mock_amplify_client.get_model_structure.call_args_list
+        assert calls[0][0][0] == "Observation"
+        assert calls[1][0][0] == "IndividualGroup"
