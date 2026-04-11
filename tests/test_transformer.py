@@ -721,6 +721,106 @@ class TestParseInput:
 
         assert result is False
 
+    def test_calls_build_custom_type_for_custom_type_field(self, transformer, mock_field_parser):
+        """is_custom_type field is handled by build_custom_type_from_columns, not parse_field_input."""
+        row_dict = {"length": "80.5"}
+        custom_type_fields = [{"name": "length", "type": "Float", "is_required": False}]
+        field = {
+            "name": "individualGroups",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": custom_type_fields,
+        }
+        mock_field_parser.build_custom_type_from_columns.return_value = [{"length": 80.5}]
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result == [{"length": 80.5}]
+
+    def test_passes_pd_series_to_build_custom_type(self, transformer, mock_field_parser):
+        """build_custom_type_from_columns must receive a pd.Series, not a dict."""
+        row_dict = {"length": "80.5"}
+        custom_type_fields = [{"name": "length", "type": "Float", "is_required": False}]
+        field = {
+            "name": "individualGroups",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": custom_type_fields,
+        }
+        mock_field_parser.build_custom_type_from_columns.return_value = [{"length": 80.5}]
+
+        transformer.parse_input(row_dict, field, {})
+
+        call_args = mock_field_parser.build_custom_type_from_columns.call_args
+        assert isinstance(call_args[0][0], pd.Series)
+
+    def test_custom_type_returns_none_when_all_sub_columns_absent(self, transformer, mock_field_parser):
+        """When all sub-columns are absent, build_custom_type_from_columns returns None."""
+        row_dict = {}  # no individualGroups sub-columns present
+        field = {
+            "name": "individualGroups",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": [],
+        }
+        mock_field_parser.build_custom_type_from_columns.return_value = None
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result is None
+
+    def test_custom_type_error_propagates_from_build_custom_type(self, transformer, mock_field_parser):
+        """ValueError from build_custom_type_from_columns propagates out of parse_input."""
+        row_dict = {"length": "bad"}
+        field = {
+            "name": "individualGroups",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": [],
+        }
+        mock_field_parser.build_custom_type_from_columns.side_effect = ValueError(
+            "'length' could not be parsed as Float (value: 'bad')"
+        )
+
+        with pytest.raises(ValueError, match="'length'"):
+            transformer.parse_input(row_dict, field, {})
+
+    def test_custom_type_does_not_require_field_name_in_row_dict(self, transformer, mock_field_parser):
+        """Custom type fields span multiple columns — the field name itself is never a row key."""
+        # row_dict has sub-columns but NOT "individualGroups" as a key
+        row_dict = {"length": "80.5", "stage": "ADULT"}
+        field = {
+            "name": "individualGroups",
+            "is_id": False,
+            "is_required": False,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": [],
+        }
+        mock_field_parser.build_custom_type_from_columns.return_value = [{"length": 80.5, "stage": "ADULT"}]
+
+        result = transformer.parse_input(row_dict, field, {})
+
+        assert result == [{"length": 80.5, "stage": "ADULT"}]
+
 
 class TestResolveForeignKey:
     """Test _resolve_foreign_key static method"""
