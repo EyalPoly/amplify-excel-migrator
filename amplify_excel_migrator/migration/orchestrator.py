@@ -130,9 +130,14 @@ class MigrationOrchestrator:
 
         for field in parsed_structure["fields"]:
             if field.get("is_custom_type"):
-                custom_type_raw = self.amplify_client.get_model_structure(field["type"])
-                custom_type_parsed = self.field_parser.parse_model_structure(custom_type_raw)
-                field["custom_type_fields"] = custom_type_parsed["fields"]
+                try:
+                    custom_type_raw = self.amplify_client.get_model_structure(field["type"])
+                    custom_type_parsed = self.field_parser.parse_model_structure(custom_type_raw)
+                    field["custom_type_fields"] = custom_type_parsed["fields"]
+                except ValueError:
+                    raise ValueError(
+                        f"Custom type '{field['type']}' not found in schema (referenced by '{sheet_name}')"
+                    )
 
         return parsed_structure
 

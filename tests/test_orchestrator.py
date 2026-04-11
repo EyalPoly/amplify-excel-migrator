@@ -427,6 +427,23 @@ class TestGetParsedModelStructure:
         assert calls[0][0][0] == "Observation"
         assert calls[1][0][0] == "IndividualGroup"
 
+    def test_raises_clear_error_when_custom_type_not_in_schema(
+        self, orchestrator, mock_amplify_client, mock_field_parser
+    ):
+        mock_amplify_client.get_model_structure.return_value = {"name": "Observation"}
+        mock_field_parser.parse_model_structure.side_effect = [
+            {
+                "name": "Observation",
+                "fields": [
+                    {"name": "individualGroups", "type": "IndividualGroup", "is_custom_type": True},
+                ],
+            },
+            ValueError("Introspection result cannot be empty - Invalid sheet name or model does not exist"),
+        ]
+
+        with pytest.raises(ValueError, match="IndividualGroup"):
+            orchestrator._get_parsed_model_structure("Observation")
+
 
 class TestDisplaySummary:
     """Test _display_summary method"""
