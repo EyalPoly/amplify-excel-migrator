@@ -668,6 +668,14 @@ class TestParseScalarArray:
 
         assert result == ["https://url1.com", "https://url2.com", "https://url3.com"]
 
+    def test_url_with_commas_not_split(self):
+        parser = FieldParser()
+        field = {"name": "urls", "type": "AWSURL", "is_list": True, "is_scalar": True}
+
+        result = parser.parse_scalar_array(field, "urls", "https://www.ynet.co.il/articles/0,7340,L-4753523,00.html")
+
+        assert result == ["https://www.ynet.co.il/articles/0,7340,L-4753523,00.html"]
+
     def test_parses_comma_separated(self):
         """Test parsing comma-separated values"""
         parser = FieldParser()

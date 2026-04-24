@@ -317,7 +317,8 @@ class FieldParser:
             values = [v.strip() for v in input_str.split(";") if v.strip()]
             return self._convert_array_elements(field, field_name, values)
 
-        if "," in input_str:
+        # Skip comma-splitting for URLs: commas appear legitimately inside URL paths
+        if "," in input_str and "://" not in input_str:
             values = [v.strip() for v in input_str.split(",") if v.strip()]
             return self._convert_array_elements(field, field_name, values)
 
