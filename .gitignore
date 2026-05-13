@@ -32,4 +32,4 @@ var/
 # Superpowers planning docs
 docs/superpowers/
 
-scripts/
+scripts/.worktrees/
