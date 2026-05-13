@@ -42,6 +42,14 @@ def cmd_show(args=None):
     print(f"User Pool ID:         {cached_config.get('user_pool_id', 'N/A')}")
     print(f"Client ID:            {cached_config.get('client_id', 'N/A')}")
     print(f"Admin Username:       {cached_config.get('username', 'N/A')}")
+    print(f"Fill unknown:         {cached_config.get('fill_unknown', False)}")
+    default_fk = cached_config.get("default_fk_values", {})
+    if default_fk:
+        print(f"Default FK values:")
+        for model, fk_id in default_fk.items():
+            print(f"  {model}: {fk_id}")
+    else:
+        print(f"Default FK values:    (none)")
     print("-" * 54)
     print(f"\n📍 Config location: {config_manager.config_path}")
     print(f"💡 Run 'amplify-migrator config' to update configuration.")
@@ -118,10 +126,12 @@ def cmd_migrate(args=None):
         return
 
     field_parser = FieldParser()
+    default_fk_values = cached_config.get("default_fk_values", {})
+    fill_unknown = cached_config.get("fill_unknown", False)
 
     orchestrator = MigrationOrchestrator(
         excel_reader=ExcelReader(excel_path),
-        data_transformer=DataTransformer(field_parser),
+        data_transformer=DataTransformer(field_parser, default_fk_values=default_fk_values, fill_unknown=fill_unknown),
         amplify_client=amplify_client,
         failure_tracker=FailureTracker(),
         progress_reporter=ProgressReporter(),
