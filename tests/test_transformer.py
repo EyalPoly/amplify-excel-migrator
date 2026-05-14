@@ -1085,3 +1085,43 @@ class TestFillUnknown:
         }
         with pytest.raises(ValueError, match="Required field 'reporter' is missing"):
             transformer.parse_input({}, fk_field, {})
+
+    def test_custom_type_required_field_filled_when_fill_unknown_true(self):
+        from amplify_excel_migrator.schema import FieldParser
+
+        transformer = DataTransformer(field_parser=FieldParser(), fill_unknown=True)
+        field = {
+            "name": "groups",
+            "is_id": False,
+            "is_required": True,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": [
+                {"name": "count", "type": "Int", "is_required": True, "is_enum": False, "is_scalar": True},
+                {"name": "note", "type": "String", "is_required": False, "is_enum": False, "is_scalar": True},
+            ],
+        }
+        # row has no 'count' column — fill_unknown should substitute 0
+        result = transformer.parse_input({}, field, {})
+        assert result == [{"count": 0}]
+
+    def test_custom_type_required_field_raises_when_fill_unknown_false(self):
+        from amplify_excel_migrator.schema import FieldParser
+
+        transformer = DataTransformer(field_parser=FieldParser(), fill_unknown=False)
+        field = {
+            "name": "groups",
+            "is_id": False,
+            "is_required": True,
+            "is_list": True,
+            "is_scalar": False,
+            "is_custom_type": True,
+            "type": "IndividualGroup",
+            "custom_type_fields": [
+                {"name": "count", "type": "Int", "is_required": True, "is_enum": False, "is_scalar": True},
+            ],
+        }
+        with pytest.raises(ValueError, match="count"):
+            transformer.parse_input({}, field, {})
