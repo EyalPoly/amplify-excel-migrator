@@ -104,7 +104,7 @@ class TestCmdConfig:
             self.config_path = test_config_file
             self._config = {}
 
-        # Mock all input prompts
+        # fill_unknown=no so the FK loop is skipped
         inputs = [
             "test.xlsx",
             "https://test.appsync-api.us-east-1.amazonaws.com/graphql",
@@ -112,6 +112,7 @@ class TestCmdConfig:
             "us-east-1_test",
             "test-client",
             "admin@test.com",
+            "no",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -140,6 +141,7 @@ class TestCmdConfig:
             "pool",
             "client",
             "user",
+            "no",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -162,8 +164,8 @@ class TestCmdConfig:
             self.config_path = test_config_file
             self._config = {}
 
-        # Press enter to accept all defaults (from cached config)
-        inputs = ["", "", "", "", "", ""]  # Empty strings use cached values
+        # sample_config has no fill_unknown so default is "no" — FK loop skipped
+        inputs = ["", "", "", "", "", "", ""]
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("builtins.input", side_effect=inputs):
@@ -173,6 +175,74 @@ class TestCmdConfig:
             saved_config = json.load(f)
             assert saved_config["excel_path"] == "test_data.xlsx"
             assert saved_config["region"] == "us-east-1"
+
+    def test_config_saves_default_fk_values(self, tmp_path):
+        """FK loop entries are saved under default_fk_values and do not wipe other keys."""
+        test_config_file = tmp_path / "config.json"
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = [
+            "test.xlsx",
+            "https://test.com",
+            "us-east-1",
+            "pool",
+            "client",
+            "user",
+            "yes",  # fill_unknown → triggers FK loop
+            "Reporter",  # FK loop: model name
+            "reporter-id",
+            "Site",  # FK loop: model name
+            "site-id",
+            "",  # FK loop: finish
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["default_fk_values"] == {"Reporter": "reporter-id", "Site": "site-id"}
+        assert saved["fill_unknown"] is True
+
+    def test_config_merges_existing_fk_values(self, tmp_path, sample_config):
+        """Re-running config preserves FK values not re-entered and updates those that are."""
+        test_config_file = tmp_path / "config.json"
+        existing = {**sample_config, "default_fk_values": {"Reporter": "old-id", "Site": "site-id"}}
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(test_config_file, "w") as f:
+            json.dump(existing, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",  # accept all defaults
+            "yes",  # fill_unknown → triggers FK loop
+            "Reporter",  # update existing
+            "new-reporter-id",
+            "",  # finish loop
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["default_fk_values"]["Reporter"] == "new-reporter-id"
+        assert saved["default_fk_values"]["Site"] == "site-id"
 
 
 class TestCmdMigrate:

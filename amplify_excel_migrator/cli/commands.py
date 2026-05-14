@@ -65,7 +65,10 @@ def cmd_config(args=None):
     config_manager = ConfigManager()
     cached_config = config_manager.load()
 
+    current_fill_unknown = "yes" if cached_config.get("fill_unknown", False) else "no"
+
     config = {
+        **cached_config,
         "excel_path": config_manager.prompt_for_value("Excel file path", cached_config.get("excel_path", "")),
         "api_endpoint": config_manager.prompt_for_value(
             "AWS Amplify API endpoint", cached_config.get("api_endpoint", "")
@@ -74,7 +77,27 @@ def cmd_config(args=None):
         "user_pool_id": config_manager.prompt_for_value("Cognito User Pool ID", cached_config.get("user_pool_id", "")),
         "client_id": config_manager.prompt_for_value("Cognito Client ID", cached_config.get("client_id", "")),
         "username": config_manager.prompt_for_value("Admin Username", cached_config.get("username", "")),
+        "fill_unknown": config_manager.prompt_for_value(
+            "Fill missing required fields with defaults (yes/no)", current_fill_unknown
+        )
+        .strip()
+        .lower()
+        == "yes",
     }
+
+    if config["fill_unknown"]:
+        print("\nFK fallback IDs (for missing required foreign keys):")
+        print("  Enter model name then ID, or press Enter to finish.")
+        default_fk_values = dict(cached_config.get("default_fk_values", {}))
+        while True:
+            model = input("  Model name (or Enter to finish): ").strip()
+            if not model:
+                break
+            current_id = default_fk_values.get(model, "")
+            fk_id = config_manager.prompt_for_value(f"  ID for {model}", current_id)
+            if fk_id:
+                default_fk_values[model] = fk_id
+        config["default_fk_values"] = default_fk_values
 
     config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
