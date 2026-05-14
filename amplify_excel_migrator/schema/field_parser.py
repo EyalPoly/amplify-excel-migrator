@@ -157,14 +157,14 @@ class FieldParser:
         return False
 
     def build_custom_type_from_columns(
-        self, row: pd.Series, custom_type_fields: list, custom_type_name: str
+        self, row: pd.Series, custom_type_fields: list, custom_type_name: str, fill_unknown: bool = False
     ) -> Optional[list]:
         """Build custom type objects from Excel columns, handling multi-value fields"""
 
         field_values, max_count = self._collect_custom_type_fields_values(row, custom_type_fields)
 
         custom_type_objects = self._build_custom_type_objects(
-            row, custom_type_fields, custom_type_name, field_values, max_count
+            row, custom_type_fields, custom_type_name, field_values, max_count, fill_unknown
         )
 
         return custom_type_objects if custom_type_objects else None
@@ -195,6 +195,21 @@ class FieldParser:
 
         return field_values, max_count
 
+    @staticmethod
+    def _default_for_field(field: dict) -> Any:
+        t = field["type"]
+        if t in ("Int", "Integer", "AWSTimestamp"):
+            return 0
+        if t == "Float":
+            return 0.0
+        if t == "Boolean":
+            return False
+        if t == "AWSDate":
+            return "1970-01-01"
+        if t == "AWSDateTime":
+            return "1970-01-01T00:00:00.000Z"
+        return "UNKNOWN"
+
     def _build_custom_type_objects(
         self,
         row: pd.Series,
@@ -202,6 +217,7 @@ class FieldParser:
         custom_type_name: str,
         field_values: Dict[str, list],
         max_count: int,
+        fill_unknown: bool = False,
     ) -> list:
         custom_type_objects = []
 
@@ -221,11 +237,15 @@ class FieldParser:
 
                 if value is None or pd.isna(value):
                     if custom_field["is_required"]:
-                        raise ValueError(
-                            f"Required field '{custom_field_name}' is missing in custom type '{custom_type_name}' "
-                            f"for row {row.name}, group {i + 1}"
-                        )
-                    continue
+                        if fill_unknown:
+                            value = self._default_for_field(custom_field)
+                        else:
+                            raise ValueError(
+                                f"Required field '{custom_field_name}' is missing in custom type '{custom_type_name}' "
+                                f"for row {row.name}, group {i + 1}"
+                            )
+                    else:
+                        continue
 
                 parsed_value = self.parse_field_input(custom_field, custom_field_name, value)
                 if parsed_value is None:

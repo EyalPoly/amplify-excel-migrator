@@ -97,7 +97,7 @@ class DataTransformer:
         if field.get("is_custom_type"):
             custom_type_fields = field.get("custom_type_fields", [])
             return self.field_parser.build_custom_type_from_columns(
-                pd.Series(row_dict), custom_type_fields, field["type"]
+                pd.Series(row_dict), custom_type_fields, field["type"], self.fill_unknown
             )
 
         if field_name not in row_dict or pd.isna(row_dict[field_name]):

@@ -868,3 +868,25 @@ class TestBuildCustomTypeFromColumns:
         error = str(exc_info.value)
         assert "Float" in error
         assert "not_a_number" in error
+
+    def test_fill_unknown_substitutes_default_for_missing_required_field(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "count", "type": "Int", "is_required": True, "is_enum": False, "is_scalar": True},
+            {"name": "note", "type": "String", "is_required": False, "is_enum": False, "is_scalar": True},
+        ]
+        row = pd.Series({})  # both fields missing
+
+        result = parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup", fill_unknown=True)
+
+        assert result == [{"count": 0}]  # Int default=0, optional 'note' skipped
+
+    def test_fill_unknown_false_still_raises_for_missing_required_field(self):
+        parser = FieldParser()
+        custom_type_fields = [
+            {"name": "count", "type": "Int", "is_required": True, "is_enum": False, "is_scalar": True},
+        ]
+        row = pd.Series({})
+
+        with pytest.raises(ValueError, match="count"):
+            parser.build_custom_type_from_columns(row, custom_type_fields, "IndividualGroup", fill_unknown=False)
