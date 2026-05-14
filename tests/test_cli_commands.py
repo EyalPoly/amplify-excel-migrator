@@ -112,6 +112,7 @@ class TestCmdConfig:
             "us-east-1_test",
             "test-client",
             "admin@test.com",
+            "no",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -140,6 +141,7 @@ class TestCmdConfig:
             "pool",
             "client",
             "user",
+            "no",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -163,7 +165,7 @@ class TestCmdConfig:
             self._config = {}
 
         # Press enter to accept all defaults (from cached config)
-        inputs = ["", "", "", "", "", ""]  # Empty strings use cached values
+        inputs = ["", "", "", "", "", "", ""]  # Empty strings use cached values
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("builtins.input", side_effect=inputs):
