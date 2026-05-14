@@ -234,6 +234,46 @@ When records fail to upload, the tool provides a robust recovery mechanism to he
 
 The tool tracks which records succeeded and failed, providing row-level context to help you quickly identify and resolve issues. Simply export the failed records, fix the errors in the Excel file, and re-run the migration with the corrected file.
 
+### Handling Records with Missing Data
+
+Sometimes records are genuinely incomplete — for example, some observations have no known reporter or photographer. Two config options let you migrate these records instead of failing them.
+
+#### Default FK values (for missing foreign keys)
+
+If a required FK field (e.g. `reporter`, `photographer`) is blank, configure a fallback ID to use instead of failing the record. First create a placeholder record in Amplify (e.g. a Reporter named "Unknown"), then add its Amplify-generated ID to your config:
+
+```json
+{
+  "default_fk_values": {
+    "Reporter": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "Photographer": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+  }
+}
+```
+
+Edit `~/.amplify-migrator/config.json` directly to add this block. Run `amplify-migrator show` to confirm it was picked up.
+
+#### Fill unknown (for missing required non-FK fields)
+
+If non-FK required fields are blank, set `fill_unknown` to `true` to substitute a type-appropriate placeholder instead of failing the record:
+
+| Field type | Placeholder |
+|------------|-------------|
+| `String`, `AWSEmail`, `AWSURL`, enum, … | `"UNKNOWN"` |
+| `Int`, `AWSTimestamp` | `0` |
+| `Float` | `0.0` |
+| `Boolean` | `false` |
+| `AWSDate` | `"1970-01-01"` |
+| `AWSDateTime` | `"1970-01-01T00:00:00.000Z"` |
+
+```json
+{
+  "fill_unknown": true
+}
+```
+
+Both options are off by default and designed for re-migration runs against the exported failed-records file, not for the initial clean migration.
+
 ## Troubleshooting
 
 ### Authentication & AWS Configuration

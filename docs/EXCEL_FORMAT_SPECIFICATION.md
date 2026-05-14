@@ -12,6 +12,7 @@ This document specifies the exact format requirements for Excel files used with 
 4. [Special Field Types](#special-field-types)
 5. [Data Formatting Rules](#data-formatting-rules)
 6. [Required vs Optional Fields](#required-vs-optional-fields)
+   - [Handling Missing Data](#handling-missing-data)
 7. [Validation and Error Handling](#validation-and-error-handling)
 8. [Complete Examples](#complete-examples)
 9. [Common Issues and Solutions](#common-issues-and-solutions)
@@ -134,6 +135,7 @@ The tool automatically converts common naming conventions:
 **Validation:**
 - **FK value doesn't exist:** Record is skipped and recorded as a failure
 - **No pre-fetched data for FK:** All records with that FK are skipped
+- **Required FK field is blank:** Record fails unless a `default_fk_values` fallback is configured (see [Handling Missing Data](#handling-missing-data))
 
 ### Array/List Fields
 
@@ -324,6 +326,33 @@ const schema = a.schema({
 });
 ```
 
+### Handling Missing Data
+
+If some records are genuinely incomplete, two config options let you migrate them instead of failing:
+
+**`default_fk_values`** — for missing required foreign keys, use a fallback Amplify record ID:
+
+```json
+{
+  "default_fk_values": {
+    "Reporter": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "Photographer": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+  }
+}
+```
+
+Create a placeholder record in Amplify first (e.g. a Reporter named "Unknown"), copy its ID, and add it here. Edit `~/.amplify-migrator/config.json` directly.
+
+**`fill_unknown`** — for missing required non-FK fields, substitute a typed placeholder:
+
+```json
+{ "fill_unknown": true }
+```
+
+Placeholders used: `"UNKNOWN"` for strings/enums, `0` for Int/Float, `false` for Boolean, `"1970-01-01"` for AWSDate, `"1970-01-01T00:00:00.000Z"` for AWSDateTime.
+
+Both options are off by default. See also the [README section on missing data](../README.md#handling-records-with-missing-data).
+
 ---
 
 ## Validation and Error Handling
@@ -446,6 +475,8 @@ Item 3:
 | `Column 'full_name' not found` | Field doesn't exist in schema | Check schema, column auto-converts `snake_case` → `camelCase` |
 | Including metadata fields | Auto-generated fields in Excel | Remove `id`, `createdAt`, `updatedAt`, `owner` columns |
 | Enum not matching | Case mismatch | Tool auto-converts to UPPERCASE, check enum exists in schema |
+| Required FK field is blank | Reporter/Photographer not known | Create an "Unknown" placeholder record in Amplify and add its ID to `default_fk_values` in config |
+| Many records fail for missing required fields | Incomplete data | Set `fill_unknown: true` in config to substitute placeholders (strings → `UNKNOWN`, numbers → `0`, etc.) |
 
 ---
 

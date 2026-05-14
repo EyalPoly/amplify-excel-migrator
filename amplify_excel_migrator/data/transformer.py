@@ -12,8 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class DataTransformer:
-    def __init__(self, field_parser: FieldParser):
+    def __init__(
+        self,
+        field_parser: FieldParser,
+        default_fk_values: Optional[Dict[str, str]] = None,
+        fill_unknown: bool = False,
+    ):
         self.field_parser = field_parser
+        self.default_fk_values = default_fk_values or {}
+        self.fill_unknown = fill_unknown
 
     def transform_rows_to_records(
         self,
@@ -95,6 +102,12 @@ class DataTransformer:
 
         if field_name not in row_dict or pd.isna(row_dict[field_name]):
             if field["is_required"]:
+                if field["is_id"] and self.default_fk_values:
+                    related_model = self._get_related_model(field)
+                    if related_model in self.default_fk_values:
+                        return self.default_fk_values[related_model]
+                elif self.fill_unknown and not field["is_id"]:
+                    return self._default_for_field(field)
                 raise ValueError(f"Required field '{field_name}' is missing")
             return None
 
@@ -111,14 +124,32 @@ class DataTransformer:
             return result
 
     @staticmethod
+    def _get_related_model(field: Dict[str, Any]) -> str:
+        if "related_model" in field:
+            return str(field["related_model"])
+        temp = str(field["name"])[:-2]
+        return temp[0].upper() + temp[1:]
+
+    @staticmethod
+    def _default_for_field(field: Dict[str, Any]) -> Any:
+        field_type = field["type"]
+        if field_type in ("Int", "Integer", "AWSTimestamp"):
+            return 0
+        if field_type == "Float":
+            return 0.0
+        if field_type == "Boolean":
+            return False
+        if field_type == "AWSDate":
+            return "1970-01-01"
+        if field_type == "AWSDateTime":
+            return "1970-01-01T00:00:00.000Z"
+        return "UNKNOWN"
+
+    @staticmethod
     def _resolve_foreign_key(
         field: Dict[str, Any], value: Any, fk_lookup_cache: Dict[str, Dict[str, Any]]
     ) -> Optional[str]:
-        if "related_model" in field:
-            related_model = field["related_model"]
-        else:
-            related_model = (temp := field["name"][:-2])[0].upper() + temp[1:]
-
+        related_model = DataTransformer._get_related_model(field)
         column_name = field["name"][:-2] if field["name"].endswith("Id") else field["name"]
 
         if related_model in fk_lookup_cache:

@@ -946,3 +946,142 @@ class TestToCamelCase:
     def test_handles_consecutive_separators(self, transformer):
         assert transformer.to_camel_case("first__name") == "firstName"
         assert transformer.to_camel_case("last--name") == "lastName"
+
+
+class TestDefaultFkValues:
+    """Test default_fk_values fallback for missing required FK fields."""
+
+    def _fk_field(self, name="reporterId", related_model="Reporter"):
+        return {
+            "name": name,
+            "is_id": True,
+            "is_required": True,
+            "related_model": related_model,
+            "is_list": False,
+            "is_scalar": False,
+            "is_custom_type": False,
+        }
+
+    def test_uses_default_fk_id_when_fk_field_is_missing(self, mock_field_parser):
+        transformer = DataTransformer(
+            field_parser=mock_field_parser,
+            default_fk_values={"Reporter": "default-reporter-id"},
+        )
+        result = transformer.parse_input({}, self._fk_field(), {})
+        assert result == "default-reporter-id"
+
+    def test_uses_default_fk_id_when_fk_field_is_nan(self, mock_field_parser):
+        transformer = DataTransformer(
+            field_parser=mock_field_parser,
+            default_fk_values={"Reporter": "default-reporter-id"},
+        )
+        result = transformer.parse_input({"reporter": float("nan")}, self._fk_field(), {})
+        assert result == "default-reporter-id"
+
+    def test_raises_when_fk_missing_and_model_not_in_defaults(self, mock_field_parser):
+        transformer = DataTransformer(
+            field_parser=mock_field_parser,
+            default_fk_values={"Photographer": "photographer-id"},
+        )
+        with pytest.raises(ValueError, match="Required field 'reporter' is missing"):
+            transformer.parse_input({}, self._fk_field(), {})
+
+    def test_raises_when_fk_missing_and_no_defaults_configured(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser)
+        with pytest.raises(ValueError, match="Required field 'reporter' is missing"):
+            transformer.parse_input({}, self._fk_field(), {})
+
+    def test_infers_related_model_from_field_name_when_no_related_model_key(self, mock_field_parser):
+        field = {
+            "name": "photographerId",
+            "is_id": True,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": False,
+            "is_custom_type": False,
+        }
+        transformer = DataTransformer(
+            field_parser=mock_field_parser,
+            default_fk_values={"Photographer": "default-photographer-id"},
+        )
+        result = transformer.parse_input({}, field, {})
+        assert result == "default-photographer-id"
+
+    def test_normal_fk_lookup_still_works_when_value_is_present(self, mock_field_parser):
+        transformer = DataTransformer(
+            field_parser=mock_field_parser,
+            default_fk_values={"Reporter": "default-reporter-id"},
+        )
+        mock_field_parser.clean_input.return_value = "Jane"
+        fk_cache = {"Reporter": {"lookup": {"Jane": "real-reporter-id"}}}
+        result = transformer.parse_input({"reporter": "Jane"}, self._fk_field(), fk_cache)
+        assert result == "real-reporter-id"
+
+
+class TestFillUnknown:
+    """Test fill_unknown fallback for missing required non-FK fields."""
+
+    def _field(self, name, field_type, *, is_enum=False):
+        return {
+            "name": name,
+            "is_id": False,
+            "is_required": True,
+            "is_list": False,
+            "is_scalar": True,
+            "is_custom_type": False,
+            "is_enum": is_enum,
+            "type": field_type,
+        }
+
+    def test_string_field_returns_unknown(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("title", "String"), {})
+        assert result == "UNKNOWN"
+
+    def test_int_field_returns_zero(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("count", "Int"), {})
+        assert result == 0
+
+    def test_float_field_returns_zero(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("depth", "Float"), {})
+        assert result == 0.0
+
+    def test_boolean_field_returns_false(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("active", "Boolean"), {})
+        assert result is False
+
+    def test_aws_date_field_returns_epoch(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("date", "AWSDate"), {})
+        assert result == "1970-01-01"
+
+    def test_aws_datetime_field_returns_epoch(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("createdAt", "AWSDateTime"), {})
+        assert result == "1970-01-01T00:00:00.000Z"
+
+    def test_enum_field_returns_unknown(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        result = transformer.parse_input({}, self._field("status", "Status", is_enum=True), {})
+        assert result == "UNKNOWN"
+
+    def test_raises_when_fill_unknown_is_false(self, transformer):
+        with pytest.raises(ValueError, match="Required field 'title' is missing"):
+            transformer.parse_input({}, self._field("title", "String"), {})
+
+    def test_fk_field_still_raises_even_when_fill_unknown_is_true(self, mock_field_parser):
+        transformer = DataTransformer(field_parser=mock_field_parser, fill_unknown=True)
+        fk_field = {
+            "name": "reporterId",
+            "is_id": True,
+            "is_required": True,
+            "related_model": "Reporter",
+            "is_list": False,
+            "is_scalar": False,
+            "is_custom_type": False,
+        }
+        with pytest.raises(ValueError, match="Required field 'reporter' is missing"):
+            transformer.parse_input({}, fk_field, {})

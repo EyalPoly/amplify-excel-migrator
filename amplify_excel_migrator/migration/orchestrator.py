@@ -102,6 +102,7 @@ class MigrationOrchestrator:
         parsed_model_structure: Dict[str, Any],
         sheet_name: str,
     ) -> tuple[list[Any], Dict[str, Dict]]:
+        df.drop(columns=["ERROR"], inplace=True, errors="ignore")
         df.columns = [self.data_transformer.to_camel_case(c) for c in df.columns]
         primary_field, _, _ = self.amplify_client.get_primary_field_name(sheet_name, parsed_model_structure)
 
