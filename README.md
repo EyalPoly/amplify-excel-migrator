@@ -47,6 +47,8 @@ This will prompt you for:
 - Cognito User Pool ID
 - Cognito Client ID
 - Admin username
+- Whether to fill missing required fields with defaults (`fill_unknown`)
+- If `fill_unknown` is enabled: FK fallback IDs — enter model name → ID pairs, press Enter on an empty model name to finish
 
 Configuration is saved to `~/.amplify-migrator/config.json`
 
@@ -238,24 +240,9 @@ The tool tracks which records succeeded and failed, providing row-level context 
 
 Sometimes records are genuinely incomplete — for example, some observations have no known reporter or photographer. Two config options let you migrate these records instead of failing them.
 
-#### Default FK values (for missing foreign keys)
-
-If a required FK field (e.g. `reporter`, `photographer`) is blank, configure a fallback ID to use instead of failing the record. First create a placeholder record in Amplify (e.g. a Reporter named "Unknown"), then add its Amplify-generated ID to your config:
-
-```json
-{
-  "default_fk_values": {
-    "Reporter": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "Photographer": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
-  }
-}
-```
-
-Edit `~/.amplify-migrator/config.json` directly to add this block. Run `amplify-migrator show` to confirm it was picked up.
-
 #### Fill unknown (for missing required non-FK fields)
 
-If non-FK required fields are blank, set `fill_unknown` to `true` to substitute a type-appropriate placeholder instead of failing the record:
+If non-FK required fields are blank, enable `fill_unknown` via `amplify-migrator config` (answer `yes` when prompted) to substitute a type-appropriate placeholder instead of failing the record:
 
 | Field type | Placeholder |
 |------------|-------------|
@@ -266,11 +253,14 @@ If non-FK required fields are blank, set `fill_unknown` to `true` to substitute 
 | `AWSDate` | `"1970-01-01"` |
 | `AWSDateTime` | `"1970-01-01T00:00:00.000Z"` |
 
-```json
-{
-  "fill_unknown": true
-}
-```
+#### Default FK values (for missing foreign keys)
+
+If a required FK field (e.g. `reporter`, `photographer`) is blank, configure a fallback ID so the record is linked to a placeholder instead of failing. Steps:
+
+1. Create a placeholder record in Amplify for each model (e.g. a Reporter named "Unknown") — you can use the local helper script `scripts/create_placeholders.py` to do this.
+2. Run `amplify-migrator config`, answer `yes` to `fill_unknown`, then enter each model name and its placeholder ID when prompted.
+
+Run `amplify-migrator show` to confirm everything was picked up.
 
 Both options are off by default and designed for re-migration runs against the exported failed-records file, not for the initial clean migration.
 
