@@ -330,26 +330,23 @@ const schema = a.schema({
 
 If some records are genuinely incomplete, two config options let you migrate them instead of failing:
 
-**`default_fk_values`** — for missing required foreign keys, use a fallback Amplify record ID:
+**`fill_unknown`** — for missing required non-FK fields, substitute a typed placeholder. Enable via `amplify-migrator config` (answer `yes` when prompted):
 
-```json
-{
-  "default_fk_values": {
-    "Reporter": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "Photographer": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
-  }
-}
-```
+| Field type | Placeholder |
+|------------|-------------|
+| `String`, `AWSEmail`, `AWSURL`, enum, … | `"UNKNOWN"` |
+| `Int`, `AWSTimestamp` | `0` |
+| `Float` | `0.0` |
+| `Boolean` | `false` |
+| `AWSDate` | `"1970-01-01"` |
+| `AWSDateTime` | `"1970-01-01T00:00:00.000Z"` |
 
-Create a placeholder record in Amplify first (e.g. a Reporter named "Unknown"), copy its ID, and add it here. Edit `~/.amplify-migrator/config.json` directly.
+**`default_fk_values`** — for missing required foreign keys, use a fallback Amplify record ID. Steps:
 
-**`fill_unknown`** — for missing required non-FK fields, substitute a typed placeholder:
+1. Create a placeholder record in Amplify for each model (e.g. a Reporter named "Unknown").
+2. Run `amplify-migrator config`, answer `yes` to `fill_unknown`, then enter each model name and its placeholder ID when prompted.
 
-```json
-{ "fill_unknown": true }
-```
-
-Placeholders used: `"UNKNOWN"` for strings/enums, `0` for Int/Float, `false` for Boolean, `"1970-01-01"` for AWSDate, `"1970-01-01T00:00:00.000Z"` for AWSDateTime.
+Run `amplify-migrator show` to confirm everything was picked up.
 
 Both options are off by default. See also the [README section on missing data](../README.md#handling-records-with-missing-data).
 

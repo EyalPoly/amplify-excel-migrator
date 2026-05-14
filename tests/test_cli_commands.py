@@ -104,7 +104,7 @@ class TestCmdConfig:
             self.config_path = test_config_file
             self._config = {}
 
-        # Mock all input prompts (trailing "" exits the FK loop)
+        # fill_unknown=no so the FK loop is skipped
         inputs = [
             "test.xlsx",
             "https://test.appsync-api.us-east-1.amazonaws.com/graphql",
@@ -113,7 +113,6 @@ class TestCmdConfig:
             "test-client",
             "admin@test.com",
             "no",
-            "",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -143,7 +142,6 @@ class TestCmdConfig:
             "client",
             "user",
             "no",
-            "",
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -166,8 +164,8 @@ class TestCmdConfig:
             self.config_path = test_config_file
             self._config = {}
 
-        # Press enter to accept all defaults; trailing "" exits the FK loop
-        inputs = ["", "", "", "", "", "", "", ""]
+        # sample_config has no fill_unknown so default is "no" — FK loop skipped
+        inputs = ["", "", "", "", "", "", ""]
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("builtins.input", side_effect=inputs):
@@ -193,11 +191,11 @@ class TestCmdConfig:
             "pool",
             "client",
             "user",
-            "no",  # fill_unknown
+            "yes",  # fill_unknown → triggers FK loop
             "Reporter",  # FK loop: model name
-            "reporter-id",  # FK loop: ID
+            "reporter-id",
             "Site",  # FK loop: model name
-            "site-id",  # FK loop: ID
+            "site-id",
             "",  # FK loop: finish
         ]
 
@@ -209,7 +207,7 @@ class TestCmdConfig:
             saved = json.load(f)
 
         assert saved["default_fk_values"] == {"Reporter": "reporter-id", "Site": "site-id"}
-        assert saved["fill_unknown"] is False
+        assert saved["fill_unknown"] is True
 
     def test_config_merges_existing_fk_values(self, tmp_path, sample_config):
         """Re-running config preserves FK values not re-entered and updates those that are."""
@@ -230,7 +228,7 @@ class TestCmdConfig:
             "",
             "",
             "",  # accept all defaults
-            "",  # fill_unknown default
+            "yes",  # fill_unknown → triggers FK loop
             "Reporter",  # update existing
             "new-reporter-id",
             "",  # finish loop
