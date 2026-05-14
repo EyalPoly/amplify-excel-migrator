@@ -85,6 +85,19 @@ def cmd_config(args=None):
         == "yes",
     }
 
+    print("\nFK fallback IDs (for missing required foreign keys):")
+    print("  Enter model name then ID, or press Enter to finish.")
+    default_fk_values = dict(cached_config.get("default_fk_values", {}))
+    while True:
+        model = input(f"  Model name (or Enter to finish): ").strip()
+        if not model:
+            break
+        current_id = default_fk_values.get(model, "")
+        fk_id = config_manager.prompt_for_value(f"  ID for {model}", current_id)
+        if fk_id:
+            default_fk_values[model] = fk_id
+    config["default_fk_values"] = default_fk_values
+
     config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
     print(f"💡 You can now run 'amplify-migrator migrate' to start the migration.")
