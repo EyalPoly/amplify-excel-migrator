@@ -269,14 +269,18 @@ class QueryExecutor:
         is_secondary_index: bool,
         record: Dict,
         field_type: str = "String",
+        composite_fields: Optional[List[str]] = None,
     ) -> Optional[Dict]:
         context = f"{model_name}: {primary_field}={value}"
+        composite_fields = composite_fields or []
+        resolved_keys = self._resolve_composite_keys(composite_fields, record)
+        fetch_fields = ["id"] + resolved_keys
 
         if is_secondary_index:
             query = QueryBuilder.build_secondary_index_query(
                 model_name,
                 primary_field,
-                fields=["id"],
+                fields=fetch_fields,
                 field_type=field_type,
                 with_pagination=False,
             )
@@ -286,15 +290,18 @@ class QueryExecutor:
             result = await self.client.request_async(session, query, check_variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
-                if len(items) > 0:
-                    logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
-                    return None
+                for item in items:
+                    if self._item_matches_record(item, resolved_keys, record):
+                        logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
+                        return None
         else:
             query_name = self._get_list_query_name(model_name) or f"list{model_name}s"
             query = QueryBuilder.build_list_query_with_filter(
-                model_name, fields=["id"], with_pagination=False, query_name=query_name
+                model_name, fields=fetch_fields, with_pagination=False, query_name=query_name
             )
-            filter_input = QueryBuilder.build_filter_equals(primary_field, value)
+            conditions = [QueryBuilder.build_filter_equals(primary_field, value)]
+            conditions += [QueryBuilder.build_filter_equals(key, record.get(key)) for key in resolved_keys]
+            filter_input: Dict[str, Any] = conditions[0] if len(conditions) == 1 else {"and": conditions}
             check_variables = {"filter": filter_input}
 
             result = await self.client.request_async(session, query, check_variables, context)

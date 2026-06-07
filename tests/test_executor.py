@@ -70,6 +70,65 @@ class TestCompositeMatching:
         assert executor._item_matches_record({"id": "1"}, [], {}) is True
 
 
+class TestCheckRecordExistsComposite:
+    """Composite-aware existence checks via the secondary index"""
+
+    @pytest.mark.asyncio
+    async def test_not_duplicate_when_discriminator_differs(self, executor):
+        # Backend has sequentialId=5 with country c-med; incoming is c-red
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1", "countryId": "c-med"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=["country"],
+        )
+        assert result == record  # treated as new
+
+    @pytest.mark.asyncio
+    async def test_duplicate_when_discriminator_matches(self, executor):
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1", "countryId": "c-red"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=["country"],
+        )
+        assert result is None  # treated as duplicate
+
+    @pytest.mark.asyncio
+    async def test_single_field_behaviour_unchanged(self, executor):
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=None,
+        )
+        assert result is None  # any match is a duplicate when no composite fields
+
+
 class TestGetModelStructure:
     """Test get_model_structure method"""
 
