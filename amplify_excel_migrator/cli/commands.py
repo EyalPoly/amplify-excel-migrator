@@ -140,9 +140,12 @@ def cmd_migrate(args=None):
         region=region,
     )
 
+    composite_unique_fields = cached_config.get("composite_unique_fields", {})
+
     amplify_client = AmplifyClient(
         api_endpoint=api_endpoint,
         auth_provider=auth_provider,
+        composite_unique_fields=composite_unique_fields,
     )
 
     if not auth_provider.authenticate(username, password):
