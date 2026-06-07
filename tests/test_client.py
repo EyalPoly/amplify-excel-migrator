@@ -331,3 +331,13 @@ class TestGetModelRecords:
         assert "status" in fields
         assert "editorId" in fields
         assert "bio" not in fields
+
+
+def test_amplify_client_forwards_composite_unique_fields():
+    from amplify_excel_migrator.client import AmplifyClient
+
+    client = AmplifyClient(
+        api_endpoint="https://example.com/graphql",
+        composite_unique_fields={"Observation": ["country"]},
+    )
+    assert client._executor.composite_unique_fields == {"Observation": ["country"]}
