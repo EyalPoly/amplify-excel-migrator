@@ -244,6 +244,22 @@ class QueryExecutor:
 
         return None
 
+    @staticmethod
+    def _resolve_composite_keys(composite_fields: List[str], record: Dict) -> List[str]:
+        resolved = []
+        for field in composite_fields:
+            if field in record:
+                resolved.append(field)
+            elif f"{field}Id" in record:
+                resolved.append(f"{field}Id")
+            else:
+                raise ValueError(f"Composite key field '{field}' missing from record")
+        return resolved
+
+    @staticmethod
+    def _item_matches_record(item: Dict, resolved_keys: List[str], record: Dict) -> bool:
+        return all(item.get(key) == record.get(key) for key in resolved_keys)
+
     async def check_record_exists_async(
         self,
         session: aiohttp.ClientSession,

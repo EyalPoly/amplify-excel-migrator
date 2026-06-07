@@ -40,6 +40,36 @@ class TestQueryExecutorInit:
         assert executor.composite_unique_fields == {}
 
 
+class TestCompositeMatching:
+    """Test composite duplicate-key helpers"""
+
+    def test_resolve_keys_uses_id_suffix_when_present(self, executor):
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        assert executor._resolve_composite_keys(["country"], record) == ["countryId"]
+
+    def test_resolve_keys_uses_plain_name_when_present(self, executor):
+        record = {"sequentialId": 5, "country": "c-red"}
+        assert executor._resolve_composite_keys(["country"], record) == ["country"]
+
+    def test_resolve_keys_raises_when_field_missing(self, executor):
+        record = {"sequentialId": 5}
+        with pytest.raises(ValueError, match="country"):
+            executor._resolve_composite_keys(["country"], record)
+
+    def test_item_matches_when_all_keys_equal(self, executor):
+        record = {"countryId": "c-red"}
+        item = {"id": "1", "countryId": "c-red"}
+        assert executor._item_matches_record(item, ["countryId"], record) is True
+
+    def test_item_does_not_match_on_different_value(self, executor):
+        record = {"countryId": "c-red"}
+        item = {"id": "1", "countryId": "c-med"}
+        assert executor._item_matches_record(item, ["countryId"], record) is False
+
+    def test_empty_keys_always_match(self, executor):
+        assert executor._item_matches_record({"id": "1"}, [], {}) is True
+
+
 class TestGetModelStructure:
     """Test get_model_structure method"""
 
