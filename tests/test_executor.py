@@ -31,6 +31,103 @@ class TestQueryExecutorInit:
         executor = QueryExecutor(mock_client, batch_size=50)
         assert executor.batch_size == 50
 
+    def test_initializes_with_composite_unique_fields(self, mock_client):
+        executor = QueryExecutor(mock_client, composite_unique_fields={"Observation": ["country"]})
+        assert executor.composite_unique_fields == {"Observation": ["country"]}
+
+    def test_composite_unique_fields_defaults_to_empty_dict(self, mock_client):
+        executor = QueryExecutor(mock_client)
+        assert executor.composite_unique_fields == {}
+
+
+class TestCompositeMatching:
+    """Test composite duplicate-key helpers"""
+
+    def test_resolve_keys_uses_id_suffix_when_present(self, executor):
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        assert executor._resolve_composite_keys(["country"], record) == ["countryId"]
+
+    def test_resolve_keys_uses_plain_name_when_present(self, executor):
+        record = {"sequentialId": 5, "country": "c-red"}
+        assert executor._resolve_composite_keys(["country"], record) == ["country"]
+
+    def test_resolve_keys_raises_when_field_missing(self, executor):
+        record = {"sequentialId": 5}
+        with pytest.raises(ValueError, match="country"):
+            executor._resolve_composite_keys(["country"], record)
+
+    def test_item_matches_when_all_keys_equal(self, executor):
+        record = {"countryId": "c-red"}
+        item = {"id": "1", "countryId": "c-red"}
+        assert executor._item_matches_record(item, ["countryId"], record) is True
+
+    def test_item_does_not_match_on_different_value(self, executor):
+        record = {"countryId": "c-red"}
+        item = {"id": "1", "countryId": "c-med"}
+        assert executor._item_matches_record(item, ["countryId"], record) is False
+
+    def test_empty_keys_always_match(self, executor):
+        assert executor._item_matches_record({"id": "1"}, [], {}) is True
+
+
+class TestCheckRecordExistsComposite:
+    """Composite-aware existence checks via the secondary index"""
+
+    @pytest.mark.asyncio
+    async def test_not_duplicate_when_discriminator_differs(self, executor):
+        # Backend has sequentialId=5 with country c-med; incoming is c-red
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1", "countryId": "c-med"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=["country"],
+        )
+        assert result == record  # treated as new
+
+    @pytest.mark.asyncio
+    async def test_duplicate_when_discriminator_matches(self, executor):
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1", "countryId": "c-red"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=["country"],
+        )
+        assert result is None  # treated as duplicate
+
+    @pytest.mark.asyncio
+    async def test_single_field_behaviour_unchanged(self, executor):
+        executor.client.request_async = AsyncMock(
+            return_value={"data": {"listObservationBySequentialId": {"items": [{"id": "1"}]}}}
+        )
+        record = {"sequentialId": 5, "countryId": "c-red"}
+        result = await executor.check_record_exists_async(
+            session=MagicMock(),
+            model_name="Observation",
+            primary_field="sequentialId",
+            value=5,
+            is_secondary_index=True,
+            record=record,
+            field_type="Int",
+            composite_fields=None,
+        )
+        assert result is None  # any match is a duplicate when no composite fields
+
 
 class TestGetModelStructure:
     """Test get_model_structure method"""
@@ -281,6 +378,21 @@ class TestUpload:
 
         assert success == 0
         assert error == len(records)
+
+
+class TestUploadPassesCompositeFields:
+    def test_upload_looks_up_composite_fields_for_model(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, composite_unique_fields={"Observation": ["country"]})
+        executor.get_primary_field_name = MagicMock(return_value=("sequentialId", True, "Int"))
+        captured = {}
+
+        async def fake_batch(batch, model_name, primary_field, is_secondary_index, field_type, composite_fields):
+            captured["composite_fields"] = composite_fields
+            return (len(batch), 0, [])
+
+        executor.upload_batch_async = fake_batch
+        executor.upload([{"sequentialId": 1, "countryId": "c"}], "Observation", {"fields": []})
+        assert captured["composite_fields"] == ["country"]
 
 
 class TestBuildForeignKeyLookups:

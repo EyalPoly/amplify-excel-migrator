@@ -113,6 +113,7 @@ class TestCmdConfig:
             "test-client",
             "admin@test.com",
             "no",
+            "no",  # configure composite keys → decline
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -142,6 +143,7 @@ class TestCmdConfig:
             "client",
             "user",
             "no",
+            "no",  # configure composite keys → decline
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -165,7 +167,8 @@ class TestCmdConfig:
             self._config = {}
 
         # sample_config has no fill_unknown so default is "no" — FK loop skipped
-        inputs = ["", "", "", "", "", "", ""]
+        # final "" declines the composite-keys prompt (default "no")
+        inputs = ["", "", "", "", "", "", "", ""]
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("builtins.input", side_effect=inputs):
@@ -197,6 +200,7 @@ class TestCmdConfig:
             "Site",  # FK loop: model name
             "site-id",
             "",  # FK loop: finish
+            "no",  # configure composite keys → decline
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -232,6 +236,7 @@ class TestCmdConfig:
             "Reporter",  # update existing
             "new-reporter-id",
             "",  # finish loop
+            "no",  # configure composite keys → decline
         ]
 
         with patch.object(ConfigManager, "__init__", init_mock):
@@ -243,6 +248,68 @@ class TestCmdConfig:
 
         assert saved["default_fk_values"]["Reporter"] == "new-reporter-id"
         assert saved["default_fk_values"]["Site"] == "site-id"
+
+    def test_config_saves_composite_unique_fields(self, tmp_path):
+        """Composite-key loop entries are saved under composite_unique_fields."""
+        test_config_file = tmp_path / "config.json"
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = [
+            "test.xlsx",
+            "https://test.com",
+            "us-east-1",
+            "pool",
+            "client",
+            "user",
+            "no",  # fill_unknown → no FK loop
+            "yes",  # configure composite keys → triggers loop
+            "Observation",  # composite loop: model name
+            "country",  # fields (comma-separated)
+            "",  # composite loop: finish
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["composite_unique_fields"] == {"Observation": ["country"]}
+
+    def test_config_parses_multiple_composite_fields(self, tmp_path):
+        """Comma-separated fields are split and trimmed into a list."""
+        test_config_file = tmp_path / "config.json"
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = [
+            "test.xlsx",
+            "https://test.com",
+            "us-east-1",
+            "pool",
+            "client",
+            "user",
+            "no",  # fill_unknown
+            "yes",  # configure composite
+            "Observation",
+            "sequentialId, country",
+            "",
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["composite_unique_fields"]["Observation"] == ["sequentialId", "country"]
 
 
 class TestCmdMigrate:

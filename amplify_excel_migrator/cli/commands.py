@@ -50,6 +50,13 @@ def cmd_show(args=None):
             print(f"  {model}: {fk_id}")
     else:
         print(f"Default FK values:    (none)")
+    composite = cached_config.get("composite_unique_fields", {})
+    if composite:
+        print("Composite unique fields:")
+        for model, fields in composite.items():
+            print(f"  - {model}: {', '.join(fields)}")
+    else:
+        print("Composite unique fields: N/A")
     print("-" * 54)
     print(f"\n📍 Config location: {config_manager.config_path}")
     print(f"💡 Run 'amplify-migrator config' to update configuration.")
@@ -99,6 +106,28 @@ def cmd_config(args=None):
                 default_fk_values[model] = fk_id
         config["default_fk_values"] = default_fk_values
 
+    current_composite = "yes" if cached_config.get("composite_unique_fields") else "no"
+    configure_composite = (
+        config_manager.prompt_for_value("Configure composite duplicate-detection keys (yes/no)", current_composite)
+        .strip()
+        .lower()
+        == "yes"
+    )
+    if configure_composite:
+        print("\nComposite duplicate keys (extra fields that must also match to count as a duplicate):")
+        print("  Enter model name then comma-separated fields, or press Enter to finish.")
+        composite_unique_fields = dict(cached_config.get("composite_unique_fields", {}))
+        while True:
+            model = input("  Model name (or Enter to finish): ").strip()
+            if not model:
+                break
+            current_fields = ", ".join(composite_unique_fields.get(model, []))
+            raw = config_manager.prompt_for_value(f"  Fields for {model} (comma-separated)", current_fields)
+            fields = [f.strip() for f in raw.split(",") if f.strip()]
+            if fields:
+                composite_unique_fields[model] = fields
+        config["composite_unique_fields"] = composite_unique_fields
+
     config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
     print(f"💡 You can now run 'amplify-migrator migrate' to start the migration.")
@@ -140,9 +169,12 @@ def cmd_migrate(args=None):
         region=region,
     )
 
+    composite_unique_fields = cached_config.get("composite_unique_fields", {})
+
     amplify_client = AmplifyClient(
         api_endpoint=api_endpoint,
         auth_provider=auth_provider,
+        composite_unique_fields=composite_unique_fields,
     )
 
     if not auth_provider.authenticate(username, password):

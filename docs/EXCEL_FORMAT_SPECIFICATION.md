@@ -350,6 +350,20 @@ Run `amplify-migrator show` to confirm everything was picked up.
 
 Both options are off by default. See also the [README section on missing data](../README.md#handling-records-with-missing-data).
 
+### Composite duplicate detection
+
+By default a record is treated as an existing duplicate when another record shares the model's primary/secondary-index field. If that field value can legitimately repeat across groups (e.g. `sequentialId` reused per country), set **`composite_unique_fields`** so a record only counts as a duplicate when the listed discriminator fields also match:
+
+```json
+{
+  "composite_unique_fields": {
+    "Observation": ["country"]
+  }
+}
+```
+
+Configure it via `amplify-migrator config` (answer `yes` to "Configure composite duplicate-detection keys"). Field names accept either the relation name (`country`) or the FK column (`countryId`). Omit the key for unchanged single-field behaviour. See the [README section](../README.md#composite-duplicate-detection) for details.
+
 ---
 
 ## Validation and Error Handling

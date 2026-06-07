@@ -16,12 +16,17 @@ class AmplifyClient:
     and batch uploading. Delegates to GraphQLClient and QueryExecutor.
     """
 
-    def __init__(self, api_endpoint: str, auth_provider: Optional[AuthenticationProvider] = None):
+    def __init__(
+        self,
+        api_endpoint: str,
+        auth_provider: Optional[AuthenticationProvider] = None,
+        composite_unique_fields: Optional[Dict[str, List[str]]] = None,
+    ):
         self.api_endpoint = api_endpoint
         self._auth_provider = auth_provider
 
         self._client = GraphQLClient(api_endpoint, auth_provider)
-        self._executor = QueryExecutor(self._client, batch_size=20)
+        self._executor = QueryExecutor(self._client, batch_size=20, composite_unique_fields=composite_unique_fields)
 
     @property
     def auth_provider(self) -> Optional[AuthenticationProvider]:

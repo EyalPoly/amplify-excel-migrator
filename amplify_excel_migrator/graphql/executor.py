@@ -15,11 +15,17 @@ logger = logging.getLogger(__name__)
 
 
 class QueryExecutor:
-    def __init__(self, client: GraphQLClient, batch_size: int = 20):
+    def __init__(
+        self,
+        client: GraphQLClient,
+        batch_size: int = 20,
+        composite_unique_fields: Optional[Dict[str, List[str]]] = None,
+    ):
         self.client = client
         self.batch_size = batch_size
         self.records_cache: Dict[str, List[Dict]] = {}
         self.schema = SchemaIntrospector(client)
+        self.composite_unique_fields: Dict[str, List[str]] = composite_unique_fields or {}
 
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         return self.schema.get_model_structure(model_type)
@@ -238,6 +244,22 @@ class QueryExecutor:
 
         return None
 
+    @staticmethod
+    def _resolve_composite_keys(composite_fields: List[str], record: Dict) -> List[str]:
+        resolved = []
+        for field in composite_fields:
+            if field in record:
+                resolved.append(field)
+            elif f"{field}Id" in record:
+                resolved.append(f"{field}Id")
+            else:
+                raise ValueError(f"Composite key field '{field}' missing from record")
+        return resolved
+
+    @staticmethod
+    def _item_matches_record(item: Dict, resolved_keys: List[str], record: Dict) -> bool:
+        return all(item.get(key) == record.get(key) for key in resolved_keys)
+
     async def check_record_exists_async(
         self,
         session: aiohttp.ClientSession,
@@ -247,14 +269,18 @@ class QueryExecutor:
         is_secondary_index: bool,
         record: Dict,
         field_type: str = "String",
+        composite_fields: Optional[List[str]] = None,
     ) -> Optional[Dict]:
         context = f"{model_name}: {primary_field}={value}"
+        composite_fields = composite_fields or []
+        resolved_keys = self._resolve_composite_keys(composite_fields, record)
+        fetch_fields = ["id"] + resolved_keys
 
         if is_secondary_index:
             query = QueryBuilder.build_secondary_index_query(
                 model_name,
                 primary_field,
-                fields=["id"],
+                fields=fetch_fields,
                 field_type=field_type,
                 with_pagination=False,
             )
@@ -264,15 +290,18 @@ class QueryExecutor:
             result = await self.client.request_async(session, query, check_variables, context)
             if result and "data" in result:
                 items = result["data"].get(query_name, {}).get("items", [])
-                if len(items) > 0:
-                    logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
-                    return None
+                for item in items:
+                    if self._item_matches_record(item, resolved_keys, record):
+                        logger.warning(f'Record with {primary_field}="{value}" already exists in {model_name}')
+                        return None
         else:
             query_name = self._get_list_query_name(model_name) or f"list{model_name}s"
             query = QueryBuilder.build_list_query_with_filter(
-                model_name, fields=["id"], with_pagination=False, query_name=query_name
+                model_name, fields=fetch_fields, with_pagination=False, query_name=query_name
             )
-            filter_input = QueryBuilder.build_filter_equals(primary_field, value)
+            conditions = [QueryBuilder.build_filter_equals(primary_field, value)]
+            conditions += [QueryBuilder.build_filter_equals(key, record.get(key)) for key in resolved_keys]
+            filter_input: Dict[str, Any] = conditions[0] if len(conditions) == 1 else {"and": conditions}
             check_variables = {"filter": filter_input}
 
             result = await self.client.request_async(session, query, check_variables, context)
@@ -291,6 +320,7 @@ class QueryExecutor:
         primary_field: str,
         is_secondary_index: bool,
         field_type: str = "String",
+        composite_fields: Optional[List[str]] = None,
     ) -> tuple[int, int, List[Dict]]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
@@ -302,6 +332,7 @@ class QueryExecutor:
                     is_secondary_index,
                     record,
                     field_type,
+                    composite_fields,
                 )
                 for record in batch
             ]
@@ -374,12 +405,16 @@ class QueryExecutor:
             logger.error(f"Aborting upload for model {model_name}")
             return 0, len(records), []
 
+        composite_fields = self.composite_unique_fields.get(model_name, [])
+
         for i in range(0, len(records), self.batch_size):
             batch = records[i : i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
             batch_success, batch_error, batch_failed_records = asyncio.run(
-                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
+                self.upload_batch_async(
+                    batch, model_name, primary_field, is_secondary_index, field_type, composite_fields
+                )
             )
             success_count += batch_success
             error_count += batch_error
