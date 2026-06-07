@@ -4,8 +4,11 @@
 - When writing tests, ensure you cover edge cases and potential failure points
 - Strive for clarity and simplicity in your code; avoid unnecessary complexity
 - Refactor code when you see opportunities to improve structure or readability
-- Bump minor or major version numbers when you add new features or make breaking changes
 - Update README to reflect any changes made to functionality or usage
+
+# Versioning (see .github/workflows/publish.yml)
+- On PR merge to main, CI auto-bumps the PATCH version, tags, and publishes to PyPI. Never bump the patch manually — CI owns it.
+- For a feature (minor) or breaking change (major), bump `version` in setup.py by hand AND include `[skip bump]` in the PR title or a commit message, so CI doesn't add an extra patch on top.
 
 # Comments
 - Only add comments and docstrings when they are truly needed to explain why something is done a certain way, not what is being done. Code should be self-explanatory as much as possible.
