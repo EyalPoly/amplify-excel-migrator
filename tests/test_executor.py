@@ -31,6 +31,14 @@ class TestQueryExecutorInit:
         executor = QueryExecutor(mock_client, batch_size=50)
         assert executor.batch_size == 50
 
+    def test_initializes_with_composite_unique_fields(self, mock_client):
+        executor = QueryExecutor(mock_client, composite_unique_fields={"Observation": ["country"]})
+        assert executor.composite_unique_fields == {"Observation": ["country"]}
+
+    def test_composite_unique_fields_defaults_to_empty_dict(self, mock_client):
+        executor = QueryExecutor(mock_client)
+        assert executor.composite_unique_fields == {}
+
 
 class TestGetModelStructure:
     """Test get_model_structure method"""

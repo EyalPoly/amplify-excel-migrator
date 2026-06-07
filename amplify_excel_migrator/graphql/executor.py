@@ -15,11 +15,17 @@ logger = logging.getLogger(__name__)
 
 
 class QueryExecutor:
-    def __init__(self, client: GraphQLClient, batch_size: int = 20):
+    def __init__(
+        self,
+        client: GraphQLClient,
+        batch_size: int = 20,
+        composite_unique_fields: Optional[Dict[str, List[str]]] = None,
+    ):
         self.client = client
         self.batch_size = batch_size
         self.records_cache: Dict[str, List[Dict]] = {}
         self.schema = SchemaIntrospector(client)
+        self.composite_unique_fields: Dict[str, List[str]] = composite_unique_fields or {}
 
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         return self.schema.get_model_structure(model_type)
