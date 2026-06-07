@@ -320,6 +320,7 @@ class QueryExecutor:
         primary_field: str,
         is_secondary_index: bool,
         field_type: str = "String",
+        composite_fields: Optional[List[str]] = None,
     ) -> tuple[int, int, List[Dict]]:
         async with aiohttp.ClientSession() as session:
             duplicate_checks = [
@@ -331,6 +332,7 @@ class QueryExecutor:
                     is_secondary_index,
                     record,
                     field_type,
+                    composite_fields,
                 )
                 for record in batch
             ]
@@ -403,12 +405,16 @@ class QueryExecutor:
             logger.error(f"Aborting upload for model {model_name}")
             return 0, len(records), []
 
+        composite_fields = self.composite_unique_fields.get(model_name, [])
+
         for i in range(0, len(records), self.batch_size):
             batch = records[i : i + self.batch_size]
             logger.info(f"Uploading batch {i // self.batch_size + 1} / {num_of_batches} ({len(batch)} items)...")
 
             batch_success, batch_error, batch_failed_records = asyncio.run(
-                self.upload_batch_async(batch, model_name, primary_field, is_secondary_index, field_type)
+                self.upload_batch_async(
+                    batch, model_name, primary_field, is_secondary_index, field_type, composite_fields
+                )
             )
             success_count += batch_success
             error_count += batch_error

@@ -380,6 +380,21 @@ class TestUpload:
         assert error == len(records)
 
 
+class TestUploadPassesCompositeFields:
+    def test_upload_looks_up_composite_fields_for_model(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, composite_unique_fields={"Observation": ["country"]})
+        executor.get_primary_field_name = MagicMock(return_value=("sequentialId", True, "Int"))
+        captured = {}
+
+        async def fake_batch(batch, model_name, primary_field, is_secondary_index, field_type, composite_fields):
+            captured["composite_fields"] = composite_fields
+            return (len(batch), 0, [])
+
+        executor.upload_batch_async = fake_batch
+        executor.upload([{"sequentialId": 1, "countryId": "c"}], "Observation", {"fields": []})
+        assert captured["composite_fields"] == ["country"]
+
+
 class TestBuildForeignKeyLookups:
     """Test build_foreign_key_lookups method"""
 
