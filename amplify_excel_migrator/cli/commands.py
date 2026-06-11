@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -133,6 +134,82 @@ def cmd_config(args=None):
     print(f"💡 You can now run 'amplify-migrator migrate' to start the migration.")
 
 
+def _collect_failures_by_sheet(plan, result):
+    executed = {sheet_result.sheet_name: sheet_result for sheet_result in result.sheets}
+    failures_by_sheet = {}
+    for sheet_plan in plan.sheets:
+        if sheet_plan.status != "ready":
+            continue
+        if sheet_plan.sheet_name in executed:
+            failures_by_sheet[sheet_plan.sheet_name] = list(executed[sheet_plan.sheet_name].failures)
+        else:
+            failures_by_sheet[sheet_plan.sheet_name] = list(sheet_plan.parsing_failures)
+    return failures_by_sheet
+
+
+def run_interactive_migration(orchestrator, progress_reporter, excel_path):
+    plan = orchestrator.build_plan()
+
+    selected_sheets = set()
+    for sheet_plan in plan.sheets:
+        if sheet_plan.status == "skipped":
+            print(f"\n⚠️  Skipping sheet '{sheet_plan.sheet_name}': no matching model found in schema.")
+            continue
+        confirm = input(f"\nUpload {sheet_plan.record_count} records of {sheet_plan.sheet_name} to Amplify? (yes/no): ")
+        if confirm.lower() == "yes":
+            selected_sheets.add(sheet_plan.sheet_name)
+
+    result = orchestrator.execute(plan, selected_sheets=selected_sheets)
+
+    plan_by_name = {sheet_plan.sheet_name: sheet_plan for sheet_plan in plan.sheets}
+    for sheet_result in result.sheets:
+        sheet_plan = plan_by_name[sheet_result.sheet_name]
+        parsing_failures = len(sheet_plan.parsing_failures)
+        upload_failures = len(sheet_result.failures) - parsing_failures
+        progress_reporter.print_sheet_result(
+            sheet_name=sheet_result.sheet_name,
+            success_count=sheet_result.success_count,
+            total_rows=sheet_plan.total_rows,
+            parsing_failures=parsing_failures,
+            upload_failures=upload_failures,
+        )
+
+    _display_migration_summary(plan, result, excel_path, progress_reporter)
+
+
+def _display_migration_summary(plan, result, excel_path, progress_reporter):
+    failures_by_sheet = _collect_failures_by_sheet(plan, result)
+    summary_failures = {
+        sheet_name: [asdict(failure) for failure in failures] for sheet_name, failures in failures_by_sheet.items()
+    }
+
+    progress_reporter.print_migration_summary(len(plan.sheets), result.total_success, summary_failures)
+
+    if not any(failures_by_sheet.values()):
+        return
+
+    export_confirm = input("\nExport failed records to Excel? (yes/no): ")
+    if export_confirm.lower() != "yes":
+        print("Failed records export skipped.")
+        print("=" * 60)
+        return
+
+    tracker = FailureTracker.from_failures_by_sheet(failures_by_sheet)
+    failed_records_file = tracker.export_to_excel(excel_path)
+    if not failed_records_file:
+        return
+
+    print(f"📁 Failed records exported to: {failed_records_file}")
+    print("=" * 60)
+
+    update_config = input("\nUpdate config to use this failed records file for next run? (yes/no): ")
+    if update_config.lower() == "yes":
+        config_manager = ConfigManager()
+        config_manager.update({"excel_path": failed_records_file})
+        print(f"✅ Config updated! Next 'migrate' will use: {Path(failed_records_file).name}")
+        print("=" * 60)
+
+
 def cmd_migrate(args=None):
     print("""
     ╔════════════════════════════════════════════════════╗
@@ -188,14 +265,12 @@ def cmd_migrate(args=None):
         excel_reader=ExcelReader(excel_path),
         data_transformer=DataTransformer(field_parser, default_fk_values=default_fk_values, fill_unknown=fill_unknown),
         amplify_client=amplify_client,
-        failure_tracker=FailureTracker(),
-        progress_reporter=ProgressReporter(),
-        batch_uploader=BatchUploader(amplify_client),
         field_parser=field_parser,
+        batch_uploader=BatchUploader(amplify_client),
     )
 
     try:
-        orchestrator.run()
+        run_interactive_migration(orchestrator, ProgressReporter(), excel_path)
     except (FileNotFoundError, ConnectionError) as e:
         print(f"\n❌ {e}")
         sys.exit(1)
