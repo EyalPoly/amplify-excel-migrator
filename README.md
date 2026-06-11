@@ -119,6 +119,15 @@ amplify-migrator migrate
 
 You'll only be prompted for your password (for security, passwords are never cached).
 
+### Programmatic API (advanced)
+
+The migration core is also usable as a library. `MigrationOrchestrator.build_plan()` returns an
+inspectable `MigrationPlan` (per-sheet model match, record counts, and rows that failed to parse)
+without uploading anything; `execute(plan, selected_sheets=...)` uploads the chosen sheets and
+returns a `MigrationResult` with a merged per-sheet `failures` list. This is the seam that lets
+non-interactive callers (such as an automated agent) drive a migration. The `amplify-migrator
+migrate` CLI is a thin interactive wrapper over this API and behaves exactly as before.
+
 ### Quick Start
 
 ```bash
