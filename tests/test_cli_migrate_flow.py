@@ -104,6 +104,26 @@ def test_reconstructs_parse_and_upload_breakdown_for_sheet_result(mock_input):
     )
 
 
+@patch("builtins.input", side_effect=["no", "yes", "no"])
+def test_declined_sheet_parse_failures_still_exported(mock_input):
+    parse_failure = RecordFailure("name", "p1", "parse", {"name": "p1"})
+    orchestrator = MagicMock()
+    orchestrator.build_plan.return_value = MigrationPlan(
+        sheets=[_ready_plan("Reporter", record_count=1, parsing_failures=[parse_failure], total_rows=2)]
+    )
+    orchestrator.execute.return_value = MigrationResult(sheets=[], total_success=0)
+
+    with patch("amplify_excel_migrator.cli.commands.FailureTracker") as mock_tracker_cls:
+        tracker_instance = MagicMock()
+        tracker_instance.export_to_excel.return_value = "/path/to/data_failed_records.xlsx"
+        mock_tracker_cls.from_failures_by_sheet.return_value = tracker_instance
+
+        run_interactive_migration(orchestrator, MagicMock(), "/path/to/data.xlsx")
+
+        mock_tracker_cls.from_failures_by_sheet.assert_called_once_with({"Reporter": [parse_failure]})
+        tracker_instance.export_to_excel.assert_called_once_with("/path/to/data.xlsx")
+
+
 @patch("builtins.input", side_effect=["yes", "yes", "no"])
 def test_exports_failures_when_confirmed(mock_input):
     failure = RecordFailure("name", "u1", "upload", {"name": "u1"})

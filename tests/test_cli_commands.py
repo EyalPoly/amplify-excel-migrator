@@ -454,8 +454,8 @@ class TestCmdMigrate:
 
                         cmd_migrate()
 
-                        # Verify run() was NOT called
-                        mock_orchestrator_instance.run.assert_not_called()
+                        # Verify the migration flow was NOT driven
+                        mock_orchestrator_instance.build_plan.assert_not_called()
 
 
 class TestCmdExportData:
