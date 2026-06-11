@@ -15,6 +15,20 @@ class FailureTracker:
         self._failures_by_sheet: Dict[str, List[Dict]] = {}
         self._current_sheet: Optional[str] = None
 
+    @classmethod
+    def from_failures_by_sheet(cls, failures_by_sheet: Dict[str, List[Any]]) -> "FailureTracker":
+        tracker = cls()
+        for sheet_name, failures in failures_by_sheet.items():
+            tracker.set_current_sheet(sheet_name)
+            for failure in failures:
+                tracker.record_failure(
+                    primary_field=failure.primary_field,
+                    primary_field_value=failure.primary_field_value,
+                    error=failure.error,
+                    original_row=failure.original_row,
+                )
+        return tracker
+
     def set_current_sheet(self, sheet_name: str) -> None:
         self._current_sheet = sheet_name
         if sheet_name not in self._failures_by_sheet:
