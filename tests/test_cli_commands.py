@@ -363,6 +363,12 @@ class TestCmdMigrate:
 
                             mock_orchestrator_instance = MagicMock()
                             mock_orchestrator_class.return_value = mock_orchestrator_instance
+                            from amplify_excel_migrator.migration.models import MigrationPlan, MigrationResult
+
+                            mock_orchestrator_instance.build_plan.return_value = MigrationPlan(sheets=[])
+                            mock_orchestrator_instance.execute.return_value = MigrationResult(
+                                sheets=[], total_success=0
+                            )
 
                             cmd_migrate()
 
@@ -376,8 +382,8 @@ class TestCmdMigrate:
                             # Verify authenticate was called
                             mock_auth_instance.authenticate.assert_called_once_with("test@example.com", "password123")
 
-                            # Verify orchestrator was called
-                            mock_orchestrator_instance.run.assert_called_once()
+                            # Verify the headless plan/execute flow was driven
+                            mock_orchestrator_instance.build_plan.assert_called_once()
 
     def test_migrate_prompts_for_password(self, tmp_path, sample_config):
         """Test that migrate command always prompts for password"""
@@ -408,6 +414,12 @@ class TestCmdMigrate:
 
                             mock_orchestrator_instance = MagicMock()
                             mock_orchestrator_class.return_value = mock_orchestrator_instance
+                            from amplify_excel_migrator.migration.models import MigrationPlan, MigrationResult
+
+                            mock_orchestrator_instance.build_plan.return_value = MigrationPlan(sheets=[])
+                            mock_orchestrator_instance.execute.return_value = MigrationResult(
+                                sheets=[], total_success=0
+                            )
 
                             cmd_migrate()
 
@@ -442,8 +454,8 @@ class TestCmdMigrate:
 
                         cmd_migrate()
 
-                        # Verify run() was NOT called
-                        mock_orchestrator_instance.run.assert_not_called()
+                        # Verify the migration flow was NOT driven
+                        mock_orchestrator_instance.build_plan.assert_not_called()
 
 
 class TestCmdExportData:

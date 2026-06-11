@@ -330,3 +330,23 @@ class TestClear:
 
         assert len(tracker.get_failures("Products")) == 1
         assert len(tracker.get_failures("Users")) == 0
+
+
+def test_from_failures_by_sheet_populates_tracker():
+    from amplify_excel_migrator.migration.failure_tracker import FailureTracker
+    from amplify_excel_migrator.migration.models import RecordFailure
+
+    failures_by_sheet = {
+        "Reporter": [
+            RecordFailure("name", "r1", "boom", {"name": "r1"}),
+            RecordFailure("name", "r2", "bang", {"name": "r2"}),
+        ],
+        "Article": [],
+    }
+
+    tracker = FailureTracker.from_failures_by_sheet(failures_by_sheet)
+
+    reporter_failures = tracker.get_failures("Reporter")
+    assert [f["error"] for f in reporter_failures] == ["boom", "bang"]
+    assert reporter_failures[0]["original_row"] == {"name": "r1"}
+    assert tracker.has_failures() is True
