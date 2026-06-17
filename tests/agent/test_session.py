@@ -41,18 +41,32 @@ def _ready_plan():
     )
 
 
+class RecordingOrchestrator:
+    """Fake orchestrator that logs call order and the frames it is handed."""
+
+    def __init__(self):
+        self.calls = []
+        self.set_sheets_args = []
+
+    def set_sheets(self, sheets):
+        self.calls.append("set_sheets")
+        self.set_sheets_args.append(sheets)
+
+    def build_plan(self):
+        self.calls.append("build_plan")
+        return _ready_plan()
+
+    def execute(self, plan, selected_sheets=None):
+        self.calls.append("execute")
+        return MigrationResult(sheets=[SheetResult("Reporter", success_count=2, failures=[])], total_success=2)
+
+
 def _make_session(provider, handler, events):
     workbook = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"], "country": ["IL", ""]})})
 
-    orchestrator = type("O", (), {})()
-    orchestrator.build_plan = lambda: _ready_plan()
-    orchestrator.execute = lambda plan, selected_sheets=None: MigrationResult(
-        sheets=[SheetResult("Reporter", success_count=2, failures=[])], total_success=2
-    )
-
     return AgentSession(
         provider=provider,
-        orchestrator_factory=lambda path: orchestrator,
+        orchestrator=RecordingOrchestrator(),
         workbook=workbook,
         approval_handler=handler,
         schema_provider=lambda model=None: {"models": ["Reporter"]},
@@ -154,3 +168,63 @@ def test_max_turns_guard_stops_runaway_loop():
 
     assert sum(1 for e in events if e.kind == "tool_call") == 3
     assert events[-1].kind == "error"
+
+
+def test_set_sheets_hands_live_frames_before_each_build_plan():
+    turns = [
+        AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
+        AssistantTurn(text="", tool_calls=[ToolCall("c2", "upload", {})]),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[{"Reporter"}])
+    events = []
+    session = _make_session(ScriptedProvider(turns), handler, events)
+
+    session.run("go")
+
+    orchestrator = session.orchestrator
+    # one shared orchestrator handled both engine calls; sheets re-fed before every build_plan
+    assert orchestrator.calls == ["set_sheets", "build_plan", "set_sheets", "build_plan", "execute"]
+    # frames are handed by reference (the editor's live dict), not a copy
+    assert orchestrator.set_sheets_args[0] is session.workbook.sheets()
+    assert orchestrator.set_sheets_args[1] is session.workbook.sheets()
+
+
+def test_dry_run_does_not_mutate_workbook_columns():
+    from unittest.mock import MagicMock
+
+    from amplify_excel_migrator.data import DataTransformer, InMemoryExcelReader
+    from amplify_excel_migrator.migration import MigrationOrchestrator
+    from amplify_excel_migrator.schema import FieldParser
+
+    workbook = WorkbookEditor({"Reporter": pd.DataFrame({"Reporter Name": ["a"], "ERROR": ["x"]})})
+    original_columns = list(workbook.sheets()["Reporter"].columns)
+
+    client = MagicMock()
+    client.get_primary_field_name.return_value = ("name", False, "String")
+    client.build_foreign_key_lookups.return_value = {}
+    orchestrator = MigrationOrchestrator(
+        excel_reader=InMemoryExcelReader(),
+        data_transformer=DataTransformer(FieldParser()),
+        amplify_client=client,
+        field_parser=FieldParser(),
+        batch_uploader=MagicMock(),
+    )
+    orchestrator._get_parsed_model_structure = MagicMock(return_value={"fields": []})
+
+    turns = [
+        AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    session = AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=orchestrator,
+        workbook=workbook,
+        approval_handler=RecordingApprovalHandler([], []),
+        schema_provider=lambda model=None: {},
+        event_sink=[].append,
+    )
+
+    session.run("go")
+
+    assert list(workbook.sheets()["Reporter"].columns) == original_columns

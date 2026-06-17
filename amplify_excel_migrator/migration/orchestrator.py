@@ -31,6 +31,10 @@ class MigrationOrchestrator:
         self.field_parser = field_parser
         self.batch_uploader = batch_uploader
 
+    def set_sheets(self, sheets: Dict[str, pd.DataFrame]) -> None:
+        """Re-target the engine at in-memory frames (requires an InMemoryExcelReader)."""
+        self.excel_reader.set_sheets(sheets)
+
     def build_plan(self) -> MigrationPlan:
         all_sheets = self.excel_reader.read_all_sheets()
         sheets = [self._plan_sheet(df, sheet_name) for sheet_name, df in all_sheets.items()]
@@ -113,8 +117,7 @@ class MigrationOrchestrator:
         parsed_model_structure: Dict[str, Any],
         sheet_name: str,
     ) -> Tuple[List[Any], Dict[str, Dict], List[RecordFailure]]:
-        df.drop(columns=["ERROR"], inplace=True, errors="ignore")
-        df.columns = [self.data_transformer.to_camel_case(c) for c in df.columns]
+        df = df.drop(columns=["ERROR"], errors="ignore").rename(columns=self.data_transformer.to_camel_case)
         primary_field, _, _ = self.amplify_client.get_primary_field_name(sheet_name, parsed_model_structure)
 
         fk_lookup_cache: Dict[str, Any] = {}

@@ -16,6 +16,10 @@ class WorkbookEditor:
     def sheet_names(self) -> List[str]:
         return list(self._sheets.keys())
 
+    def sheets(self) -> Dict[str, pd.DataFrame]:
+        """Return the live frame dict by reference (no copy); callers must treat the frames as read-only."""
+        return self._sheets
+
     def preview(self, sheet_name: str, max_rows: int = 20) -> Dict[str, Any]:
         df = self._sheets[sheet_name]
         head = df.head(max_rows).where(pd.notnull(df.head(max_rows)), "")

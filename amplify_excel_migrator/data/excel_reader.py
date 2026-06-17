@@ -1,7 +1,7 @@
 """Excel file reading functionality."""
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Optional
 
 import pandas as pd
 
@@ -27,3 +27,23 @@ class ExcelReader:
             return pd.read_excel(self.file_path, sheet_name=sheet_name)
         except FileNotFoundError:
             raise FileNotFoundError(f"Excel file not found: {self.file_path}")
+
+
+class InMemoryExcelReader:
+    """Feeds in-memory DataFrames to the orchestrator without round-tripping through disk.
+
+    Shares ExcelReader's read surface so the orchestrator is agnostic to its source. Frames may be
+    handed in by reference because build_plan() is read-only with respect to them.
+    """
+
+    def __init__(self, sheets: Optional[Dict[str, pd.DataFrame]] = None):
+        self._sheets: Dict[str, pd.DataFrame] = sheets if sheets is not None else {}
+
+    def set_sheets(self, sheets: Dict[str, pd.DataFrame]) -> None:
+        self._sheets = sheets
+
+    def read_all_sheets(self) -> Dict[str, pd.DataFrame]:
+        return self._sheets
+
+    def read_sheet(self, sheet_name: str) -> pd.DataFrame:
+        return self._sheets[sheet_name]

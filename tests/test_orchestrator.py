@@ -105,6 +105,22 @@ class TestBuildPlan:
 
         mock_batch_uploader.upload_records.assert_not_called()
 
+    def test_does_not_mutate_input_frames(
+        self, orchestrator, mock_excel_reader, mock_amplify_client, mock_data_transformer
+    ):
+        df = pd.DataFrame({"Reporter Name": ["a"], "ERROR": ["x"]})
+        original = df.copy()
+        mock_excel_reader.read_all_sheets.return_value = {"Reporter": df}
+        orchestrator._get_parsed_model_structure = MagicMock(return_value={"fields": []})
+        mock_amplify_client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        mock_amplify_client.build_foreign_key_lookups = MagicMock(return_value={})
+        mock_data_transformer.to_camel_case = lambda s: s.replace(" ", "").lower()
+        mock_data_transformer.transform_rows_to_records = MagicMock(return_value=([], {}, []))
+
+        orchestrator.build_plan()
+
+        pd.testing.assert_frame_equal(df, original)
+
 
 def _ready_sheet_plan(sheet_name="Reporter", records=None, parsing_failures=None, row_dict=None):
     from amplify_excel_migrator.migration.models import SheetPlan
@@ -240,13 +256,18 @@ class TestTransformRowsToRecords:
     def test_builds_foreign_key_lookups(self, orchestrator, mock_amplify_client):
         df = pd.DataFrame({"name": ["Test"]})
         parsed_model = {"fields": []}
+        orchestrator.data_transformer.to_camel_case = lambda s: s
         orchestrator.amplify_client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
         mock_amplify_client.build_foreign_key_lookups = MagicMock(return_value={"Reporter": {}})
         orchestrator.data_transformer.transform_rows_to_records = MagicMock(return_value=([], {}, []))
 
         orchestrator._transform_rows_to_records(df, parsed_model, "TestSheet")
 
-        mock_amplify_client.build_foreign_key_lookups.assert_called_once_with(df, parsed_model)
+        mock_amplify_client.build_foreign_key_lookups.assert_called_once()
+        passed_df, passed_model = mock_amplify_client.build_foreign_key_lookups.call_args[0]
+        pd.testing.assert_frame_equal(passed_df, df)
+        assert passed_df is not df  # planning works on a copy, never the caller's frame
+        assert passed_model is parsed_model
 
 
 class TestGetParsedModelStructure:
