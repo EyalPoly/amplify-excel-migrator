@@ -1,10 +1,7 @@
 """The human-in-the-loop agentic loop that prepares and migrates a workbook."""
 
-import contextlib
 import json
 import logging
-import tempfile
-from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from amplify_excel_migrator.agent.llm.base import (
@@ -43,14 +40,14 @@ class AgentSession:
     def __init__(
         self,
         provider: LLMProvider,
-        orchestrator_factory: Callable[[str], Any],
+        orchestrator: Any,
         workbook: WorkbookEditor,
         approval_handler: Any,
         schema_provider: Callable[..., Dict[str, Any]],
         event_sink: Callable[[AgentEvent], None],
     ):
         self.provider = provider
-        self.orchestrator_factory = orchestrator_factory
+        self.orchestrator = orchestrator
         self.workbook = workbook
         self.approval = approval_handler
         self.schema_provider = schema_provider
@@ -95,31 +92,28 @@ class AgentSession:
             logger.exception("Tool '%s' failed", name)
             return f"ERROR: {e}"
 
-    @contextlib.contextmanager
     def _orchestrator_for_current_workbook(self):
-        """Save the current workbook to a temp file and build an orchestrator for it. Cleans up on exit."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = str(Path(tmpdir) / "workbook.xlsx")
-            self.workbook.save(path)
-            yield self.orchestrator_factory(path)
+        """Point the shared orchestrator's reader at the editor's current frames and return it."""
+        self.orchestrator.set_sheets(self.workbook.sheets())
+        return self.orchestrator
 
     def _dry_run(self) -> str:
-        with self._orchestrator_for_current_workbook() as orchestrator:
-            plan = orchestrator.build_plan()
-            report = {
-                "sheets": [
-                    {
-                        "sheet_name": s.sheet_name,
-                        "status": s.status,
-                        "skip_reason": s.skip_reason,
-                        "record_count": s.record_count,
-                        "parsing_failures": [
-                            {"row_key": _json_safe(f.primary_field_value), "error": f.error} for f in s.parsing_failures
-                        ],
-                    }
-                    for s in plan.sheets
-                ]
-            }
+        orchestrator = self._orchestrator_for_current_workbook()
+        plan = orchestrator.build_plan()
+        report = {
+            "sheets": [
+                {
+                    "sheet_name": s.sheet_name,
+                    "status": s.status,
+                    "skip_reason": s.skip_reason,
+                    "record_count": s.record_count,
+                    "parsing_failures": [
+                        {"row_key": _json_safe(f.primary_field_value), "error": f.error} for f in s.parsing_failures
+                    ],
+                }
+                for s in plan.sheets
+            ]
+        }
         self.emit(AgentEvent(kind="dry_run", payload=report))
         return json.dumps(report, default=str)
 
@@ -154,13 +148,12 @@ class AgentSession:
         return json.dumps({"applied": applied, "rejected": skipped})
 
     def _upload(self) -> str:
-        # Keep the orchestrator (and its temp file) alive across the approval wait, then execute on it.
-        with self._orchestrator_for_current_workbook() as orchestrator:
-            plan = orchestrator.build_plan()
-            ready = {s.sheet_name: s.record_count for s in plan.sheets if s.status == "ready"}
+        orchestrator = self._orchestrator_for_current_workbook()
+        plan = orchestrator.build_plan()
+        ready = {s.sheet_name: s.record_count for s in plan.sheets if s.status == "ready"}
 
-            selected = self.approval.review_upload(ready)  # blocks for human confirmation
-            result = orchestrator.execute(plan, selected_sheets=selected)
+        selected = self.approval.review_upload(ready)  # blocks for human confirmation
+        result = orchestrator.execute(plan, selected_sheets=selected)
 
         report = {
             "total_success": result.total_success,

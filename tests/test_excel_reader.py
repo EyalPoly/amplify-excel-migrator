@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import pandas as pd
-from amplify_excel_migrator.data.excel_reader import ExcelReader
+from amplify_excel_migrator.data.excel_reader import ExcelReader, InMemoryExcelReader
 
 
 class TestExcelReaderInit:
@@ -97,3 +97,29 @@ class TestReadAllSheetsFileNotFound:
 
         with pytest.raises(FileNotFoundError, match="Excel file not found: /missing/file.xlsx"):
             reader.read_all_sheets()
+
+
+class TestInMemoryExcelReader:
+    def test_defaults_to_empty(self):
+        reader = InMemoryExcelReader()
+        assert reader.read_all_sheets() == {}
+
+    def test_set_sheets_then_read_all(self):
+        sheets = {"Reporter": pd.DataFrame({"name": ["a"]})}
+        reader = InMemoryExcelReader()
+        reader.set_sheets(sheets)
+
+        assert reader.read_all_sheets() is sheets
+
+    def test_read_sheet_returns_named_frame(self):
+        df = pd.DataFrame({"name": ["a"]})
+        reader = InMemoryExcelReader({"Reporter": df})
+
+        assert reader.read_sheet("Reporter") is df
+
+    def test_set_sheets_replaces_previous(self):
+        reader = InMemoryExcelReader({"Old": pd.DataFrame()})
+        new_sheets = {"New": pd.DataFrame({"x": [1]})}
+        reader.set_sheets(new_sheets)
+
+        assert reader.read_all_sheets() is new_sheets
