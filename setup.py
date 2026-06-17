@@ -31,6 +31,10 @@ setup(
         "amplify-auth>=0.1.0",
     ],
     extras_require={
+        "agent": [
+            "anthropic>=0.40.0",
+            "openai>=1.40.0",
+        ],
         "dev": [
             "pytest>=8.0.0",
             "pytest-cov>=4.1.0",
