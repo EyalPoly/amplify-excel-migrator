@@ -17,6 +17,7 @@ class WorkbookEditor:
         return list(self._sheets.keys())
 
     def sheets(self) -> Dict[str, pd.DataFrame]:
+        """Return the live frame dict by reference (no copy); callers must treat the frames as read-only."""
         return self._sheets
 
     def preview(self, sheet_name: str, max_rows: int = 20) -> Dict[str, Any]:
