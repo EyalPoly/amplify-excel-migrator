@@ -81,3 +81,15 @@ def test_tool_choice_forwarded_only_when_set():
 
     OpenAICompatibleProvider(client=client, model="m", tool_choice="auto").generate("s", [UserMessage("x")], spec)
     assert client.chat.completions.create.call_args.kwargs["tool_choice"] == "auto"
+
+
+def test_temperature_forwarded_only_when_set():
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion("ok")
+
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
+    assert "temperature" not in client.chat.completions.create.call_args.kwargs
+
+    # 0.0 is a meaningful value (deterministic) and must be forwarded despite being falsy.
+    OpenAICompatibleProvider(client=client, model="m", temperature=0.0).generate("s", [UserMessage("x")], [])
+    assert client.chat.completions.create.call_args.kwargs["temperature"] == 0.0

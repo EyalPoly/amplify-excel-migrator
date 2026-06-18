@@ -1,6 +1,6 @@
 """Claude (Anthropic SDK) adapter for the LLMProvider interface."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from amplify_excel_migrator.agent.llm.base import (
     AssistantMessage,
@@ -18,7 +18,13 @@ MAX_TOKENS = 16000
 
 
 class ClaudeProvider(LLMProvider):
-    def __init__(self, client: Any = None, model: str = DEFAULT_MODEL, effort: str = "high"):
+    def __init__(
+        self,
+        client: Any = None,
+        model: str = DEFAULT_MODEL,
+        effort: str = "high",
+        temperature: Optional[float] = None,
+    ):
         if client is None:
             import anthropic
 
@@ -26,17 +32,24 @@ class ClaudeProvider(LLMProvider):
         self._client = client
         self._model = model
         self._effort = effort
+        # Forwarded only when set; default None leaves the API default. Note: with adaptive thinking
+        # enabled the Anthropic API only accepts temperature=1, so a custom value is mainly useful if
+        # the deployment is reconfigured without thinking. 0.0 is valid, so the guard is "is not None".
+        self._temperature = temperature
 
     def generate(self, system: str, messages: List[Message], tools: List[ToolSpec]) -> AssistantTurn:
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=MAX_TOKENS,
-            thinking={"type": "adaptive"},
-            output_config={"effort": self._effort},
-            system=system,
-            tools=[self._tool_to_api(t) for t in tools],
-            messages=[self._message_to_api(m) for m in messages],
-        )
+        kwargs: Dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": MAX_TOKENS,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": self._effort},
+            "system": system,
+            "tools": [self._tool_to_api(t) for t in tools],
+            "messages": [self._message_to_api(m) for m in messages],
+        }
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+        response = self._client.messages.create(**kwargs)
         text_parts: List[str] = []
         tool_calls: List[ToolCall] = []
         for block in response.content:
