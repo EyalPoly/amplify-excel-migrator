@@ -25,6 +25,7 @@ class OpenAICompatibleProvider(LLMProvider):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         tool_choice: Optional[str] = None,
+        temperature: Optional[float] = None,
     ):
         if client is None:
             from openai import OpenAI
@@ -35,12 +36,17 @@ class OpenAICompatibleProvider(LLMProvider):
         # Some self-hosted servers only emit tool calls when explicitly asked. Set "auto" or "required"
         # for those backends; forwarded only when tools are present. Default None = server default.
         self._tool_choice = tool_choice
+        # Lower values (e.g. 0.0-0.2) make tool calls more reliable. Forwarded only when set; default
+        # None leaves the server default. 0.0 is a valid value, so the guard is "is not None", not truthiness.
+        self._temperature = temperature
 
     def generate(self, system: str, messages: List[Message], tools: List[ToolSpec]) -> AssistantTurn:
         api_messages = [{"role": "system", "content": system}]
         api_messages.extend(self._message_to_api(m) for m in messages)
 
         kwargs: Dict[str, Any] = {"model": self._model, "max_tokens": MAX_TOKENS, "messages": api_messages}
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
         if tools:
             kwargs["tools"] = [self._tool_to_api(t) for t in tools]
             if self._tool_choice is not None:

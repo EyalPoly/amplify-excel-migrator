@@ -91,3 +91,15 @@ def test_assistant_raw_content_is_round_tripped_verbatim():
 
     sent = client.messages.create.call_args.kwargs["messages"]
     assert sent[1] == {"role": "assistant", "content": raw_blocks}
+
+
+def test_temperature_forwarded_only_when_set():
+    client = MagicMock()
+    client.messages.create.return_value = MagicMock(content=[_block("text", text="ok")])
+
+    ClaudeProvider(client=client, model="claude-opus-4-8").generate("s", [UserMessage("x")], [])
+    assert "temperature" not in client.messages.create.call_args.kwargs
+
+    # 0.0 is a meaningful value (deterministic) and must be forwarded despite being falsy.
+    ClaudeProvider(client=client, model="claude-opus-4-8", temperature=0.0).generate("s", [UserMessage("x")], [])
+    assert client.messages.create.call_args.kwargs["temperature"] == 0.0
