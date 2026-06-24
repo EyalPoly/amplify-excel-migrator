@@ -46,12 +46,12 @@ CASES = [
     {
         "name": "fill-missing-country",
         "prompt": "The 'Reporter' sheet row 1 has an empty 'country' cell but the city is 'Cairo'. "
-                  "Use propose_changes to set country to 'EG'.",
+        "Use propose_changes to set country to 'EG'.",
     },
     {
         "name": "fix-enum-casing",
         "prompt": "The 'Reporter' sheet row 3 'status' cell is 'ACTIVE' but the schema enum is 'active'. "
-                  "Use propose_changes to fix it.",
+        "Use propose_changes to fix it.",
     },
 ]
 
@@ -80,8 +80,11 @@ def main() -> None:
     print(f"{'model':28} {'score':>9}  per-case")
     for model in args.models:
         provider = OpenAICompatibleProvider(
-            base_url=args.base_url, api_key="ollama", model=model,
-            tool_choice="auto", temperature=0.1,
+            base_url=args.base_url,
+            api_key="ollama",
+            model=model,
+            tool_choice="auto",
+            temperature=0.1,
         )
         total_ok = total = 0
         per_case = []

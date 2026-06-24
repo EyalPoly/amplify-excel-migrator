@@ -21,16 +21,18 @@ def main() -> int:
 
     provider = OpenAICompatibleProvider(
         base_url=args.base_url,
-        api_key="ollama",          # any non-empty string; Ollama ignores it
+        api_key="ollama",  # any non-empty string; Ollama ignores it
         model=args.model,
-        tool_choice="auto",        # nudge Ollama to emit tool calls
+        tool_choice="auto",  # nudge Ollama to emit tool calls
     )
 
-    tools = [ToolSpec(
-        name="get_weather",
-        description="Get the current weather for a city",
-        input_schema={"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
-    )]
+    tools = [
+        ToolSpec(
+            name="get_weather",
+            description="Get the current weather for a city",
+            input_schema={"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+        )
+    ]
 
     turn = provider.generate(
         system="You are a helpful assistant. Use tools when asked.",

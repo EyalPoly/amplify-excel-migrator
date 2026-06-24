@@ -177,10 +177,7 @@ def evaluate_model(provider, cases, trials: int):
     arg = mean(arg_scores)
     passk = mean(case_passk)
     mark = 100 * (
-        WEIGHTS["schema"] * schema
-        + WEIGHTS["tool_select"] * tool
-        + WEIGHTS["arg_acc"] * arg
-        + WEIGHTS["passk"] * passk
+        WEIGHTS["schema"] * schema + WEIGHTS["tool_select"] * tool + WEIGHTS["arg_acc"] * arg + WEIGHTS["passk"] * passk
     )
     gate = "UNATTENDED" if schema >= GATE["schema_min"] and passk >= GATE["passk_min"] else "HUMAN-GATED"
     return {
@@ -212,22 +209,36 @@ def main() -> int:
     print(f"{'model':24} {'mark':>5}  {'gate':<11} {'schema':>6} {'tool':>5} {'arg':>5} {'pass^k':>6}  per-case")
     for model in args.models:
         provider = OpenAICompatibleProvider(
-            base_url=args.base_url, api_key="ollama", model=model,
-            tool_choice="auto", temperature=args.temperature,
+            base_url=args.base_url,
+            api_key="ollama",
+            model=model,
+            tool_choice="auto",
+            temperature=args.temperature,
         )
         r = evaluate_model(provider, cases, args.trials)
         results[model] = r
         pc = "  ".join(f"{k}={v}" for k, v in r["per_case"].items())
-        print(f"{model:24} {r['mark']:>5} {r['gate']:<11} {r['schema_valid_rate']:>6} "
-              f"{r['tool_selection_acc']:>5} {r['argument_field_acc']:>5} {r['passk_consistency']:>6}  {pc}")
+        print(
+            f"{model:24} {r['mark']:>5} {r['gate']:<11} {r['schema_valid_rate']:>6} "
+            f"{r['tool_selection_acc']:>5} {r['argument_field_acc']:>5} {r['passk_consistency']:>6}  {pc}"
+        )
 
     if args.json_out:
         out_dir = Path(args.json_out)
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.json"
-        out.write_text(json.dumps(
-            {"trials": args.trials, "temperature": args.temperature, "weights": WEIGHTS,
-             "gate": GATE, "results": results}, indent=2))
+        out.write_text(
+            json.dumps(
+                {
+                    "trials": args.trials,
+                    "temperature": args.temperature,
+                    "weights": WEIGHTS,
+                    "gate": GATE,
+                    "results": results,
+                },
+                indent=2,
+            )
+        )
         print(f"\nWrote {out}")
     return 0
 
