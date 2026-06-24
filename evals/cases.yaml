@@ -1,0 +1,70 @@
+# Golden eval cases for the migration agent's tool calling.
+#
+# Each case is a single-turn prompt (context baked in, since there is no live
+# workbook here) scored against `expect` by scripts/eval_local_llm.py.
+#
+# expect:
+#   tool: one of inspect_schema | read_sheet | dry_run | propose_changes | upload | none
+#   args:    {param: value}              # expected non-`changes` args (read_sheet, ...)
+#   changes: [ {sheet_name,row,column,proposed_value}, ... ]   # for propose_changes
+#   match:   {field: exact|ci|numeric}   # per-field policy; default exact
+#
+# NOTE: `row` is 0-based (see agent/tools.py) — a deliberate correctness trap.
+# These are a synthetic starting point. Replace with real prompts + real
+# malformed-call traces once you've run the agent (runbook Task 11 Step 4).
+
+- name: discover-blocking-rows
+  prompt: >
+    I've uploaded the workbook. Before changing anything, find out which rows
+    cannot be migrated yet and why.
+  expect:
+    tool: dry_run
+
+- name: read-reporter-sample
+  prompt: >
+    Show me the columns and a sample of rows from the 'Reporter' sheet so I can
+    see what's in it.
+  expect:
+    tool: read_sheet
+    args: {sheet: Reporter}
+    match: {sheet: ci}
+
+- name: inspect-schema-requirements
+  prompt: >
+    What fields, types, and enum values does the target GraphQL schema require
+    for the Reporter model? I want to check my data matches before editing.
+  expect:
+    tool: inspect_schema
+
+- name: fill-missing-country
+  prompt: >
+    Here is a sample of the 'Reporter' sheet (0-based row indices):
+      row 0: {name: 'Nile Press', city: 'Cairo', country: '', status: 'active'}
+      row 1: {name: 'Acme', city: 'Berlin', country: 'DE', status: 'active'}
+    The schema requires 'country' as an ISO-2 code. Row 0 is missing its country
+    but the city is Cairo. Use propose_changes to set it.
+  expect:
+    tool: propose_changes
+    changes:
+      - {sheet_name: Reporter, row: 0, column: country, proposed_value: EG}
+    match: {sheet_name: ci, column: ci, proposed_value: exact, row: exact}
+
+- name: fix-enum-casing
+  prompt: >
+    Here is a sample of the 'Reporter' sheet (0-based row indices):
+      row 0: {name: 'Nile Press', status: 'active'}
+      row 1: {name: 'Acme', status: 'active'}
+      row 2: {name: 'Globex', status: 'ACTIVE'}
+    The schema 'status' enum is exactly ['active','inactive'] (lowercase). Row 2
+    has 'ACTIVE'. Use propose_changes to fix it to the valid enum value.
+  expect:
+    tool: propose_changes
+    changes:
+      - {sheet_name: Reporter, row: 2, column: status, proposed_value: active}
+    match: {sheet_name: ci, column: ci, proposed_value: exact, row: exact}
+
+- name: abstain-explain-only
+  prompt: >
+    In one sentence, explain what the dry_run tool does. Do not run anything.
+  expect:
+    tool: none
