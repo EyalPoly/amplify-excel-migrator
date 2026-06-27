@@ -93,3 +93,61 @@ def test_temperature_forwarded_only_when_set():
     # 0.0 is a meaningful value (deterministic) and must be forwarded despite being falsy.
     OpenAICompatibleProvider(client=client, model="m", temperature=0.0).generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["temperature"] == 0.0
+
+
+def test_string_encoded_array_arg_is_reparsed():
+    # Some models (e.g. llama3.1 via Ollama) return a nested array argument as a JSON *string*.
+    # When the tool schema declares the property an array, recover the real list.
+    changes = [{"sheet_name": "Reporter", "row": 0, "column": "country", "proposed_value": "EG", "rationale": "r"}]
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion(
+        "", [_api_tool_call("c1", "propose_changes", {"summary": "s", "changes": json.dumps(changes)})]
+    )
+    spec = ToolSpec(
+        "propose_changes",
+        "Propose",
+        {"type": "object", "properties": {"summary": {"type": "string"}, "changes": {"type": "array"}}},
+    )
+
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
+
+    assert turn.tool_calls[0].arguments["changes"] == changes
+
+
+def test_string_encoded_object_arg_is_reparsed():
+    payload = {"a": 1, "b": [2, 3]}
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion(
+        "", [_api_tool_call("c1", "obj_tool", {"payload": json.dumps(payload)})]
+    )
+    spec = ToolSpec("obj_tool", "Obj", {"type": "object", "properties": {"payload": {"type": "object"}}})
+
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
+
+    assert turn.tool_calls[0].arguments["payload"] == payload
+
+
+def test_string_arg_with_string_schema_is_left_alone():
+    # A genuine string field whose value happens to be valid JSON must NOT be coerced.
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion(
+        "", [_api_tool_call("c1", "note_tool", {"note": "[1, 2]"})]
+    )
+    spec = ToolSpec("note_tool", "Note", {"type": "object", "properties": {"note": {"type": "string"}}})
+
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
+
+    assert turn.tool_calls[0].arguments["note"] == "[1, 2]"
+
+
+def test_unparseable_string_for_array_arg_is_left_alone():
+    # If an array-typed property arrives as a non-JSON string, leave it untouched (no crash).
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion(
+        "", [_api_tool_call("c1", "propose_changes", {"changes": "not json"})]
+    )
+    spec = ToolSpec("propose_changes", "P", {"type": "object", "properties": {"changes": {"type": "array"}}})
+
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
+
+    assert turn.tool_calls[0].arguments["changes"] == "not json"
