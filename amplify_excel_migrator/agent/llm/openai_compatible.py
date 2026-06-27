@@ -55,16 +55,31 @@ class OpenAICompatibleProvider(LLMProvider):
         response = self._client.chat.completions.create(**kwargs)
         message = response.choices[0].message
 
+        schemas_by_name = {t.name: t.input_schema for t in tools}
         tool_calls: List[ToolCall] = []
         for call in message.tool_calls or []:
-            tool_calls.append(
-                ToolCall(
-                    id=call.id,
-                    name=call.function.name,
-                    arguments=json.loads(call.function.arguments or "{}"),
-                )
-            )
+            arguments = json.loads(call.function.arguments or "{}")
+            schema = schemas_by_name.get(call.function.name)
+            if schema is not None:
+                arguments = self._coerce_string_encoded_containers(arguments, schema)
+            tool_calls.append(ToolCall(id=call.id, name=call.function.name, arguments=arguments))
         return AssistantTurn(text=message.content or "", tool_calls=tool_calls, raw=response)
+
+    @staticmethod
+    def _coerce_string_encoded_containers(arguments: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+        # Some models/servers serialize nested array/object arguments as a JSON string. The tool schema
+        # is the source of truth for which properties should be containers, so re-parse only those.
+        if not isinstance(arguments, dict):
+            return arguments
+        for name, prop in schema.get("properties", {}).items():
+            if prop.get("type") in ("array", "object") and isinstance(arguments.get(name), str):
+                try:
+                    parsed = json.loads(arguments[name])
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(parsed, (list, dict)):
+                    arguments[name] = parsed
+        return arguments
 
     @staticmethod
     def _tool_to_api(tool: ToolSpec) -> Dict[str, Any]:
