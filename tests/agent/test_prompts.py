@@ -10,3 +10,9 @@ def test_prompt_states_the_approval_contract():
 
 def test_prompt_is_nonempty():
     assert len(SYSTEM_PROMPT.strip()) > 200
+
+
+def test_prompt_states_the_rename_contract():
+    text = SYSTEM_PROMPT.lower()
+    assert "propose_column_renames" in text
+    assert "rename" in text
