@@ -10,7 +10,13 @@ from amplify_excel_migrator.agent.llm.base import (
     ToolResultMessage,
     UserMessage,
 )
-from amplify_excel_migrator.agent.models import AgentEvent, ChangeProposal, ProposedChange
+from amplify_excel_migrator.agent.models import (
+    AgentEvent,
+    ChangeProposal,
+    ColumnRename,
+    ColumnRenameProposal,
+    ProposedChange,
+)
 from amplify_excel_migrator.agent.prompts import SYSTEM_PROMPT
 from amplify_excel_migrator.agent.tools import TOOL_SPECS
 from amplify_excel_migrator.agent.workbook import WorkbookEditor
@@ -20,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 def _change_id(sheet: str, row: int, column: str) -> str:
     return f"{sheet}:{row}:{column}"
+
+
+def _rename_id(sheet: str, current: str, new: str) -> str:
+    return f"{sheet}:{current}->{new}"
 
 
 def _json_safe(value: Any) -> Any:
@@ -85,6 +95,8 @@ class AgentSession:
                 return self._dry_run()
             if name == "propose_changes":
                 return self._propose_changes(args)
+            if name == "propose_column_renames":
+                return self._propose_column_renames(args)
             if name == "upload":
                 return self._upload()
             return f"ERROR: unknown tool '{name}'"
@@ -146,6 +158,69 @@ class AgentSession:
             else:
                 skipped.append(change.id)
         return json.dumps({"applied": applied, "rejected": skipped})
+
+    def _propose_column_renames(self, args: Dict[str, Any]) -> str:
+        renames = [r for r in args["renames"] if r["current_name"] != r["new_name"]]
+
+        target_counts: Dict[tuple, int] = {}
+        for r in renames:
+            key = (r["sheet_name"], r["new_name"])
+            target_counts[key] = target_counts.get(key, 0) + 1
+
+        field_cache: Dict[str, set] = {}
+        sheets = self.workbook.sheets()
+        invalid: List[Dict[str, str]] = []
+        valid: List[ColumnRename] = []
+
+        for r in renames:
+            sheet, current, new = r["sheet_name"], r["current_name"], r["new_name"]
+            rid = _rename_id(sheet, current, new)
+
+            if target_counts[(sheet, new)] > 1:
+                invalid.append({"id": rid, "reason": "ambiguous target"})
+                continue
+            if sheet not in field_cache:
+                schema = self.schema_provider(model=sheet) or {}
+                field_cache[sheet] = {f.get("name") for f in (schema.get("fields") or [])}
+            fields = field_cache[sheet]
+            if not fields:
+                invalid.append({"id": rid, "reason": "unknown model"})
+                continue
+            if new not in fields:
+                invalid.append(
+                    {"id": rid, "reason": f"'{new}' is not a field of model '{sheet}'; valid fields: {sorted(fields)}"}
+                )
+                continue
+            columns = list(sheets[sheet].columns) if sheet in sheets else []
+            if current not in columns:
+                invalid.append({"id": rid, "reason": "no such column"})
+                continue
+            if new in columns:
+                invalid.append({"id": rid, "reason": "target column already exists"})
+                continue
+            valid.append(
+                ColumnRename(id=rid, sheet_name=sheet, current_name=current, new_name=new, rationale=r["rationale"])
+            )
+
+        applied: List[str] = []
+        rejected: List[str] = []
+        if valid:
+            proposal = ColumnRenameProposal(summary=args["summary"], renames=valid)
+            self.emit(
+                AgentEvent(
+                    kind="rename_proposal",
+                    payload={"summary": proposal.summary, "renames": [vars(r) for r in valid]},
+                )
+            )
+            result = self.approval.review_renames(proposal)  # blocks for human decision
+            for rn in valid:
+                if result.is_approved(rn.id):
+                    self.workbook.rename_column(rn.sheet_name, rn.current_name, rn.new_name)
+                    applied.append(rn.id)
+                else:
+                    rejected.append(rn.id)
+
+        return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid})
 
     def _upload(self) -> str:
         orchestrator = self._orchestrator_for_current_workbook()
