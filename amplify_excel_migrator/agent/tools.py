@@ -4,7 +4,7 @@ from typing import List, Set
 
 from amplify_excel_migrator.agent.llm.base import ToolSpec
 
-GATED_TOOLS: Set[str] = {"propose_changes", "upload"}
+GATED_TOOLS: Set[str] = {"propose_changes", "upload", "propose_column_renames"}
 
 TOOL_SPECS: List[ToolSpec] = [
     ToolSpec(
@@ -67,6 +67,32 @@ TOOL_SPECS: List[ToolSpec] = [
         name="upload",
         description="Upload sheets to Amplify for real. Requires human confirmation of which sheets to upload. Returns success counts and any per-row failures so you can propose fixes and retry.",
         input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    ),
+    ToolSpec(
+        name="propose_column_renames",
+        description="Propose 1:1 header renames that remap an existing column to a valid schema field name, for human approval. NEVER renames anything directly — only approved renames are applied. This tool renames existing headers only; it never adds, removes, or merges columns. Use it when read_sheet shows a header that does not match any schema field.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "One-line summary of this batch."},
+                "renames": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "sheet_name": {"type": "string"},
+                            "current_name": {"type": "string", "description": "Existing header to rename."},
+                            "new_name": {"type": "string", "description": "Target schema field name (exact, camelCase)."},
+                            "rationale": {"type": "string", "description": "Why this header maps to that field."},
+                        },
+                        "required": ["sheet_name", "current_name", "new_name", "rationale"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["summary", "renames"],
+            "additionalProperties": False,
+        },
     ),
 ]
 
