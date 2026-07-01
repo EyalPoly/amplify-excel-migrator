@@ -3,6 +3,8 @@ from amplify_excel_migrator.agent.models import (
     ChangeProposal,
     ApprovalResult,
     AgentEvent,
+    ColumnRename,
+    ColumnRenameProposal,
 )
 
 
@@ -34,3 +36,19 @@ def test_agent_event_carries_kind_and_payload():
     ev = AgentEvent(kind="message", payload={"text": "hi"})
     assert ev.kind == "message"
     assert ev.payload["text"] == "hi"
+
+
+def _rename():
+    return ColumnRename(
+        id="Reporter:Report type->observationMethod",
+        sheet_name="Reporter",
+        current_name="Report type",
+        new_name="observationMethod",
+        rationale="header maps to schema field",
+    )
+
+
+def test_rename_proposal_groups_renames():
+    proposal = ColumnRenameProposal(summary="1 rename", renames=[_rename()])
+    assert len(proposal.renames) == 1
+    assert proposal.rename_ids() == ["Reporter:Report type->observationMethod"]
