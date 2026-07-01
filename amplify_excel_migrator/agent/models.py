@@ -25,6 +25,24 @@ class ChangeProposal:
 
 
 @dataclass
+class ColumnRename:
+    id: str
+    sheet_name: str
+    current_name: str
+    new_name: str
+    rationale: str
+
+
+@dataclass
+class ColumnRenameProposal:
+    summary: str
+    renames: List[ColumnRename]
+
+    def rename_ids(self) -> List[str]:
+        return [r.id for r in self.renames]
+
+
+@dataclass
 class ApprovalResult:
     approved_ids: List[str] = field(default_factory=list)
     rejected_ids: List[str] = field(default_factory=list)

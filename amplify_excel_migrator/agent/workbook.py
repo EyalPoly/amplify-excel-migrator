@@ -38,6 +38,14 @@ class WorkbookEditor:
             raise KeyError(f"Column '{column}' not in sheet '{sheet_name}'")
         df.at[row, column] = value
 
+    def rename_column(self, sheet_name: str, current: str, new: str) -> None:
+        df = self._sheets[sheet_name]
+        if current not in df.columns:
+            raise KeyError(f"Column '{current}' not in sheet '{sheet_name}'")
+        if new in df.columns:
+            raise ValueError(f"Column '{new}' already exists in sheet '{sheet_name}'")
+        self._sheets[sheet_name] = df.rename(columns={current: new})
+
     def save(self, path_or_buffer: Any) -> None:
         # Accepts a filesystem path or a binary file-like object (e.g. io.BytesIO) — both work with openpyxl,
         # so the web layer can stream the workbook to a download without a temp file.

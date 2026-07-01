@@ -74,6 +74,33 @@ def _make_session(provider, handler, events):
     )
 
 
+def _rename_workbook():
+    return WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"], "Report type": ["x", "y"]})})
+
+
+def _rename_schema(model=None):
+    fields = {"Reporter": ["name", "country", "observationMethod"]}.get(model, [])
+    return {"fields": [{"name": f} for f in fields]}
+
+
+def _make_rename_session(turns, handler, events, workbook=None, schema_provider=None):
+    return AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=workbook or _rename_workbook(),
+        approval_handler=handler,
+        schema_provider=schema_provider or _rename_schema,
+        event_sink=events.append,
+    )
+
+
+def _rename_turn(renames, call_id="r1"):
+    return AssistantTurn(
+        text="",
+        tool_calls=[ToolCall(call_id, "propose_column_renames", {"summary": "fix headers", "renames": renames})],
+    )
+
+
 def test_session_applies_approved_changes_then_uploads():
     turns = [
         AssistantTurn(
@@ -228,3 +255,163 @@ def test_dry_run_does_not_mutate_workbook_columns():
     session.run("go")
 
     assert list(workbook.sheets()["Reporter"].columns) == original_columns
+
+
+def test_approved_rename_is_applied_and_visible_to_dry_run():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "header maps to schema field",
+                }
+            ]
+        ),
+        AssistantTurn(text="", tool_calls=[ToolCall("d1", "dry_run", {})]),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        rename_results=[ApprovalResult(approved_ids=["Reporter:Report type->observationMethod"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    cols = list(session.workbook.sheets()["Reporter"].columns)
+    assert "observationMethod" in cols and "Report type" not in cols
+    assert "observationMethod" in session.orchestrator.set_sheets_args[-1]["Reporter"].columns
+    assert "rename_proposal" in [e.kind for e in events]
+
+
+def test_rejected_rename_is_not_applied():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "guess",
+                }
+            ]
+        ),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        rename_results=[ApprovalResult(approved_ids=[], rejected_ids=["Reporter:Report type->observationMethod"])],
+    )
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]
+
+
+def test_invalid_target_field_never_reaches_human():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "bogusField",
+                    "rationale": "wrong",
+                }
+            ]
+        ),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_rename_proposals == []
+    assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]
+    assert "rename_proposal" not in [e.kind for e in events]
+
+
+def test_missing_source_column_is_invalid():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Missing",
+                    "new_name": "observationMethod",
+                    "rationale": "x",
+                }
+            ]
+        ),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_rename_proposals == []
+
+
+def test_collision_with_existing_column_is_invalid():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "name",
+                    "rationale": "x",
+                }
+            ]
+        ),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_rename_proposals == []
+    assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]
+
+
+def test_ambiguous_in_batch_targets_are_both_invalid():
+    turns = [
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "a",
+                },
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "name",
+                    "new_name": "observationMethod",
+                    "rationale": "b",
+                },
+            ]
+        ),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
+    events = []
+    session = _make_rename_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_rename_proposals == []
+    assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]

@@ -2,11 +2,18 @@ from amplify_excel_migrator.agent.tools import TOOL_SPECS, GATED_TOOLS, tool_nam
 
 
 def test_expected_tools_present():
-    assert tool_names() == ["inspect_schema", "read_sheet", "dry_run", "propose_changes", "upload"]
+    assert tool_names() == [
+        "inspect_schema",
+        "read_sheet",
+        "dry_run",
+        "propose_changes",
+        "upload",
+        "propose_column_renames",
+    ]
 
 
-def test_gated_tools_are_propose_and_upload():
-    assert GATED_TOOLS == {"propose_changes", "upload"}
+def test_gated_tools_are_propose_upload_and_rename():
+    assert GATED_TOOLS == {"propose_changes", "upload", "propose_column_renames"}
 
 
 def test_every_spec_has_object_schema():
@@ -20,3 +27,12 @@ def test_propose_changes_schema_requires_changes_array():
     assert props["changes"]["type"] == "array"
     item = props["changes"]["items"]["properties"]
     assert {"sheet_name", "row", "column", "proposed_value", "rationale"} <= set(item)
+
+
+def test_propose_column_renames_schema_shape():
+    spec = next(s for s in TOOL_SPECS if s.name == "propose_column_renames")
+    props = spec.input_schema["properties"]
+    assert props["renames"]["type"] == "array"
+    item = props["renames"]["items"]["properties"]
+    assert {"sheet_name", "current_name", "new_name", "rationale"} <= set(item)
+    assert set(spec.input_schema["required"]) == {"summary", "renames"}

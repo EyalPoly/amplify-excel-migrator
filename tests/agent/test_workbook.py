@@ -41,6 +41,30 @@ def test_save_roundtrips(tmp_path):
     assert reloaded.loc[1, "country"] == "EG"
 
 
+def test_rename_column_renames_header():
+    editor = _editor()
+    editor.rename_column("Reporter", "country", "siteId")
+    assert list(editor.sheets()["Reporter"].columns) == ["name", "siteId"]
+
+
+def test_rename_column_missing_source_raises_keyerror():
+    editor = _editor()
+    try:
+        editor.rename_column("Reporter", "nope", "siteId")
+        assert False, "expected KeyError"
+    except KeyError:
+        pass
+
+
+def test_rename_column_existing_target_raises_valueerror():
+    editor = _editor()
+    try:
+        editor.rename_column("Reporter", "country", "name")
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
 def test_save_accepts_a_binary_buffer():
     import io
 

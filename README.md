@@ -128,6 +128,10 @@ returns a `MigrationResult` with a merged per-sheet `failures` list. This is the
 non-interactive callers (such as an automated agent) drive a migration. The `amplify-migrator
 migrate` CLI is a thin interactive wrapper over this API and behaves exactly as before.
 
+The agent can additionally propose header renames via `propose_column_renames` to reconcile mismatched
+column headers with schema field names before migrating; like value edits, every rename passes through
+the same human-approval gate and only approved renames are applied.
+
 ### Quick Start
 
 ```bash
