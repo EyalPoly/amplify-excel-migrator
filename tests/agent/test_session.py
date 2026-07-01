@@ -75,9 +75,7 @@ def _make_session(provider, handler, events):
 
 
 def _rename_workbook():
-    return WorkbookEditor(
-        {"Reporter": pd.DataFrame({"name": ["a", "b"], "Report type": ["x", "y"]})}
-    )
+    return WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"], "Report type": ["x", "y"]})})
 
 
 def _rename_schema(model=None):
@@ -261,14 +259,16 @@ def test_dry_run_does_not_mutate_workbook_columns():
 
 def test_approved_rename_is_applied_and_visible_to_dry_run():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Report type",
-                "new_name": "observationMethod",
-                "rationale": "header maps to schema field",
-            }
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "header maps to schema field",
+                }
+            ]
+        ),
         AssistantTurn(text="", tool_calls=[ToolCall("d1", "dry_run", {})]),
         AssistantTurn(text="done", tool_calls=[]),
     ]
@@ -290,14 +290,16 @@ def test_approved_rename_is_applied_and_visible_to_dry_run():
 
 def test_rejected_rename_is_not_applied():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Report type",
-                "new_name": "observationMethod",
-                "rationale": "guess",
-            }
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "guess",
+                }
+            ]
+        ),
         AssistantTurn(text="done", tool_calls=[]),
     ]
     handler = RecordingApprovalHandler(
@@ -315,14 +317,16 @@ def test_rejected_rename_is_not_applied():
 
 def test_invalid_target_field_never_reaches_human():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Report type",
-                "new_name": "bogusField",
-                "rationale": "wrong",
-            }
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "bogusField",
+                    "rationale": "wrong",
+                }
+            ]
+        ),
         AssistantTurn(text="done", tool_calls=[]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
@@ -338,14 +342,16 @@ def test_invalid_target_field_never_reaches_human():
 
 def test_missing_source_column_is_invalid():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Missing",
-                "new_name": "observationMethod",
-                "rationale": "x",
-            }
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Missing",
+                    "new_name": "observationMethod",
+                    "rationale": "x",
+                }
+            ]
+        ),
         AssistantTurn(text="done", tool_calls=[]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
@@ -359,14 +365,16 @@ def test_missing_source_column_is_invalid():
 
 def test_collision_with_existing_column_is_invalid():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Report type",
-                "new_name": "name",
-                "rationale": "x",
-            }
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "name",
+                    "rationale": "x",
+                }
+            ]
+        ),
         AssistantTurn(text="done", tool_calls=[]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
@@ -381,20 +389,22 @@ def test_collision_with_existing_column_is_invalid():
 
 def test_ambiguous_in_batch_targets_are_both_invalid():
     turns = [
-        _rename_turn([
-            {
-                "sheet_name": "Reporter",
-                "current_name": "Report type",
-                "new_name": "observationMethod",
-                "rationale": "a",
-            },
-            {
-                "sheet_name": "Reporter",
-                "current_name": "name",
-                "new_name": "observationMethod",
-                "rationale": "b",
-            },
-        ]),
+        _rename_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "a",
+                },
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "name",
+                    "new_name": "observationMethod",
+                    "rationale": "b",
+                },
+            ]
+        ),
         AssistantTurn(text="done", tool_calls=[]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])

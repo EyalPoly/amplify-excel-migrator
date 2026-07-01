@@ -82,7 +82,10 @@ TOOL_SPECS: List[ToolSpec] = [
                         "properties": {
                             "sheet_name": {"type": "string"},
                             "current_name": {"type": "string", "description": "Existing header to rename."},
-                            "new_name": {"type": "string", "description": "Target schema field name (exact, camelCase)."},
+                            "new_name": {
+                                "type": "string",
+                                "description": "Target schema field name (exact, camelCase).",
+                            },
                             "rationale": {"type": "string", "description": "Why this header maps to that field."},
                         },
                         "required": ["sheet_name", "current_name", "new_name", "rationale"],

@@ -45,9 +45,7 @@ def test_recording_handler_returns_scripted_rename_results():
     handler = RecordingApprovalHandler(
         change_results=[],
         upload_selections=[],
-        rename_results=[
-            ApprovalResult(approved_ids=["Reporter:Report type->observationMethod"], rejected_ids=[])
-        ],
+        rename_results=[ApprovalResult(approved_ids=["Reporter:Report type->observationMethod"], rejected_ids=[])],
     )
 
     result = handler.review_renames(proposal)
