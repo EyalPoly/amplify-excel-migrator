@@ -42,9 +42,7 @@ def test_generate_parses_text_and_tool_calls():
     )
 
     assert turn.text == "Inspecting."
-    assert turn.tool_calls == [
-        ToolCall(id="call_1", name="read_sheet", arguments={"sheet": "Reporter"})
-    ]
+    assert turn.tool_calls == [ToolCall(id="call_1", name="read_sheet", arguments={"sheet": "Reporter"})]
     kwargs = client.chat.completions.create.call_args.kwargs
     assert kwargs["model"] == "local-model"
     assert kwargs["tools"][0]["function"]["name"] == "read_sheet"
@@ -60,9 +58,7 @@ def test_messages_map_to_openai_shapes():
         system="s",
         messages=[
             UserMessage(content="start"),
-            AssistantMessage(
-                text="", tool_calls=[ToolCall("call_1", "read_sheet", {"sheet": "R"})]
-            ),
+            AssistantMessage(text="", tool_calls=[ToolCall("call_1", "read_sheet", {"sheet": "R"})]),
             ToolResultMessage(tool_call_id="call_1", content="cols", is_error=False),
         ],
         tools=[],
@@ -71,9 +67,7 @@ def test_messages_map_to_openai_shapes():
     assert sent[1]["role"] == "user"
     assert sent[2]["role"] == "assistant"
     assert sent[2]["tool_calls"][0]["id"] == "call_1"
-    assert json.loads(sent[2]["tool_calls"][0]["function"]["arguments"]) == {
-        "sheet": "R"
-    }
+    assert json.loads(sent[2]["tool_calls"][0]["function"]["arguments"]) == {"sheet": "R"}
     assert sent[3] == {"role": "tool", "tool_call_id": "call_1", "content": "cols"}
 
 
@@ -82,14 +76,10 @@ def test_tool_choice_forwarded_only_when_set():
     client.chat.completions.create.return_value = _completion("ok")
     spec = [ToolSpec("read_sheet", "Read", {"type": "object", "properties": {}})]
 
-    OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], spec
-    )
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], spec)
     assert "tool_choice" not in client.chat.completions.create.call_args.kwargs
 
-    OpenAICompatibleProvider(client=client, model="m", tool_choice="auto").generate(
-        "s", [UserMessage("x")], spec
-    )
+    OpenAICompatibleProvider(client=client, model="m", tool_choice="auto").generate("s", [UserMessage("x")], spec)
     assert client.chat.completions.create.call_args.kwargs["tool_choice"] == "auto"
 
 
@@ -97,15 +87,11 @@ def test_temperature_forwarded_only_when_set():
     client = MagicMock()
     client.chat.completions.create.return_value = _completion("ok")
 
-    OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], []
-    )
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
     assert "temperature" not in client.chat.completions.create.call_args.kwargs
 
     # 0.0 is a meaningful value (deterministic) and must be forwarded despite being falsy.
-    OpenAICompatibleProvider(client=client, model="m", temperature=0.0).generate(
-        "s", [UserMessage("x")], []
-    )
+    OpenAICompatibleProvider(client=client, model="m", temperature=0.0).generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["temperature"] == 0.0
 
 
@@ -141,9 +127,7 @@ def test_string_encoded_array_arg_is_reparsed():
         },
     )
 
-    turn = OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], [spec]
-    )
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
     assert turn.tool_calls[0].arguments["changes"] == changes
 
@@ -160,9 +144,7 @@ def test_string_encoded_object_arg_is_reparsed():
         {"type": "object", "properties": {"payload": {"type": "object"}}},
     )
 
-    turn = OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], [spec]
-    )
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
     assert turn.tool_calls[0].arguments["payload"] == payload
 
@@ -179,9 +161,7 @@ def test_string_arg_with_string_schema_is_left_alone():
         {"type": "object", "properties": {"note": {"type": "string"}}},
     )
 
-    turn = OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], [spec]
-    )
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
     assert turn.tool_calls[0].arguments["note"] == "[1, 2]"
 
@@ -198,9 +178,7 @@ def test_unparseable_string_for_array_arg_is_left_alone():
         {"type": "object", "properties": {"changes": {"type": "array"}}},
     )
 
-    turn = OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], [spec]
-    )
+    turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
     assert turn.tool_calls[0].arguments["changes"] == "not json"
 
@@ -209,9 +187,7 @@ def test_max_tokens_defaults_to_16000():
     client = MagicMock()
     client.chat.completions.create.return_value = _completion("ok")
 
-    OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], []
-    )
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 16000
 
 
@@ -219,9 +195,7 @@ def test_max_tokens_is_configurable():
     client = MagicMock()
     client.chat.completions.create.return_value = _completion("ok")
 
-    OpenAICompatibleProvider(client=client, model="m", max_tokens=60000).generate(
-        "s", [UserMessage("x")], []
-    )
+    OpenAICompatibleProvider(client=client, model="m", max_tokens=60000).generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 60000
 
 
@@ -230,13 +204,9 @@ def test_reasoning_effort_forwarded_only_when_set():
     client.chat.completions.create.return_value = _completion("ok")
 
     # Default: thinking models decide for themselves; we don't send the param.
-    OpenAICompatibleProvider(client=client, model="m").generate(
-        "s", [UserMessage("x")], []
-    )
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
     assert "reasoning_effort" not in client.chat.completions.create.call_args.kwargs
 
     # When set (e.g. "none" to disable Gemini 2.5-flash thinking), forward it.
-    OpenAICompatibleProvider(
-        client=client, model="m", reasoning_effort="none"
-    ).generate("s", [UserMessage("x")], [])
+    OpenAICompatibleProvider(client=client, model="m", reasoning_effort="none").generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "none"

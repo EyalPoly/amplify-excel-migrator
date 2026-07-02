@@ -47,9 +47,7 @@ class OpenAICompatibleProvider(LLMProvider):
         # Thinking-model control (e.g. "none" disables Gemini 2.5-flash thinking). Forwarded only when set.
         self._reasoning_effort = reasoning_effort
 
-    def generate(
-        self, system: str, messages: List[Message], tools: List[ToolSpec]
-    ) -> AssistantTurn:
+    def generate(self, system: str, messages: List[Message], tools: List[ToolSpec]) -> AssistantTurn:
         api_messages = [{"role": "system", "content": system}]
         api_messages.extend(self._message_to_api(m) for m in messages)
 
@@ -77,25 +75,17 @@ class OpenAICompatibleProvider(LLMProvider):
             schema = schemas_by_name.get(call.function.name)
             if schema is not None:
                 arguments = self._coerce_string_encoded_containers(arguments, schema)
-            tool_calls.append(
-                ToolCall(id=call.id, name=call.function.name, arguments=arguments)
-            )
-        return AssistantTurn(
-            text=message.content or "", tool_calls=tool_calls, raw=response
-        )
+            tool_calls.append(ToolCall(id=call.id, name=call.function.name, arguments=arguments))
+        return AssistantTurn(text=message.content or "", tool_calls=tool_calls, raw=response)
 
     @staticmethod
-    def _coerce_string_encoded_containers(
-        arguments: Dict[str, Any], schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _coerce_string_encoded_containers(arguments: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
         # Some models/servers serialize nested array/object arguments as a JSON string. The tool schema
         # is the source of truth for which properties should be containers, so re-parse only those.
         if not isinstance(arguments, dict):
             return arguments
         for name, prop in schema.get("properties", {}).items():
-            if prop.get("type") in ("array", "object") and isinstance(
-                arguments.get(name), str
-            ):
+            if prop.get("type") in ("array", "object") and isinstance(arguments.get(name), str):
                 try:
                     parsed = json.loads(arguments[name])
                 except (ValueError, TypeError):
