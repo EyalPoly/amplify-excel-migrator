@@ -98,15 +98,33 @@ def test_temperature_forwarded_only_when_set():
 def test_string_encoded_array_arg_is_reparsed():
     # Some models (e.g. llama3.1 via Ollama) return a nested array argument as a JSON *string*.
     # When the tool schema declares the property an array, recover the real list.
-    changes = [{"sheet_name": "Reporter", "row": 0, "column": "country", "proposed_value": "EG", "rationale": "r"}]
+    changes = [
+        {
+            "sheet_name": "Reporter",
+            "row": 0,
+            "column": "country",
+            "proposed_value": "EG",
+            "rationale": "r",
+        }
+    ]
     client = MagicMock()
     client.chat.completions.create.return_value = _completion(
-        "", [_api_tool_call("c1", "propose_changes", {"summary": "s", "changes": json.dumps(changes)})]
+        "",
+        [
+            _api_tool_call(
+                "c1",
+                "propose_changes",
+                {"summary": "s", "changes": json.dumps(changes)},
+            )
+        ],
     )
     spec = ToolSpec(
         "propose_changes",
         "Propose",
-        {"type": "object", "properties": {"summary": {"type": "string"}, "changes": {"type": "array"}}},
+        {
+            "type": "object",
+            "properties": {"summary": {"type": "string"}, "changes": {"type": "array"}},
+        },
     )
 
     turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
@@ -120,7 +138,11 @@ def test_string_encoded_object_arg_is_reparsed():
     client.chat.completions.create.return_value = _completion(
         "", [_api_tool_call("c1", "obj_tool", {"payload": json.dumps(payload)})]
     )
-    spec = ToolSpec("obj_tool", "Obj", {"type": "object", "properties": {"payload": {"type": "object"}}})
+    spec = ToolSpec(
+        "obj_tool",
+        "Obj",
+        {"type": "object", "properties": {"payload": {"type": "object"}}},
+    )
 
     turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
@@ -133,7 +155,11 @@ def test_string_arg_with_string_schema_is_left_alone():
     client.chat.completions.create.return_value = _completion(
         "", [_api_tool_call("c1", "note_tool", {"note": "[1, 2]"})]
     )
-    spec = ToolSpec("note_tool", "Note", {"type": "object", "properties": {"note": {"type": "string"}}})
+    spec = ToolSpec(
+        "note_tool",
+        "Note",
+        {"type": "object", "properties": {"note": {"type": "string"}}},
+    )
 
     turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
@@ -146,8 +172,41 @@ def test_unparseable_string_for_array_arg_is_left_alone():
     client.chat.completions.create.return_value = _completion(
         "", [_api_tool_call("c1", "propose_changes", {"changes": "not json"})]
     )
-    spec = ToolSpec("propose_changes", "P", {"type": "object", "properties": {"changes": {"type": "array"}}})
+    spec = ToolSpec(
+        "propose_changes",
+        "P",
+        {"type": "object", "properties": {"changes": {"type": "array"}}},
+    )
 
     turn = OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [spec])
 
     assert turn.tool_calls[0].arguments["changes"] == "not json"
+
+
+def test_max_tokens_defaults_to_16000():
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion("ok")
+
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
+    assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 16000
+
+
+def test_max_tokens_is_configurable():
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion("ok")
+
+    OpenAICompatibleProvider(client=client, model="m", max_tokens=60000).generate("s", [UserMessage("x")], [])
+    assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 60000
+
+
+def test_reasoning_effort_forwarded_only_when_set():
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion("ok")
+
+    # Default: thinking models decide for themselves; we don't send the param.
+    OpenAICompatibleProvider(client=client, model="m").generate("s", [UserMessage("x")], [])
+    assert "reasoning_effort" not in client.chat.completions.create.call_args.kwargs
+
+    # When set (e.g. "none" to disable Gemini 2.5-flash thinking), forward it.
+    OpenAICompatibleProvider(client=client, model="m", reasoning_effort="none").generate("s", [UserMessage("x")], [])
+    assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "none"

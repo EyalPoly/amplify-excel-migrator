@@ -26,6 +26,8 @@ class OpenAICompatibleProvider(LLMProvider):
         api_key: Optional[str] = None,
         tool_choice: Optional[str] = None,
         temperature: Optional[float] = None,
+        max_tokens: int = MAX_TOKENS,
+        reasoning_effort: Optional[str] = None,
     ):
         if client is None:
             from openai import OpenAI
@@ -39,14 +41,25 @@ class OpenAICompatibleProvider(LLMProvider):
         # Lower values (e.g. 0.0-0.2) make tool calls more reliable. Forwarded only when set; default
         # None leaves the server default. 0.0 is a valid value, so the guard is "is not None", not truthiness.
         self._temperature = temperature
+        # Output-token ceiling. Configurable because thinking models (e.g. Gemini 2.5-flash) draw
+        # their reasoning from this same budget, so the non-thinking default can be too small for them.
+        self._max_tokens = max_tokens
+        # Thinking-model control (e.g. "none" disables Gemini 2.5-flash thinking). Forwarded only when set.
+        self._reasoning_effort = reasoning_effort
 
     def generate(self, system: str, messages: List[Message], tools: List[ToolSpec]) -> AssistantTurn:
         api_messages = [{"role": "system", "content": system}]
         api_messages.extend(self._message_to_api(m) for m in messages)
 
-        kwargs: Dict[str, Any] = {"model": self._model, "max_tokens": MAX_TOKENS, "messages": api_messages}
+        kwargs: Dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "messages": api_messages,
+        }
         if self._temperature is not None:
             kwargs["temperature"] = self._temperature
+        if self._reasoning_effort is not None:
+            kwargs["reasoning_effort"] = self._reasoning_effort
         if tools:
             kwargs["tools"] = [self._tool_to_api(t) for t in tools]
             if self._tool_choice is not None:
@@ -103,11 +116,18 @@ class OpenAICompatibleProvider(LLMProvider):
                     {
                         "id": c.id,
                         "type": "function",
-                        "function": {"name": c.name, "arguments": json.dumps(c.arguments)},
+                        "function": {
+                            "name": c.name,
+                            "arguments": json.dumps(c.arguments),
+                        },
                     }
                     for c in message.tool_calls
                 ]
             return out
         if isinstance(message, ToolResultMessage):
-            return {"role": "tool", "tool_call_id": message.tool_call_id, "content": message.content}
+            return {
+                "role": "tool",
+                "tool_call_id": message.tool_call_id,
+                "content": message.content,
+            }
         raise TypeError(f"Unknown message type: {type(message)!r}")
