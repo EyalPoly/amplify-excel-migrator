@@ -8,6 +8,7 @@ from amplify_excel_migrator.agent.session import AgentSession
 from amplify_excel_migrator.migration.models import (
     MigrationPlan,
     MigrationResult,
+    RecordFailure,
     SheetPlan,
     SheetResult,
 )
@@ -415,3 +416,71 @@ def test_ambiguous_in_batch_targets_are_both_invalid():
 
     assert handler.seen_rename_proposals == []
     assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]
+
+
+def _plan_with_failures(errors):
+    return MigrationPlan(
+        sheets=[
+            SheetPlan(
+                sheet_name="Observation",
+                status="ready",
+                skip_reason=None,
+                total_rows=len(errors),
+                record_count=0,
+                records=[],
+                parsing_failures=[
+                    RecordFailure(primary_field="k", primary_field_value=i, error=e, original_row={})
+                    for i, e in enumerate(errors)
+                ],
+                parsed_model_structure={"fields": []},
+                row_dict_by_primary={},
+            )
+        ]
+    )
+
+
+class _FailingOrchestrator:
+    def __init__(self, plan):
+        self._plan = plan
+
+    def set_sheets(self, sheets):
+        pass
+
+    def build_plan(self):
+        return self._plan
+
+
+def _dry_run_session(plan, events, max_failure_groups=50):
+    turns = [
+        AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
+        AssistantTurn(text="done", tool_calls=[]),
+    ]
+    return AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=_FailingOrchestrator(plan),
+        workbook=WorkbookEditor({"Observation": pd.DataFrame({"a": [1]})}),
+        approval_handler=RecordingApprovalHandler([], []),
+        schema_provider=lambda model=None: {},
+        event_sink=events.append,
+        max_failure_groups=max_failure_groups,
+    )
+
+
+def test_dry_run_groups_failures_by_error():
+    events = []
+    _dry_run_session(_plan_with_failures(["E1", "E1", "E1", "E2"]), events).run("go")
+    sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
+    assert sheet["total_parsing_failures"] == 4
+    assert sheet["distinct_failure_groups"] == 2
+    assert sheet["failure_groups"] == [{"error": "E1", "count": 3}, {"error": "E2", "count": 1}]
+    assert "parsing_failures" not in sheet
+
+
+def test_dry_run_honors_max_failure_groups():
+    events = []
+    _dry_run_session(_plan_with_failures(["E1", "E1", "E2", "E3"]), events, max_failure_groups=1).run("go")
+    sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
+    assert len(sheet["failure_groups"]) == 1
+    assert sheet["failure_groups"][0] == {"error": "E1", "count": 2}
+    assert sheet["distinct_failure_groups"] == 3
+    assert sheet["total_parsing_failures"] == 4

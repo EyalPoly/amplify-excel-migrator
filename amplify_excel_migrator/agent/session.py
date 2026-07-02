@@ -20,6 +20,7 @@ from amplify_excel_migrator.agent.models import (
 from amplify_excel_migrator.agent.prompts import SYSTEM_PROMPT
 from amplify_excel_migrator.agent.tools import TOOL_SPECS
 from amplify_excel_migrator.agent.workbook import WorkbookEditor
+from amplify_excel_migrator.migration.failure_grouping import summarize_failures
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class AgentSession:
         approval_handler: Any,
         schema_provider: Callable[..., Dict[str, Any]],
         event_sink: Callable[[AgentEvent], None],
+        max_failure_groups: int = 50,
     ):
         self.provider = provider
         self.orchestrator = orchestrator
@@ -62,6 +64,7 @@ class AgentSession:
         self.approval = approval_handler
         self.schema_provider = schema_provider
         self.emit = event_sink
+        self._max_failure_groups = max_failure_groups
 
     def run(self, instruction: str, max_turns: int = 40) -> None:
         messages: List[Any] = [UserMessage(content=instruction)]
@@ -112,22 +115,21 @@ class AgentSession:
     def _dry_run(self) -> str:
         orchestrator = self._orchestrator_for_current_workbook()
         plan = orchestrator.build_plan()
-        report = {
-            "sheets": [
-                {
-                    "sheet_name": s.sheet_name,
-                    "status": s.status,
-                    "skip_reason": s.skip_reason,
-                    "record_count": s.record_count,
-                    "parsing_failures": [
-                        {"row_key": _json_safe(f.primary_field_value), "error": f.error} for f in s.parsing_failures
-                    ],
-                }
-                for s in plan.sheets
-            ]
-        }
+        report = {"sheets": [self._sheet_report(s) for s in plan.sheets]}
         self.emit(AgentEvent(kind="dry_run", payload=report))
         return json.dumps(report, default=str)
+
+    def _sheet_report(self, sheet) -> Dict[str, Any]:
+        summary = summarize_failures(sheet.parsing_failures, self._max_failure_groups)
+        return {
+            "sheet_name": sheet.sheet_name,
+            "status": sheet.status,
+            "skip_reason": sheet.skip_reason,
+            "record_count": sheet.record_count,
+            "total_parsing_failures": summary["total"],
+            "distinct_failure_groups": summary["distinct"],
+            "failure_groups": summary["groups"],
+        }
 
     def _propose_changes(self, args: Dict[str, Any]) -> str:
         changes = [
