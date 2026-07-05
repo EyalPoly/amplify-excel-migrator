@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from getpass import getpass
 from typing import Any, Dict, List, Set
 
@@ -173,7 +174,7 @@ def score(events: List[Dict[str, Any]], reviewer: DiscerningReviewer) -> Dict[st
     last_dry_before_upload_clean = None
     if dry_runs:
         last = dry_runs[-1]["payload"]["sheets"]
-        last_dry_before_upload_clean = all(s.get("total_parsing_failures", 0) == 0 for s in last)
+        last_dry_before_upload_clean = all(s.get("total_failed_rows", 0) == 0 for s in last)
 
     return {
         "finished": kinds[-1] == "done" if kinds else False,
@@ -218,6 +219,18 @@ def build_provider(args) -> OpenAICompatibleProvider:
     return OpenAICompatibleProvider(**kwargs)
 
 
+class _PacedProvider:
+    """Wraps a provider to sleep before each generate(), to respect RPM limits."""
+
+    def __init__(self, inner: Any, delay: float):
+        self._inner = inner
+        self._delay = delay
+
+    def generate(self, system, messages, tools):
+        time.sleep(self._delay)
+        return self._inner.generate(system, messages, tools)
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--excel", required=True)
@@ -245,6 +258,12 @@ def main() -> None:
     )
     p.add_argument("--max-turns", type=int, default=40)
     p.add_argument("--out", default="scripts/trajectory_output.json")
+    p.add_argument(
+        "--turn-delay",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep before each LLM call, to pace RPM-limited providers (e.g. Gemini free tier).",
+    )
     args = p.parse_args()
 
     # The agent's _dispatch logs caught tool errors via logger.exception (full tracebacks).
@@ -292,6 +311,8 @@ def main() -> None:
     )
 
     provider = build_provider(args)
+    if args.turn_delay > 0:
+        provider = _PacedProvider(provider, args.turn_delay)
 
     events: List[Dict[str, Any]] = []
     reviewer = DiscerningReviewer(field_enum_values)
@@ -309,11 +330,16 @@ def main() -> None:
         f"'{args.sheet_as}' whose headers may not match the schema yet. Inspect the "
         f"schema, reconcile the column names, fix any values dry_run reports, then upload."
     )
-    session.run(instruction, max_turns=args.max_turns)
+    run_error = None
+    try:
+        session.run(instruction, max_turns=args.max_turns)
+    except Exception as e:  # rate limits, network, auth — still save what we captured so far
+        run_error = f"{type(e).__name__}: {e}"
 
     result = {
         "model": args.model,
         "instruction": instruction,
+        "error": run_error,
         "score": score(events, reviewer),
         "events": events,
     }
@@ -329,6 +355,8 @@ def main() -> None:
     print(
         f"schema_before_edits: {s['schema_inspected_before_edits']}  no_upload_before_dry_run: {s['no_upload_before_dry_run']}  final_dry_run_clean: {s['final_dry_run_clean']}"
     )
+    if run_error:
+        print(f"RUN ERROR (partial trajectory saved): {run_error}")
     print(f"full trajectory written to: {out_path}")
 
 

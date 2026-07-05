@@ -126,7 +126,7 @@ class AgentSession:
             "status": sheet.status,
             "skip_reason": sheet.skip_reason,
             "record_count": sheet.record_count,
-            "total_parsing_failures": summary["total"],
+            "total_failed_rows": summary["total_failed_rows"],
             "distinct_failure_groups": summary["distinct"],
             "failure_groups": summary["groups"],
         }
