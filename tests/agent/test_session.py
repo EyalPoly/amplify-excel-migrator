@@ -567,3 +567,119 @@ def test_exceeding_max_nudges_stops_with_error():
 
     assert events[-1].kind == "error"
     assert "without a tool call" in events[-1].payload["message"]
+
+
+def test_propose_changes_missing_row_returns_instructive_error():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [{"sheet_name": "Reporter", "column": "country", "proposed_value": "EG", "rationale": "r"}],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "row" in result
+    assert "change #0" in result
+    assert "proposal" not in [e.kind for e in events]
+
+
+def test_propose_changes_unknown_column_hints_at_renames():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {
+                    "sheet_name": "Reporter",
+                    "row": 0,
+                    "column": "Observation:Common name Hebrew",
+                    "proposed_value": "v",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "Observation:Common name Hebrew" in result
+    assert "propose_column_renames" in result
+    assert "proposal" not in [e.kind for e in events]
+
+
+def test_propose_changes_unknown_sheet_lists_available():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [{"sheet_name": "Nope", "row": 0, "column": "name", "proposed_value": "v", "rationale": "r"}],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "Nope" in result and "Reporter" in result
+
+
+def test_propose_changes_row_out_of_range_is_rejected():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 99, "column": "country", "proposed_value": "v", "rationale": "r"}
+            ],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "99" in result and "out of range" in result
+
+
+def test_propose_changes_valid_batch_still_emits_proposal():
+    turns = [
+        AssistantTurn(
+            text="",
+            tool_calls=[
+                ToolCall(
+                    "c1",
+                    "propose_changes",
+                    {
+                        "summary": "fill country",
+                        "changes": [
+                            {
+                                "sheet_name": "Reporter",
+                                "row": 1,
+                                "column": "country",
+                                "proposed_value": "EG",
+                                "rationale": "missing",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[ApprovalResult(approved_ids=["Reporter:1:country"], rejected_ids=[])],
+        upload_selections=[],
+    )
+    events = []
+    session = _make_session(ScriptedProvider(turns), handler, events)
+
+    session.run("go")
+
+    assert "proposal" in [e.kind for e in events]
+    assert session.workbook.cell("Reporter", 1, "country") == "EG"

@@ -153,7 +153,40 @@ class AgentSession:
             "failure_groups": summary["groups"],
         }
 
+    _REQUIRED_CHANGE_KEYS = ("sheet_name", "row", "column", "proposed_value", "rationale")
+
+    def _validate_changes(self, changes: List[Dict[str, Any]]) -> List[str]:
+        sheets = self.workbook.sheets()
+        problems: List[str] = []
+        for i, c in enumerate(changes):
+            missing = [k for k in self._REQUIRED_CHANGE_KEYS if k not in c]
+            if missing:
+                for k in missing:
+                    problems.append(f"change #{i}: missing required '{k}' (row is a 0-based integer).")
+                continue
+            s = c["sheet_name"]
+            if s not in sheets:
+                problems.append(f"change #{i}: sheet '{s}' not found. Available: {sorted(sheets)}.")
+                continue
+            df = sheets[s]
+            cols = list(df.columns)
+            if c["column"] not in cols:
+                problems.append(
+                    f"change #{i}: column '{c['column']}' not found in sheet '{s}'. Columns: {cols}. "
+                    "To fix a wrong header use propose_column_renames, not propose_changes."
+                )
+                continue
+            r = c["row"]
+            n = len(df)
+            if not isinstance(r, int) or isinstance(r, bool) or not (0 <= r < n):
+                problems.append(f"change #{i}: row {r} out of range for '{s}' (valid 0..{n - 1}).")
+        return problems
+
     def _propose_changes(self, args: Dict[str, Any]) -> str:
+        problems = self._validate_changes(args["changes"])
+        if problems:
+            return "ERROR: " + " ".join(problems)
+
         changes = [
             ProposedChange(
                 id=_change_id(c["sheet_name"], c["row"], c["column"]),
