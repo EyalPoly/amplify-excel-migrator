@@ -97,6 +97,17 @@ TOOL_SPECS: List[ToolSpec] = [
             "additionalProperties": False,
         },
     ),
+    ToolSpec(
+        name="finish",
+        description="Call when the migration is complete and nothing remains to fix. This ends the session.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "Short final summary of what was done."},
+            },
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 

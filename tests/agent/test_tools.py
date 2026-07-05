@@ -9,6 +9,7 @@ def test_expected_tools_present():
         "propose_changes",
         "upload",
         "propose_column_renames",
+        "finish",
     ]
 
 
@@ -36,3 +37,15 @@ def test_propose_column_renames_schema_shape():
     item = props["renames"]["items"]["properties"]
     assert {"sheet_name", "current_name", "new_name", "rationale"} <= set(item)
     assert set(spec.input_schema["required"]) == {"summary", "renames"}
+
+
+def test_finish_tool_present_and_not_gated():
+    assert "finish" in tool_names()
+    assert "finish" not in GATED_TOOLS
+
+
+def test_finish_schema_has_optional_summary():
+    spec = next(s for s in TOOL_SPECS if s.name == "finish")
+    props = spec.input_schema["properties"]
+    assert props["summary"]["type"] == "string"
+    assert spec.input_schema.get("required", []) == []
