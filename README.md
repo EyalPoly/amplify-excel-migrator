@@ -130,7 +130,9 @@ migrate` CLI is a thin interactive wrapper over this API and behaves exactly as 
 
 The agent can additionally propose header renames via `propose_column_renames` to reconcile mismatched
 column headers with schema field names before migrating; like value edits, every rename passes through
-the same human-approval gate and only approved renames are applied.
+the same human-approval gate and only approved renames are applied. The agent signals completion with an
+explicit `finish` tool call rather than by ending a message, so a turn that only narrates its plan never
+terminates the session prematurely.
 
 ### Quick Start
 
