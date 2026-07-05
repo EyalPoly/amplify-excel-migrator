@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 import pandas as pd
 from amplify_excel_migrator.data.transformer import DataTransformer
+from amplify_excel_migrator.migration.models import FieldError
 
 
 @pytest.fixture
@@ -498,6 +499,175 @@ class TestTransformRowToRecord:
         error = failed[0]["error"]
         assert "depth" in error
         assert "temperature" in error
+
+
+class TestStructuredFieldErrors:
+    """parse failures are carried as structured FieldError objects, not just strings."""
+
+    def test_fk_not_found_produces_structured_field_error(self, transformer):
+        df = pd.DataFrame([{"species": "#REF!"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "speciesId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Species",
+                    "is_list": False,
+                    "is_scalar": False,
+                    "is_custom_type": False,
+                }
+            ]
+        }
+        fk_cache = {"Species": {"lookup": {"Panthera": "sp-1"}}}
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "species", fk_cache)
+
+        assert len(failed) == 1
+        fes = failed[0]["field_errors"]
+        assert len(fes) == 1
+        assert (fes[0].column, fes[0].value, fes[0].kind) == ("species", "#REF!", "fk_not_found")
+
+    def test_missing_required_produces_structured_field_error(self, transformer):
+        df = pd.DataFrame([{"other": "x"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "group",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                }
+            ]
+        }
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "group", {})
+
+        fes = failed[0]["field_errors"]
+        assert (fes[0].column, fes[0].value, fes[0].kind) == ("group", None, "missing_required")
+
+    def test_unparseable_value_produces_structured_field_error(self, transformer, mock_field_parser):
+        mock_field_parser.parse_field_input.side_effect = None
+        mock_field_parser.parse_field_input.return_value = None
+        df = pd.DataFrame([{"depth": "bad"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "depth",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "Float",
+                }
+            ]
+        }
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "depth", {})
+
+        fes = failed[0]["field_errors"]
+        assert (fes[0].column, fes[0].value, fes[0].kind) == ("depth", "bad", "parse")
+
+    def test_row_with_two_bad_fields_produces_two_structured_errors(self, transformer):
+        df = pd.DataFrame([{"species": "#REF!"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "group",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "speciesId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Species",
+                    "is_list": False,
+                    "is_scalar": False,
+                    "is_custom_type": False,
+                },
+            ]
+        }
+        fk_cache = {"Species": {"lookup": {"Panthera": "sp-1"}}}
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "group", fk_cache)
+
+        fes = failed[0]["field_errors"]
+        assert {(fe.column, fe.value, fe.kind) for fe in fes} == {
+            ("group", None, "missing_required"),
+            ("species", "#REF!", "fk_not_found"),
+        }
+
+    def test_joined_error_string_still_produced_for_back_compat(self, transformer):
+        df = pd.DataFrame([{"species": "#REF!"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "group",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": False,
+                    "type": "String",
+                },
+                {
+                    "name": "speciesId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Species",
+                    "is_list": False,
+                    "is_scalar": False,
+                    "is_custom_type": False,
+                },
+            ]
+        }
+        fk_cache = {"Species": {"lookup": {"Panthera": "sp-1"}}}
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "group", fk_cache)
+
+        error = failed[0]["error"]
+        assert error.startswith("Parsing error: ")
+        assert " | " in error
+        assert "group" in error and "species" in error
+
+    def test_non_field_parse_value_error_becomes_other_kind(self, transformer, mock_field_parser):
+        mock_field_parser.build_custom_type_from_columns.side_effect = ValueError("boom")
+        df = pd.DataFrame([{"length": "x"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "groups",
+                    "is_id": False,
+                    "is_required": False,
+                    "is_list": True,
+                    "is_scalar": False,
+                    "is_custom_type": True,
+                    "type": "IndividualGroup",
+                    "custom_type_fields": [],
+                }
+            ]
+        }
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "groups", {})
+
+        fes = failed[0]["field_errors"]
+        assert (fes[0].column, fes[0].value, fes[0].kind, fes[0].message) == ("groups", None, "other", "boom")
+
+    def test_unexpected_row_exception_becomes_single_other_field_error(self, transformer):
+        transformer.transform_row_to_record = MagicMock(side_effect=RuntimeError("kaboom"))
+        df = pd.DataFrame([{"name": "John"}])
+        parsed_model = {"fields": []}
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
+
+        fes = failed[0]["field_errors"]
+        assert len(fes) == 1
+        assert (fes[0].column, fes[0].value, fes[0].kind, fes[0].message) == (None, None, "other", "kaboom")
 
 
 class TestParseInput:

@@ -2,6 +2,7 @@
 
 from amplify_excel_migrator.migration.models import (
     RecordFailure,
+    FieldError,
     SheetPlan,
     MigrationPlan,
     SheetResult,
@@ -74,3 +75,28 @@ def test_skipped_sheet_plan_carries_reason():
 
     assert plan.status == "skipped"
     assert plan.skip_reason == "no matching model"
+
+
+def test_field_error_carries_column_value_kind_message():
+    fe = FieldError(column="species", value="#REF!", kind="fk_not_found", message="'species': '#REF!' does not exist")
+    assert fe.column == "species"
+    assert fe.value == "#REF!"
+    assert fe.kind == "fk_not_found"
+    assert fe.message == "'species': '#REF!' does not exist"
+
+
+def test_field_error_allows_none_column_and_value():
+    fe = FieldError(column=None, value=None, kind="other", message="boom")
+    assert fe.column is None
+    assert fe.value is None
+
+
+def test_record_failure_field_errors_defaults_to_empty_list():
+    f = RecordFailure(primary_field="k", primary_field_value=1, error="e", original_row={})
+    assert f.field_errors == []
+
+
+def test_record_failure_carries_field_errors():
+    fe = FieldError(column="group", value=None, kind="missing_required", message="Required field 'group' is missing")
+    f = RecordFailure(primary_field="k", primary_field_value=1, error="e", original_row={}, field_errors=[fe])
+    assert f.field_errors == [fe]

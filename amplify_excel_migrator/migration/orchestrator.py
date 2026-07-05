@@ -134,6 +134,7 @@ class MigrationOrchestrator:
                 primary_field=failed_row["primary_field"],
                 primary_field_value=failed_row["primary_field_value"],
                 error=failed_row["error"],
+                field_errors=failed_row.get("field_errors", []),
                 original_row=failed_row.get("original_row", {}),
             )
             for failed_row in failed_rows

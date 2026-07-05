@@ -11,6 +11,7 @@ from amplify_excel_migrator.migration.models import (
     RecordFailure,
     SheetPlan,
     SheetResult,
+    FieldError,
 )
 
 
@@ -418,20 +419,30 @@ def test_ambiguous_in_batch_targets_are_both_invalid():
     assert list(session.workbook.sheets()["Reporter"].columns) == ["name", "Report type"]
 
 
-def _plan_with_failures(errors):
+def _plan_with_field_errors(rows):
+    """rows: list of rows, each a list of (column, value, kind) tuples."""
+    failures = []
+    for i, row in enumerate(rows):
+        field_errors = [FieldError(column=c, value=v, kind=k, message=f"{c}:{v}:{k}") for c, v, k in row]
+        failures.append(
+            RecordFailure(
+                primary_field="k",
+                primary_field_value=i,
+                error=" | ".join(fe.message for fe in field_errors),
+                original_row={},
+                field_errors=field_errors,
+            )
+        )
     return MigrationPlan(
         sheets=[
             SheetPlan(
                 sheet_name="Observation",
                 status="ready",
                 skip_reason=None,
-                total_rows=len(errors),
+                total_rows=len(rows),
                 record_count=0,
                 records=[],
-                parsing_failures=[
-                    RecordFailure(primary_field="k", primary_field_value=i, error=e, original_row={})
-                    for i, e in enumerate(errors)
-                ],
+                parsing_failures=failures,
                 parsed_model_structure={"fields": []},
                 row_dict_by_primary={},
             )
@@ -466,21 +477,49 @@ def _dry_run_session(plan, events, max_failure_groups=50):
     )
 
 
-def test_dry_run_groups_failures_by_error():
+def test_dry_run_groups_failures_by_field_error():
     events = []
-    _dry_run_session(_plan_with_failures(["E1", "E1", "E1", "E2"]), events).run("go")
+    rows = [
+        [("group", None, "missing_required")],
+        [("group", None, "missing_required")],
+        [("species", "#REF!", "fk_not_found")],
+    ]
+    _dry_run_session(_plan_with_field_errors(rows), events).run("go")
     sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
-    assert sheet["total_parsing_failures"] == 4
+    assert sheet["total_failed_rows"] == 3
     assert sheet["distinct_failure_groups"] == 2
-    assert sheet["failure_groups"] == [{"error": "E1", "count": 3}, {"error": "E2", "count": 1}]
+    assert sheet["failure_groups"] == [
+        {
+            "column": "group",
+            "value": None,
+            "kind": "missing_required",
+            "count": 2,
+            "message": "group:None:missing_required",
+        },
+        {
+            "column": "species",
+            "value": "#REF!",
+            "kind": "fk_not_found",
+            "count": 1,
+            "message": "species:#REF!:fk_not_found",
+        },
+    ]
+    assert "total_parsing_failures" not in sheet
     assert "parsing_failures" not in sheet
 
 
 def test_dry_run_honors_max_failure_groups():
     events = []
-    _dry_run_session(_plan_with_failures(["E1", "E1", "E2", "E3"]), events, max_failure_groups=1).run("go")
+    rows = [
+        [("a", 1, "parse")],
+        [("a", 1, "parse")],
+        [("b", 1, "parse")],
+        [("c", 1, "parse")],
+    ]
+    _dry_run_session(_plan_with_field_errors(rows), events, max_failure_groups=1).run("go")
     sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
     assert len(sheet["failure_groups"]) == 1
-    assert sheet["failure_groups"][0] == {"error": "E1", "count": 2}
+    assert sheet["failure_groups"][0]["column"] == "a"
+    assert sheet["failure_groups"][0]["count"] == 2
     assert sheet["distinct_failure_groups"] == 3
-    assert sheet["total_parsing_failures"] == 4
+    assert sheet["total_failed_rows"] == 4

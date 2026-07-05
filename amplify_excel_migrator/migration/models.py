@@ -5,11 +5,20 @@ from typing import Any, Dict, List, Optional
 
 
 @dataclass
+class FieldError:
+    column: Optional[str]
+    value: Any
+    kind: str
+    message: str
+
+
+@dataclass
 class RecordFailure:
     primary_field: str
     primary_field_value: Any
     error: str
     original_row: Dict[str, Any]
+    field_errors: List[FieldError] = field(default_factory=list)
 
 
 @dataclass
