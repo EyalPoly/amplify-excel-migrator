@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from amplify_excel_migrator.migration.orchestrator import MigrationOrchestrator
-from amplify_excel_migrator.migration.models import RecordFailure
+from amplify_excel_migrator.migration.models import RecordFailure, FieldError
 
 
 @pytest.fixture
@@ -80,6 +80,36 @@ class TestBuildPlan:
         plan = orchestrator.build_plan()
 
         assert plan.sheets[0].parsing_failures == [failure]
+
+    def test_threads_field_errors_onto_record_failure(self, orchestrator, mock_amplify_client, mock_data_transformer):
+        fe = FieldError(
+            column="species", value="#REF!", kind="fk_not_found", message="'species': '#REF!' does not exist"
+        )
+        mock_amplify_client.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        mock_amplify_client.build_foreign_key_lookups = MagicMock(return_value={})
+        mock_data_transformer.to_camel_case = lambda s: s
+        mock_data_transformer.transform_rows_to_records = MagicMock(
+            return_value=(
+                [],
+                {},
+                [
+                    {
+                        "primary_field": "name",
+                        "primary_field_value": "r1",
+                        "error": "Parsing error: 'species': '#REF!' does not exist",
+                        "field_errors": [fe],
+                        "original_row": {"name": "r1"},
+                    }
+                ],
+            )
+        )
+
+        records, row_dict, failures = orchestrator._transform_rows_to_records(
+            pd.DataFrame({"name": ["r1"]}), {"fields": []}, "Reporter"
+        )
+
+        assert failures[0].field_errors == [fe]
+        assert failures[0].error == "Parsing error: 'species': '#REF!' does not exist"
 
     def test_marks_sheet_skipped_when_model_not_found(self, orchestrator, mock_excel_reader):
         df = pd.DataFrame({"name": ["a"]})
