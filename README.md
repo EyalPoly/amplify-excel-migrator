@@ -134,6 +134,12 @@ the same human-approval gate and only approved renames are applied. The agent si
 explicit `finish` tool call rather than by ending a message, so a turn that only narrates its plan never
 terminates the session prematurely.
 
+When a proposed value edit is structurally invalid (unknown sheet or column, a missing or
+out-of-range `row`), `propose_changes` returns an instructive error naming the exact problem instead
+of a terse failure, so the model can self-correct. And if the model keeps issuing the *same* failing
+tool call, the loop escalates once with a corrective message and then aborts, rather than burning
+every turn on an identical mistake.
+
 ### Quick Start
 
 ```bash
