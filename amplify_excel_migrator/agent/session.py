@@ -30,6 +30,14 @@ _NUDGE = (
 )
 
 
+def _escalation_message(tool: str, count: int, last_error: str) -> str:
+    return (
+        f"You have called `{tool}` with identical arguments {count} times and it keeps failing with: "
+        f"{last_error}. Do not repeat the same call — change the arguments, use a different tool "
+        "(e.g. dry_run to see the real problems, or propose_column_renames to fix headers), or call finish."
+    )
+
+
 def _change_id(sheet: str, row: int, column: str) -> str:
     return f"{sheet}:{row}:{column}"
 
@@ -73,9 +81,17 @@ class AgentSession:
         self._max_failure_groups = max_failure_groups
         self._max_nudges = max_nudges
 
-    def run(self, instruction: str, max_turns: int = 40) -> None:
+    def run(
+        self,
+        instruction: str,
+        max_turns: int = 40,
+        escalate_repeats: int = 3,
+        abort_repeats: int = 5,
+    ) -> None:
         messages: List[Any] = [UserMessage(content=instruction)]
         consecutive_nudges = 0
+        last_error_sig = None
+        repeat_count = 0
         for _ in range(max_turns):
             turn = self.provider.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
             if turn.text:
@@ -96,6 +112,7 @@ class AgentSession:
             consecutive_nudges = 0
 
             messages.append(AssistantMessage(text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw))
+            escalation = None
             for call in turn.tool_calls:
                 if call.name == "finish":
                     self.emit(AgentEvent(kind="done", payload={"summary": call.arguments.get("summary", "")}))
@@ -107,6 +124,35 @@ class AgentSession:
                         tool_call_id=call.id, content=result_text, is_error=result_text.startswith("ERROR:")
                     )
                 )
+
+                if not result_text.startswith("ERROR:"):
+                    last_error_sig = None
+                    repeat_count = 0
+                    continue
+
+                sig = (call.name, json.dumps(call.arguments, sort_keys=True, default=str))
+                if sig == last_error_sig:
+                    repeat_count += 1
+                else:
+                    last_error_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= abort_repeats:
+                    self.emit(
+                        AgentEvent(
+                            kind="error",
+                            payload={
+                                "message": f"Aborted: '{call.name}' failed {repeat_count} times "
+                                "with identical arguments."
+                            },
+                        )
+                    )
+                    return
+                if repeat_count == escalate_repeats:
+                    escalation = _escalation_message(call.name, repeat_count, result_text)
+
+            if escalation:
+                messages.append(UserMessage(content=escalation))
 
         self.emit(AgentEvent(kind="error", payload={"message": f"Stopped after {max_turns} turns without finishing."}))
 
@@ -153,7 +199,40 @@ class AgentSession:
             "failure_groups": summary["groups"],
         }
 
+    _REQUIRED_CHANGE_KEYS = ("sheet_name", "row", "column", "proposed_value", "rationale")
+
+    def _validate_changes(self, changes: List[Dict[str, Any]]) -> List[str]:
+        sheets = self.workbook.sheets()
+        problems: List[str] = []
+        for i, c in enumerate(changes):
+            missing = [k for k in self._REQUIRED_CHANGE_KEYS if k not in c]
+            if missing:
+                for k in missing:
+                    problems.append(f"change #{i}: missing required '{k}' (row is a 0-based integer).")
+                continue
+            s = c["sheet_name"]
+            if s not in sheets:
+                problems.append(f"change #{i}: sheet '{s}' not found. Available: {sorted(sheets)}.")
+                continue
+            df = sheets[s]
+            cols = list(df.columns)
+            if c["column"] not in cols:
+                problems.append(
+                    f"change #{i}: column '{c['column']}' not found in sheet '{s}'. Columns: {cols}. "
+                    "To fix a wrong header use propose_column_renames, not propose_changes."
+                )
+                continue
+            r = c["row"]
+            n = len(df)
+            if not isinstance(r, int) or isinstance(r, bool) or not (0 <= r < n):
+                problems.append(f"change #{i}: row {r} out of range for '{s}' (valid 0..{n - 1}).")
+        return problems
+
     def _propose_changes(self, args: Dict[str, Any]) -> str:
+        problems = self._validate_changes(args["changes"])
+        if problems:
+            return "ERROR: " + " ".join(problems)
+
         changes = [
             ProposedChange(
                 id=_change_id(c["sheet_name"], c["row"], c["column"]),

@@ -25,6 +25,36 @@ class ScriptedProvider(LLMProvider):
         return self._turns.pop(0)
 
 
+class RepeatingRecorder(LLMProvider):
+    """Always returns the same failing turn; records the messages passed to each generate()."""
+
+    def __init__(self, turn):
+        self._turn = turn
+        self.seen_messages = []
+
+    def generate(self, system, messages, tools):
+        self.seen_messages.append(list(messages))
+        return self._turn
+
+
+def _failing_propose_turn():
+    return AssistantTurn(
+        text="",
+        tool_calls=[
+            ToolCall(
+                "c1",
+                "propose_changes",
+                {
+                    "summary": "x",
+                    "changes": [
+                        {"sheet_name": "Reporter", "column": "country", "proposed_value": "EG", "rationale": "r"}
+                    ],
+                },
+            )
+        ],
+    )
+
+
 def _ready_plan():
     return MigrationPlan(
         sheets=[
@@ -567,3 +597,158 @@ def test_exceeding_max_nudges_stops_with_error():
 
     assert events[-1].kind == "error"
     assert "without a tool call" in events[-1].payload["message"]
+
+
+def test_propose_changes_missing_row_returns_instructive_error():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [{"sheet_name": "Reporter", "column": "country", "proposed_value": "EG", "rationale": "r"}],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "row" in result
+    assert "change #0" in result
+    assert "proposal" not in [e.kind for e in events]
+
+
+def test_propose_changes_unknown_column_hints_at_renames():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {
+                    "sheet_name": "Reporter",
+                    "row": 0,
+                    "column": "Observation:Common name Hebrew",
+                    "proposed_value": "v",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "Observation:Common name Hebrew" in result
+    assert "propose_column_renames" in result
+    assert "proposal" not in [e.kind for e in events]
+
+
+def test_propose_changes_unknown_sheet_lists_available():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [{"sheet_name": "Nope", "row": 0, "column": "name", "proposed_value": "v", "rationale": "r"}],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "Nope" in result and "Reporter" in result
+
+
+def test_propose_changes_row_out_of_range_is_rejected():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 99, "column": "country", "proposed_value": "v", "rationale": "r"}
+            ],
+        },
+    )
+
+    assert result.startswith("ERROR:")
+    assert "99" in result and "out of range" in result
+
+
+def test_propose_changes_valid_batch_still_emits_proposal():
+    turns = [
+        AssistantTurn(
+            text="",
+            tool_calls=[
+                ToolCall(
+                    "c1",
+                    "propose_changes",
+                    {
+                        "summary": "fill country",
+                        "changes": [
+                            {
+                                "sheet_name": "Reporter",
+                                "row": 1,
+                                "column": "country",
+                                "proposed_value": "EG",
+                                "rationale": "missing",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[ApprovalResult(approved_ids=["Reporter:1:country"], rejected_ids=[])],
+        upload_selections=[],
+    )
+    events = []
+    session = _make_session(ScriptedProvider(turns), handler, events)
+
+    session.run("go")
+
+    assert "proposal" in [e.kind for e in events]
+    assert session.workbook.cell("Reporter", 1, "country") == "EG"
+
+
+def test_repeated_identical_failure_escalates_then_aborts():
+    from amplify_excel_migrator.agent.llm.base import UserMessage
+
+    provider = RepeatingRecorder(_failing_propose_turn())
+    events = []
+    session = _make_session(provider, RecordingApprovalHandler([], []), events)
+
+    session.run("go", escalate_repeats=2, abort_repeats=3)
+
+    assert events[-1].kind == "error"
+    assert "Aborted" in events[-1].payload["message"]
+    assert "propose_changes" in events[-1].payload["message"]
+    # ended well before max_turns (only 3 generate() calls happened)
+    assert len(provider.seen_messages) == 3
+    # the escalation UserMessage was injected before the final generate()
+    injected = [
+        m for m in provider.seen_messages[-1] if isinstance(m, UserMessage) and "identical arguments" in m.content
+    ]
+    assert injected
+
+
+def test_counter_resets_on_a_different_successful_call():
+    turns = [
+        _failing_propose_turn(),
+        _failing_propose_turn(),
+        AssistantTurn(text="", tool_calls=[ToolCall("r1", "read_sheet", {"sheet": "Reporter"})]),
+        _failing_propose_turn(),
+        _failing_propose_turn(),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
+    ]
+    events = []
+    session = _make_session(ScriptedProvider(turns), RecordingApprovalHandler([], []), events)
+
+    session.run("go", escalate_repeats=2, abort_repeats=3)
+
+    assert not any(e.kind == "error" and "Aborted" in e.payload.get("message", "") for e in events)
+    assert events[-1].kind == "done"
