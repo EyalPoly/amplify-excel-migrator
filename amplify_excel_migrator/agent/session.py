@@ -24,6 +24,11 @@ from amplify_excel_migrator.migration.failure_grouping import summarize_failures
 
 logger = logging.getLogger(__name__)
 
+_NUDGE = (
+    "You did not call any tool. If you intend to make a change, emit the actual tool call now "
+    "(e.g. propose_column_renames, propose_changes, dry_run). If the migration is complete, call finish."
+)
+
 
 def _change_id(sheet: str, row: int, column: str) -> str:
     return f"{sheet}:{row}:{column}"
@@ -57,6 +62,7 @@ class AgentSession:
         schema_provider: Callable[..., Dict[str, Any]],
         event_sink: Callable[[AgentEvent], None],
         max_failure_groups: int = 50,
+        max_nudges: int = 2,
     ):
         self.provider = provider
         self.orchestrator = orchestrator
@@ -65,19 +71,35 @@ class AgentSession:
         self.schema_provider = schema_provider
         self.emit = event_sink
         self._max_failure_groups = max_failure_groups
+        self._max_nudges = max_nudges
 
     def run(self, instruction: str, max_turns: int = 40) -> None:
         messages: List[Any] = [UserMessage(content=instruction)]
+        consecutive_nudges = 0
         for _ in range(max_turns):
             turn = self.provider.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
             if turn.text:
                 self.emit(AgentEvent(kind="message", payload={"text": turn.text}))
             if not turn.has_tool_calls():
-                self.emit(AgentEvent(kind="done", payload={}))
-                return
+                consecutive_nudges += 1
+                if consecutive_nudges > self._max_nudges:
+                    self.emit(
+                        AgentEvent(
+                            kind="error",
+                            payload={"message": f"Stopped after {consecutive_nudges} turns without a tool call."},
+                        )
+                    )
+                    return
+                messages.append(AssistantMessage(text=turn.text, tool_calls=[], raw=turn.raw))
+                messages.append(UserMessage(content=_NUDGE))
+                continue
+            consecutive_nudges = 0
 
             messages.append(AssistantMessage(text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw))
             for call in turn.tool_calls:
+                if call.name == "finish":
+                    self.emit(AgentEvent(kind="done", payload={"summary": call.arguments.get("summary", "")}))
+                    return
                 self.emit(AgentEvent(kind="tool_call", payload={"name": call.name, "arguments": call.arguments}))
                 result_text = self._dispatch(call.name, call.arguments)
                 messages.append(
