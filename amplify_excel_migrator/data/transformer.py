@@ -7,8 +7,23 @@ from typing import Dict, Any, Optional, List, Tuple
 import pandas as pd
 
 from amplify_excel_migrator.schema import FieldParser
+from amplify_excel_migrator.migration.models import FieldError
 
 logger = logging.getLogger(__name__)
+
+
+class FieldParseError(ValueError):
+    def __init__(self, message: str, column: Optional[str], value: Any, kind: str):
+        super().__init__(message)
+        self.column = column
+        self.value = value
+        self.kind = kind
+
+
+class RowParseError(ValueError):
+    def __init__(self, field_errors: List[FieldError]):
+        self.field_errors = field_errors
+        super().__init__(" | ".join(fe.message for fe in field_errors))
 
 
 class DataTransformer:
@@ -46,12 +61,17 @@ class DataTransformer:
                     records.append(record)
             except Exception as e:
                 error_msg = str(e)
+                if isinstance(e, RowParseError):
+                    field_errors = e.field_errors
+                else:
+                    field_errors = [FieldError(column=None, value=None, kind="other", message=error_msg)]
                 logger.error(f"Error transforming row {row_count} ({primary_field}={primary_field_value}): {error_msg}")
                 failed_rows.append(
                     {
                         "primary_field": primary_field,
                         "primary_field_value": primary_field_value,
                         "error": f"Parsing error: {error_msg}",
+                        "field_errors": field_errors,
                         "original_row": row_dict,
                     }
                 )
@@ -67,18 +87,20 @@ class DataTransformer:
         fk_lookup_cache: Dict[str, Dict[str, Any]],
     ) -> Optional[Dict]:
         model_record = {}
-        field_errors = []
+        field_errors: List[FieldError] = []
 
         for field in parsed_model_structure["fields"]:
             try:
                 input_value = self.parse_input(row_dict, field, fk_lookup_cache)
                 if input_value is not None:
                     model_record[field["name"]] = input_value
+            except FieldParseError as e:
+                field_errors.append(FieldError(column=e.column, value=e.value, kind=e.kind, message=str(e)))
             except ValueError as e:
-                field_errors.append(str(e))
+                field_errors.append(FieldError(column=field["name"], value=None, kind="other", message=str(e)))
 
         if field_errors:
-            raise ValueError(" | ".join(field_errors))
+            raise RowParseError(field_errors)
 
         return model_record
 
@@ -108,7 +130,12 @@ class DataTransformer:
                         return self.default_fk_values[related_model]
                 elif self.fill_unknown and not field["is_id"]:
                     return self._default_for_field(field)
-                raise ValueError(f"Required field '{field_name}' is missing")
+                raise FieldParseError(
+                    f"Required field '{field_name}' is missing",
+                    column=field_name,
+                    value=None,
+                    kind="missing_required",
+                )
             return None
 
         value = self.field_parser.clean_input(row_dict[field_name])
@@ -120,7 +147,12 @@ class DataTransformer:
         else:
             result = self.field_parser.parse_field_input(field, field_name, value)
             if result is None:
-                raise ValueError(f"'{field_name}' could not be parsed as {field['type']} (value: '{value}')")
+                raise FieldParseError(
+                    f"'{field_name}' could not be parsed as {field['type']} (value: '{value}')",
+                    column=field_name,
+                    value=value,
+                    kind="parse",
+                )
             return result
 
     @staticmethod
@@ -159,7 +191,12 @@ class DataTransformer:
             if record_id:
                 return record_id
             else:
-                raise ValueError(f"'{column_name}': '{value}' does not exist")
+                raise FieldParseError(
+                    f"'{column_name}': '{value}' does not exist",
+                    column=column_name,
+                    value=value,
+                    kind="fk_not_found",
+                )
         else:
             raise ValueError(f"No pre-fetched data for '{column_name}'")
 
