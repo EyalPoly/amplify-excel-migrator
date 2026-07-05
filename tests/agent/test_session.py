@@ -63,7 +63,7 @@ class RecordingOrchestrator:
         return MigrationResult(sheets=[SheetResult("Reporter", success_count=2, failures=[])], total_success=2)
 
 
-def _make_session(provider, handler, events):
+def _make_session(provider, handler, events, max_nudges=2):
     workbook = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"], "country": ["IL", ""]})})
 
     return AgentSession(
@@ -73,6 +73,7 @@ def _make_session(provider, handler, events):
         approval_handler=handler,
         schema_provider=lambda model=None: {"models": ["Reporter"]},
         event_sink=events.append,
+        max_nudges=max_nudges,
     )
 
 
@@ -127,7 +128,7 @@ def test_session_applies_approved_changes_then_uploads():
             ],
         ),
         AssistantTurn(text="Uploading.", tool_calls=[ToolCall("c2", "upload", {})]),
-        AssistantTurn(text="All done.", tool_calls=[]),
+        AssistantTurn(text="All done.", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(
         change_results=[ApprovalResult(approved_ids=["Reporter:1:country"], rejected_ids=[])],
@@ -171,7 +172,7 @@ def test_rejected_change_is_not_applied():
                 )
             ],
         ),
-        AssistantTurn(text="ok", tool_calls=[]),
+        AssistantTurn(text="ok", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(
         change_results=[ApprovalResult(approved_ids=[], rejected_ids=["Reporter:1:country"])],
@@ -203,7 +204,7 @@ def test_set_sheets_hands_live_frames_before_each_build_plan():
     turns = [
         AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
         AssistantTurn(text="", tool_calls=[ToolCall("c2", "upload", {})]),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[{"Reporter"}])
     events = []
@@ -243,7 +244,7 @@ def test_dry_run_does_not_mutate_workbook_columns():
 
     turns = [
         AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     session = AgentSession(
         provider=ScriptedProvider(turns),
@@ -272,7 +273,7 @@ def test_approved_rename_is_applied_and_visible_to_dry_run():
             ]
         ),
         AssistantTurn(text="", tool_calls=[ToolCall("d1", "dry_run", {})]),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(
         change_results=[],
@@ -302,7 +303,7 @@ def test_rejected_rename_is_not_applied():
                 }
             ]
         ),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(
         change_results=[],
@@ -329,7 +330,7 @@ def test_invalid_target_field_never_reaches_human():
                 }
             ]
         ),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
     events = []
@@ -354,7 +355,7 @@ def test_missing_source_column_is_invalid():
                 }
             ]
         ),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
     events = []
@@ -377,7 +378,7 @@ def test_collision_with_existing_column_is_invalid():
                 }
             ]
         ),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
     events = []
@@ -407,7 +408,7 @@ def test_ambiguous_in_batch_targets_are_both_invalid():
                 },
             ]
         ),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], rename_results=[])
     events = []
@@ -464,7 +465,7 @@ class _FailingOrchestrator:
 def _dry_run_session(plan, events, max_failure_groups=50):
     turns = [
         AssistantTurn(text="", tool_calls=[ToolCall("c1", "dry_run", {})]),
-        AssistantTurn(text="done", tool_calls=[]),
+        AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})]),
     ]
     return AgentSession(
         provider=ScriptedProvider(turns),
@@ -523,3 +524,46 @@ def test_dry_run_honors_max_failure_groups():
     assert sheet["failure_groups"][0]["count"] == 2
     assert sheet["distinct_failure_groups"] == 3
     assert sheet["total_failed_rows"] == 4
+
+
+def test_finish_tool_ends_run_with_summary():
+    turns = [AssistantTurn(text="", tool_calls=[ToolCall("f1", "finish", {"summary": "all clean"})])]
+    events = []
+    session = _make_session(ScriptedProvider(turns), RecordingApprovalHandler([], []), events)
+
+    session.run("go")
+
+    done = [e for e in events if e.kind == "done"]
+    assert len(done) == 1
+    assert done[0].payload == {"summary": "all clean"}
+
+
+def test_text_only_turn_nudges_then_continues():
+    turns = [
+        AssistantTurn(text="Here is my diagnosis. I will fix it.", tool_calls=[]),
+        AssistantTurn(text="", tool_calls=[ToolCall("d1", "dry_run", {})]),
+        AssistantTurn(text="", tool_calls=[ToolCall("f1", "finish", {"summary": "fixed"})]),
+    ]
+    events = []
+    session = _make_session(ScriptedProvider(turns), RecordingApprovalHandler([], []), events)
+
+    session.run("go")
+
+    kinds = [e.kind for e in events]
+    assert "message" in kinds  # narration surfaced
+    assert "dry_run" in kinds  # loop continued past the narration and ran the tool
+    assert kinds[-1] == "done"  # finish ended it, not the narration
+
+
+def test_exceeding_max_nudges_stops_with_error():
+    turns = [
+        AssistantTurn(text="just talking", tool_calls=[]),
+        AssistantTurn(text="still talking", tool_calls=[]),
+    ]
+    events = []
+    session = _make_session(ScriptedProvider(turns), RecordingApprovalHandler([], []), events, max_nudges=1)
+
+    session.run("go")
+
+    assert events[-1].kind == "error"
+    assert "without a tool call" in events[-1].payload["message"]
