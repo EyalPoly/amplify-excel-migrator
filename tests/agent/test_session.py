@@ -134,6 +134,224 @@ def _rename_turn(renames, call_id="r1"):
     )
 
 
+def _mapping_workbook():
+    return WorkbookEditor({"Reporter": pd.DataFrame({"species": ["#REF!", "cat", "#REF!"], "site": [None, "x", None]})})
+
+
+def _make_mapping_session(turns, handler, events, workbook=None):
+    return AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=workbook or _mapping_workbook(),
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"models": ["Reporter"]},
+        event_sink=events.append,
+    )
+
+
+def _mapping_turn(mappings, call_id="m1"):
+    return AssistantTurn(
+        text="",
+        tool_calls=[ToolCall(call_id, "propose_value_mappings", {"summary": "fix values", "mappings": mappings})],
+    )
+
+
+def _finish_turn():
+    return AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})])
+
+
+def test_approved_value_mapping_rewrites_all_matching_rows():
+    turns = [
+        _mapping_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+    assert "value_mapping_proposal" in [e.kind for e in events]
+
+
+def test_null_from_value_fills_blank_cells():
+    turns = [
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "site", "from_value": None, "to_value": "UNKNOWN", "rationale": "r"}]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:site:None->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert list(session.workbook.sheets()["Reporter"]["site"]) == ["UNKNOWN", "x", "UNKNOWN"]
+
+
+def test_rejected_value_mapping_is_not_applied():
+    turns = [
+        _mapping_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=[], rejected_ids=["Reporter:species:#REF!->UNKNOWN"])],
+    )
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["#REF!", "cat", "#REF!"]
+
+
+def test_unknown_column_mapping_never_reaches_human():
+    turns = [
+        _mapping_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "nope",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_value_mapping_proposals == []
+    assert "value_mapping_proposal" not in [e.kind for e in events]
+
+
+def test_absent_from_value_is_invalid_and_never_reaches_human():
+    turns = [
+        _mapping_turn(
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "NOPE",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_value_mapping_proposals == []
+
+
+def test_noop_mapping_is_dropped_before_the_gate():
+    turns = [
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "species", "from_value": "cat", "to_value": "cat", "rationale": "r"}]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go")
+
+    assert handler.seen_value_mapping_proposals == []
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["#REF!", "cat", "#REF!"]
+
+
+def test_missing_scalar_field_is_created_and_filled():
+    wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"]})})
+    turns = [
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "count", "from_value": None, "to_value": 1, "rationale": "r"}]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:count:None->1"], rejected_ids=[])],
+    )
+    events = []
+    session = AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=wb,
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        event_sink=events.append,
+    )
+    session.run("go")
+    assert list(session.workbook.sheets()["Reporter"]["count"]) == [1, 1]
+
+
+def test_missing_column_not_a_schema_field_is_invalid():
+    wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a"]})})
+    turns = [
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "group", "from_value": None, "to_value": "x", "rationale": "r"}]
+        ),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = AgentSession(
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=wb,
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        event_sink=events.append,
+    )
+    session.run("go")
+    assert handler.seen_value_mapping_proposals == []
+    assert "group" not in session.workbook.sheets()["Reporter"].columns
+
+
 def test_session_applies_approved_changes_then_uploads():
     turns = [
         AssistantTurn(
@@ -640,6 +858,7 @@ def test_propose_changes_unknown_column_hints_at_renames():
     assert result.startswith("ERROR:")
     assert "Observation:Common name Hebrew" in result
     assert "propose_column_renames" in result
+    assert "propose_value_mappings" in result
     assert "proposal" not in [e.kind for e in events]
 
 

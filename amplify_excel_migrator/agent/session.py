@@ -16,6 +16,8 @@ from amplify_excel_migrator.agent.models import (
     ColumnRename,
     ColumnRenameProposal,
     ProposedChange,
+    ValueMapping,
+    ValueMappingProposal,
 )
 from amplify_excel_migrator.agent.prompts import SYSTEM_PROMPT
 from amplify_excel_migrator.agent.tools import TOOL_SPECS
@@ -44,6 +46,10 @@ def _change_id(sheet: str, row: int, column: str) -> str:
 
 def _rename_id(sheet: str, current: str, new: str) -> str:
     return f"{sheet}:{current}->{new}"
+
+
+def _mapping_id(sheet: str, column: str, from_value: Any, to_value: Any) -> str:
+    return f"{sheet}:{column}:{from_value}->{to_value}"
 
 
 def _json_safe(value: Any) -> Any:
@@ -168,6 +174,8 @@ class AgentSession:
                 return self._propose_changes(args)
             if name == "propose_column_renames":
                 return self._propose_column_renames(args)
+            if name == "propose_value_mappings":
+                return self._propose_value_mappings(args)
             if name == "upload":
                 return self._upload()
             return f"ERROR: unknown tool '{name}'"
@@ -219,7 +227,8 @@ class AgentSession:
             if c["column"] not in cols:
                 problems.append(
                     f"change #{i}: column '{c['column']}' not found in sheet '{s}'. Columns: {cols}. "
-                    "To fix a wrong header use propose_column_renames, not propose_changes."
+                    "To fill or create a missing field, use propose_value_mappings (map from_value null to a "
+                    "default). To rename an existing header, use propose_column_renames. Do not use propose_changes."
                 )
                 continue
             r = c["row"]
@@ -324,6 +333,74 @@ class AgentSession:
                     rejected.append(rn.id)
 
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid})
+
+    def _propose_value_mappings(self, args: Dict[str, Any]) -> str:
+        mappings = [m for m in args["mappings"] if m["from_value"] != m["to_value"]]
+        sheets = self.workbook.sheets()
+        invalid: List[Dict[str, str]] = []
+        valid: List[ValueMapping] = []
+
+        for m in mappings:
+            sheet, column = m["sheet_name"], m["column"]
+            mid = _mapping_id(sheet, column, m["from_value"], m["to_value"])
+            if sheet not in sheets:
+                invalid.append({"id": mid, "reason": f"sheet '{sheet}' not found. Available: {sorted(sheets)}."})
+                continue
+            df = sheets[sheet]
+            create = column not in df.columns
+            if create:
+                fields = {f.get("name") for f in (self.schema_provider(model=sheet) or {}).get("fields", [])}
+                if m["from_value"] is not None or column not in fields:
+                    invalid.append(
+                        {
+                            "id": mid,
+                            "reason": (
+                                f"column '{column}' not in sheet '{sheet}'. To create a missing scalar field, "
+                                f"map from_value null to a default. Foreign keys with no column cannot be filled "
+                                f"with a placeholder — ask the user for a valid id."
+                            ),
+                        }
+                    )
+                    continue
+            else:
+                series = df[column]
+                present = series.isna().any() if m["from_value"] is None else (series == m["from_value"]).any()
+                if not present:
+                    invalid.append({"id": mid, "reason": f"value {m['from_value']!r} not present in column '{column}'"})
+                    continue
+            valid.append(
+                ValueMapping(
+                    id=mid,
+                    sheet_name=sheet,
+                    column=column,
+                    from_value=m["from_value"],
+                    to_value=m["to_value"],
+                    rationale=m["rationale"],
+                )
+            )
+
+        applied: List[str] = []
+        rejected: List[str] = []
+        if valid:
+            proposal = ValueMappingProposal(summary=args["summary"], mappings=valid)
+            self.emit(
+                AgentEvent(
+                    kind="value_mapping_proposal",
+                    payload={"summary": proposal.summary, "mappings": [vars(m) for m in valid]},
+                )
+            )
+            result = self.approval.review_value_mappings(proposal)  # blocks for human decision
+            for m in valid:
+                if result.is_approved(m.id):
+                    if m.column in self.workbook.sheets()[m.sheet_name].columns:
+                        self.workbook.apply_value_mapping(m.sheet_name, m.column, m.from_value, m.to_value)
+                    else:
+                        self.workbook.add_column(m.sheet_name, m.column, m.to_value)
+                    applied.append(m.id)
+                else:
+                    rejected.append(m.id)
+
+        return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid}, default=str)
 
     def _upload(self) -> str:
         orchestrator = self._orchestrator_for_current_workbook()

@@ -9,12 +9,13 @@ def test_expected_tools_present():
         "propose_changes",
         "upload",
         "propose_column_renames",
+        "propose_value_mappings",
         "finish",
     ]
 
 
-def test_gated_tools_are_propose_upload_and_rename():
-    assert GATED_TOOLS == {"propose_changes", "upload", "propose_column_renames"}
+def test_gated_tools_are_propose_upload_rename_and_value_mappings():
+    assert GATED_TOOLS == {"propose_changes", "upload", "propose_column_renames", "propose_value_mappings"}
 
 
 def test_every_spec_has_object_schema():
@@ -49,3 +50,14 @@ def test_finish_schema_has_optional_summary():
     props = spec.input_schema["properties"]
     assert props["summary"]["type"] == "string"
     assert spec.input_schema.get("required", []) == []
+
+
+def test_propose_value_mappings_schema_shape():
+    spec = next(s for s in TOOL_SPECS if s.name == "propose_value_mappings")
+    props = spec.input_schema["properties"]
+    assert props["mappings"]["type"] == "array"
+    item = props["mappings"]["items"]["properties"]
+    assert {"sheet_name", "column", "from_value", "to_value", "rationale"} <= set(item)
+    assert set(spec.input_schema["required"]) == {"summary", "mappings"}
+    required_item = set(spec.input_schema["properties"]["mappings"]["items"]["required"])
+    assert required_item == {"sheet_name", "column", "from_value", "to_value", "rationale"}

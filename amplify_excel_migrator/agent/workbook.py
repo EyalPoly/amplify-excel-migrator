@@ -46,6 +46,23 @@ class WorkbookEditor:
             raise ValueError(f"Column '{new}' already exists in sheet '{sheet_name}'")
         self._sheets[sheet_name] = df.rename(columns={current: new})
 
+    def apply_value_mapping(self, sheet_name: str, column: str, from_value: Any, to_value: Any) -> int:
+        df = self._sheets[sheet_name]
+        if column not in df.columns:
+            raise KeyError(f"Column '{column}' not in sheet '{sheet_name}'")
+        mask = df[column].isna() if from_value is None else df[column] == from_value
+        if not mask.any():
+            raise ValueError(f"Value {from_value!r} not present in column '{column}' of sheet '{sheet_name}'")
+        df.loc[mask, column] = to_value
+        return int(mask.sum())
+
+    def add_column(self, sheet_name: str, column: str, value: Any) -> int:
+        df = self._sheets[sheet_name]
+        if column in df.columns:
+            raise ValueError(f"Column '{column}' already exists in sheet '{sheet_name}'")
+        df[column] = value
+        return int(len(df))
+
     def save(self, path_or_buffer: Any) -> None:
         # Accepts a filesystem path or a binary file-like object (e.g. io.BytesIO) — both work with openpyxl,
         # so the web layer can stream the workbook to a download without a temp file.
