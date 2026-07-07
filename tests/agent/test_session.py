@@ -163,7 +163,15 @@ def _finish_turn():
 def test_approved_value_mapping_rewrites_all_matching_rows():
     turns = [
         _mapping_turn(
-            [{"sheet_name": "Reporter", "column": "species", "from_value": "#REF!", "to_value": "UNKNOWN", "rationale": "r"}]
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
         ),
         _finish_turn(),
     ]
@@ -204,7 +212,15 @@ def test_null_from_value_fills_blank_cells():
 def test_rejected_value_mapping_is_not_applied():
     turns = [
         _mapping_turn(
-            [{"sheet_name": "Reporter", "column": "species", "from_value": "#REF!", "to_value": "UNKNOWN", "rationale": "r"}]
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
         ),
         _finish_turn(),
     ]
@@ -224,7 +240,15 @@ def test_rejected_value_mapping_is_not_applied():
 def test_unknown_column_mapping_never_reaches_human():
     turns = [
         _mapping_turn(
-            [{"sheet_name": "Reporter", "column": "nope", "from_value": "#REF!", "to_value": "UNKNOWN", "rationale": "r"}]
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "nope",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
         ),
         _finish_turn(),
     ]
@@ -241,7 +265,15 @@ def test_unknown_column_mapping_never_reaches_human():
 def test_absent_from_value_is_invalid_and_never_reaches_human():
     turns = [
         _mapping_turn(
-            [{"sheet_name": "Reporter", "column": "species", "from_value": "NOPE", "to_value": "UNKNOWN", "rationale": "r"}]
+            [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "NOPE",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ]
         ),
         _finish_turn(),
     ]
@@ -274,17 +306,23 @@ def test_noop_mapping_is_dropped_before_the_gate():
 def test_missing_scalar_field_is_created_and_filled():
     wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"]})})
     turns = [
-        _mapping_turn([{"sheet_name": "Reporter", "column": "count", "from_value": None, "to_value": 1, "rationale": "r"}]),
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "count", "from_value": None, "to_value": 1, "rationale": "r"}]
+        ),
         _finish_turn(),
     ]
     handler = RecordingApprovalHandler(
-        change_results=[], upload_selections=[],
+        change_results=[],
+        upload_selections=[],
         value_mapping_results=[ApprovalResult(approved_ids=["Reporter:count:None->1"], rejected_ids=[])],
     )
     events = []
     session = AgentSession(
-        provider=ScriptedProvider(turns), orchestrator=RecordingOrchestrator(), workbook=wb,
-        approval_handler=handler, schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=wb,
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
         event_sink=events.append,
     )
     session.run("go")
@@ -294,14 +332,19 @@ def test_missing_scalar_field_is_created_and_filled():
 def test_missing_column_not_a_schema_field_is_invalid():
     wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a"]})})
     turns = [
-        _mapping_turn([{"sheet_name": "Reporter", "column": "group", "from_value": None, "to_value": "x", "rationale": "r"}]),
+        _mapping_turn(
+            [{"sheet_name": "Reporter", "column": "group", "from_value": None, "to_value": "x", "rationale": "r"}]
+        ),
         _finish_turn(),
     ]
     handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
     events = []
     session = AgentSession(
-        provider=ScriptedProvider(turns), orchestrator=RecordingOrchestrator(), workbook=wb,
-        approval_handler=handler, schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        provider=ScriptedProvider(turns),
+        orchestrator=RecordingOrchestrator(),
+        workbook=wb,
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
         event_sink=events.append,
     )
     session.run("go")

@@ -123,7 +123,10 @@ TOOL_SPECS: List[ToolSpec] = [
                                 "null matches blank/missing cells."
                             },
                             "to_value": {"description": "Replacement value (string/number/bool/null)."},
-                            "rationale": {"type": "string", "description": "Why this mapping, and any assumption made."},
+                            "rationale": {
+                                "type": "string",
+                                "description": "Why this mapping, and any assumption made.",
+                            },
                         },
                         "required": ["sheet_name", "column", "from_value", "to_value", "rationale"],
                         "additionalProperties": False,

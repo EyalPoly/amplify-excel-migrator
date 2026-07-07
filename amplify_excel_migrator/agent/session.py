@@ -351,10 +351,16 @@ class AgentSession:
             if create:
                 fields = {f.get("name") for f in (self.schema_provider(model=sheet) or {}).get("fields", [])}
                 if m["from_value"] is not None or column not in fields:
-                    invalid.append({"id": mid, "reason": (
-                        f"column '{column}' not in sheet '{sheet}'. To create a missing scalar field, "
-                        f"map from_value null to a default. Foreign keys with no column cannot be filled "
-                        f"with a placeholder — ask the user for a valid id.")})
+                    invalid.append(
+                        {
+                            "id": mid,
+                            "reason": (
+                                f"column '{column}' not in sheet '{sheet}'. To create a missing scalar field, "
+                                f"map from_value null to a default. Foreign keys with no column cannot be filled "
+                                f"with a placeholder — ask the user for a valid id."
+                            ),
+                        }
+                    )
                     continue
             else:
                 series = df[column]
