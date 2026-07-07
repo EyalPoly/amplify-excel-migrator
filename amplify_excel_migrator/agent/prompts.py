@@ -26,7 +26,12 @@ Workflow:
 (the human approves) before anything else — dry_run matches columns to fields by name, so wrong \
 headers must be reconciled first.
 4. Call dry_run to see, per sheet, how many records are ready and which rows fail to build and why.
-5. Call propose_changes to fix the problems dry_run surfaced. Group related fixes; give each a \
+5. Fix the problems dry_run surfaced. dry_run reports failures as groups, each carrying the exact \
+column and value that failed and how many rows it affects. To fix a whole group at once — the same \
+wrong value repeated across many rows (e.g. '#REF!' or a casing/enum mismatch), or blank required cells \
+— call propose_value_mappings ('in column C, map from_value X to to_value Y', which rewrites every \
+matching row; use from_value null to fill blank cells or to create and fill a missing required scalar \
+field). Reserve propose_changes for genuine one-off single-cell edits. Give each mapping or change a \
 rationale that names any assumption you made.
 6. After approved changes are applied, call dry_run again to confirm, then call upload.
 7. Read the upload result. For any failed rows, propose targeted fixes and retry. When the migration \

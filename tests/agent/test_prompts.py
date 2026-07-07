@@ -25,3 +25,9 @@ def test_prompt_forbids_narrating_tool_calls_as_text():
 def test_prompt_requires_calling_finish_to_complete():
     assert "finish" in SYSTEM_PROMPT
     assert "does NOT finish" in SYSTEM_PROMPT
+
+
+def test_prompt_prefers_value_mappings_for_failure_groups():
+    text = SYSTEM_PROMPT.lower()
+    assert "propose_value_mappings" in text
+    assert "group" in text
