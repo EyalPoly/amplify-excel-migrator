@@ -80,6 +80,22 @@ class DiscerningReviewer:
         self.log.append({"kind": "upload", "decision": "approved", "sheets": list(ready)})
         return set(ready)
 
+    def review_value_mappings(self, proposal) -> ApprovalResult:
+        approved, rejected = [], []
+        for m in proposal.mappings:
+            ok, reason = self._judge_change(m.column, m.to_value)
+            (approved if ok else rejected).append(m.id)
+            self.log.append(
+                {
+                    "kind": "value_mapping",
+                    "id": m.id,
+                    "to_value": m.to_value,
+                    "decision": "approved" if ok else "rejected",
+                    "reason": reason,
+                }
+            )
+        return ApprovalResult(approved_ids=approved, rejected_ids=rejected)
+
     def _judge_change(self, column: str, value: Any):
         allowed = self.field_enum_values.get(column)
         if allowed is not None:
@@ -211,6 +227,7 @@ def score(events: List[Dict[str, Any]], reviewer: DiscerningReviewer) -> Dict[st
             "dry_run": tool_calls.count("dry_run"),
             "rename_batches": len(renames),
             "change_batches": len(proposals),
+            "value_mapping_batches": sum(1 for e in events if e["kind"] == "value_mapping_proposal"),
             "upload_attempts": len(uploads),
         },
         "final_dry_run_clean": last_dry_before_upload_clean,
