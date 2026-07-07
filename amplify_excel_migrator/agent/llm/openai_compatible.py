@@ -110,7 +110,8 @@ class OpenAICompatibleProvider(LLMProvider):
         if isinstance(message, UserMessage):
             return {"role": "user", "content": message.content}
         if isinstance(message, AssistantMessage):
-            out: Dict[str, Any] = {"role": "assistant", "content": message.text or None}
+            # Ollama's /v1 rejects content: null on tool-call turns; send "" instead of None.
+            out: Dict[str, Any] = {"role": "assistant", "content": message.text or ""}
             if message.tool_calls:
                 out["tool_calls"] = [
                     {

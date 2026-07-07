@@ -210,3 +210,21 @@ def test_reasoning_effort_forwarded_only_when_set():
     # When set (e.g. "none" to disable Gemini 2.5-flash thinking), forward it.
     OpenAICompatibleProvider(client=client, model="m", reasoning_effort="none").generate("s", [UserMessage("x")], [])
     assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "none"
+
+
+def test_empty_text_assistant_message_sends_empty_string_not_null():
+    # Ollama's /v1 rejects assistant messages with content: null ("invalid message content type: <nil>").
+    # A tool-call turn with no text must serialize content as "" so long local runs don't 400.
+    client = MagicMock()
+    client.chat.completions.create.return_value = _completion("ok")
+    provider = OpenAICompatibleProvider(client=client, model="m")
+
+    provider.generate(
+        "s",
+        [AssistantMessage(text="", tool_calls=[ToolCall("c1", "read_sheet", {"sheet": "R"})])],
+        [],
+    )
+
+    sent = client.chat.completions.create.call_args.kwargs["messages"]
+    assert sent[1]["role"] == "assistant"
+    assert sent[1]["content"] == ""
