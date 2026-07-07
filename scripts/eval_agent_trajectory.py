@@ -159,6 +159,20 @@ def build_field_enum_values(
     return out
 
 
+def _exit_reason(events: List[Dict[str, Any]]) -> Any:
+    """Label how a run ended, read off the final emitted error event (None if it finished cleanly)."""
+    if not events or events[-1]["kind"] != "error":
+        return None
+    msg = events[-1].get("payload", {}).get("message", "")
+    if "without a tool call" in msg:
+        return "no_tool_call"
+    if "identical arguments" in msg:
+        return "repeated_failing_call"
+    if "without finishing" in msg:
+        return "max_turns"
+    return "error"
+
+
 def score(events: List[Dict[str, Any]], reviewer: DiscerningReviewer) -> Dict[str, Any]:
     kinds = [e["kind"] for e in events]
     tool_calls = [e["payload"]["name"] for e in events if e["kind"] == "tool_call"]
@@ -178,7 +192,7 @@ def score(events: List[Dict[str, Any]], reviewer: DiscerningReviewer) -> Dict[st
 
     return {
         "finished": kinds[-1] == "done" if kinds else False,
-        "hit_max_turns": kinds[-1] == "error" if kinds else False,
+        "exit_reason": _exit_reason(events),
         "tool_call_sequence": tool_calls,
         "schema_inspected_before_edits": (
             first("inspect_schema") is not None
@@ -349,7 +363,7 @@ def main() -> None:
 
     s = result["score"]
     print(f"model: {args.model}")
-    print(f"finished: {s['finished']}  hit_max_turns: {s['hit_max_turns']}")
+    print(f"finished: {s['finished']}  exit_reason: {s['exit_reason']}")
     print(f"tool sequence: {' -> '.join(s['tool_call_sequence'])}")
     print(f"counts: {s['counts']}")
     print(

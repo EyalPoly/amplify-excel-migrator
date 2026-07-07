@@ -227,7 +227,8 @@ class AgentSession:
             if c["column"] not in cols:
                 problems.append(
                     f"change #{i}: column '{c['column']}' not found in sheet '{s}'. Columns: {cols}. "
-                    "To fix a wrong header use propose_column_renames, not propose_changes."
+                    "To fill or create a missing field, use propose_value_mappings (map from_value null to a "
+                    "default). To rename an existing header, use propose_column_renames. Do not use propose_changes."
                 )
                 continue
             r = c["row"]

@@ -815,6 +815,7 @@ def test_propose_changes_unknown_column_hints_at_renames():
     assert result.startswith("ERROR:")
     assert "Observation:Common name Hebrew" in result
     assert "propose_column_renames" in result
+    assert "propose_value_mappings" in result
     assert "proposal" not in [e.kind for e in events]
 
 
