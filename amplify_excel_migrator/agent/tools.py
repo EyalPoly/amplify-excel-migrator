@@ -4,7 +4,7 @@ from typing import List, Set
 
 from amplify_excel_migrator.agent.llm.base import ToolSpec
 
-GATED_TOOLS: Set[str] = {"propose_changes", "upload", "propose_column_renames"}
+GATED_TOOLS: Set[str] = {"propose_changes", "upload", "propose_column_renames", "propose_value_mappings"}
 
 TOOL_SPECS: List[ToolSpec] = [
     ToolSpec(
@@ -94,6 +94,43 @@ TOOL_SPECS: List[ToolSpec] = [
                 },
             },
             "required": ["summary", "renames"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolSpec(
+        name="propose_value_mappings",
+        description=(
+            "Propose value replacements at the (column, value) level for human approval: 'in column C, "
+            "map from_value X to to_value Y', which rewrites EVERY row where C == X. NEVER edits directly "
+            "— only approved mappings are applied. Use this to fix a whole dry_run failure group at once "
+            "(read column and value straight off the failure group). Set from_value to null to fill blank/"
+            "missing cells, or to create and fill a missing required scalar field named after the schema. "
+            "Use propose_changes only for genuine one-off single-cell edits."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "One-line summary of this batch."},
+                "mappings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "sheet_name": {"type": "string"},
+                            "column": {"type": "string"},
+                            "from_value": {
+                                "description": "Existing value to replace (string/number/bool/null). "
+                                "null matches blank/missing cells."
+                            },
+                            "to_value": {"description": "Replacement value (string/number/bool/null)."},
+                            "rationale": {"type": "string", "description": "Why this mapping, and any assumption made."},
+                        },
+                        "required": ["sheet_name", "column", "from_value", "to_value", "rationale"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["summary", "mappings"],
             "additionalProperties": False,
         },
     ),
