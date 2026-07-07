@@ -134,6 +134,14 @@ the same human-approval gate and only approved renames are applied. The agent si
 explicit `finish` tool call rather than by ending a message, so a turn that only narrates its plan never
 terminates the session prematurely.
 
+For value problems that repeat across many rows — the same `#REF!`, an enum/casing mismatch, or blank
+required cells — the agent proposes bulk fixes at the `(column, value)` level via `propose_value_mappings`
+("in column C, map value X to Y") instead of editing thousands of cells one at a time. The grouped
+`dry_run` report hands it the exact column and value of each failure group, the human approves each
+mapping once, and every matching row is rewritten; mapping from a null `from_value` fills blank cells or
+creates and fills a missing required scalar field. Like every other edit, it passes through the
+human-approval gate and only approved mappings are applied.
+
 When a proposed value edit is structurally invalid (unknown sheet or column, a missing or
 out-of-range `row`), `propose_changes` returns an instructive error naming the exact problem instead
 of a terse failure, so the model can self-correct. And if the model keeps issuing the *same* failing
