@@ -346,14 +346,21 @@ class AgentSession:
                 invalid.append({"id": mid, "reason": f"sheet '{sheet}' not found. Available: {sorted(sheets)}."})
                 continue
             df = sheets[sheet]
-            if column not in df.columns:
-                invalid.append({"id": mid, "reason": f"no such column '{column}' in sheet '{sheet}'"})
-                continue
-            series = df[column]
-            present = series.isna().any() if m["from_value"] is None else (series == m["from_value"]).any()
-            if not present:
-                invalid.append({"id": mid, "reason": f"value {m['from_value']!r} not present in column '{column}'"})
-                continue
+            create = column not in df.columns
+            if create:
+                fields = {f.get("name") for f in (self.schema_provider(model=sheet) or {}).get("fields", [])}
+                if m["from_value"] is not None or column not in fields:
+                    invalid.append({"id": mid, "reason": (
+                        f"column '{column}' not in sheet '{sheet}'. To create a missing scalar field, "
+                        f"map from_value null to a default. Foreign keys with no column cannot be filled "
+                        f"with a placeholder — ask the user for a valid id.")})
+                    continue
+            else:
+                series = df[column]
+                present = series.isna().any() if m["from_value"] is None else (series == m["from_value"]).any()
+                if not present:
+                    invalid.append({"id": mid, "reason": f"value {m['from_value']!r} not present in column '{column}'"})
+                    continue
             valid.append(
                 ValueMapping(
                     id=mid,
@@ -378,7 +385,10 @@ class AgentSession:
             result = self.approval.review_value_mappings(proposal)  # blocks for human decision
             for m in valid:
                 if result.is_approved(m.id):
-                    self.workbook.apply_value_mapping(m.sheet_name, m.column, m.from_value, m.to_value)
+                    if m.column in self.workbook.sheets()[m.sheet_name].columns:
+                        self.workbook.apply_value_mapping(m.sheet_name, m.column, m.from_value, m.to_value)
+                    else:
+                        self.workbook.add_column(m.sheet_name, m.column, m.to_value)
                     applied.append(m.id)
                 else:
                     rejected.append(m.id)

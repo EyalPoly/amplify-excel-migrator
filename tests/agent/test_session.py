@@ -271,6 +271,44 @@ def test_noop_mapping_is_dropped_before_the_gate():
     assert list(session.workbook.sheets()["Reporter"]["species"]) == ["#REF!", "cat", "#REF!"]
 
 
+def test_missing_scalar_field_is_created_and_filled():
+    wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"]})})
+    turns = [
+        _mapping_turn([{"sheet_name": "Reporter", "column": "count", "from_value": None, "to_value": 1, "rationale": "r"}]),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[], upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:count:None->1"], rejected_ids=[])],
+    )
+    events = []
+    session = AgentSession(
+        provider=ScriptedProvider(turns), orchestrator=RecordingOrchestrator(), workbook=wb,
+        approval_handler=handler, schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        event_sink=events.append,
+    )
+    session.run("go")
+    assert list(session.workbook.sheets()["Reporter"]["count"]) == [1, 1]
+
+
+def test_missing_column_not_a_schema_field_is_invalid():
+    wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a"]})})
+    turns = [
+        _mapping_turn([{"sheet_name": "Reporter", "column": "group", "from_value": None, "to_value": "x", "rationale": "r"}]),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = AgentSession(
+        provider=ScriptedProvider(turns), orchestrator=RecordingOrchestrator(), workbook=wb,
+        approval_handler=handler, schema_provider=lambda model=None: {"fields": [{"name": "count"}]},
+        event_sink=events.append,
+    )
+    session.run("go")
+    assert handler.seen_value_mapping_proposals == []
+    assert "group" not in session.workbook.sheets()["Reporter"].columns
+
+
 def test_session_applies_approved_changes_then_uploads():
     turns = [
         AssistantTurn(
