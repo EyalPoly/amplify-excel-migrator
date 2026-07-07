@@ -43,6 +43,25 @@ class ColumnRenameProposal:
 
 
 @dataclass
+class ValueMapping:
+    id: str
+    sheet_name: str
+    column: str
+    from_value: Any
+    to_value: Any
+    rationale: str
+
+
+@dataclass
+class ValueMappingProposal:
+    summary: str
+    mappings: List[ValueMapping]
+
+    def mapping_ids(self) -> List[str]:
+        return [m.id for m in self.mappings]
+
+
+@dataclass
 class ApprovalResult:
     approved_ids: List[str] = field(default_factory=list)
     rejected_ids: List[str] = field(default_factory=list)

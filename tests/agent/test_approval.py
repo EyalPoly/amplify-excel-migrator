@@ -5,6 +5,8 @@ from amplify_excel_migrator.agent.models import (
     ApprovalResult,
     ColumnRename,
     ColumnRenameProposal,
+    ValueMapping,
+    ValueMappingProposal,
 )
 
 
@@ -52,3 +54,33 @@ def test_recording_handler_returns_scripted_rename_results():
 
     assert result.approved_ids == ["Reporter:Report type->observationMethod"]
     assert handler.seen_rename_proposals == [proposal]
+
+
+def test_recording_handler_returns_scripted_value_mapping_results():
+    proposal = ValueMappingProposal(
+        summary="s",
+        mappings=[
+            ValueMapping("Reporter:species:#REF!->UNKNOWN", "Reporter", "species", "#REF!", "UNKNOWN", "r"),
+        ],
+    )
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+
+    result = handler.review_value_mappings(proposal)
+
+    assert result.approved_ids == ["Reporter:species:#REF!->UNKNOWN"]
+    assert handler.seen_value_mapping_proposals == [proposal]
+
+
+def test_value_mapping_proposal_lists_ids():
+    proposal = ValueMappingProposal(
+        summary="s",
+        mappings=[
+            ValueMapping("Reporter:species:#REF!->UNKNOWN", "Reporter", "species", "#REF!", "UNKNOWN", "r"),
+            ValueMapping("Reporter:species:None->UNKNOWN", "Reporter", "species", None, "UNKNOWN", "r"),
+        ],
+    )
+    assert proposal.mapping_ids() == ["Reporter:species:#REF!->UNKNOWN", "Reporter:species:None->UNKNOWN"]
