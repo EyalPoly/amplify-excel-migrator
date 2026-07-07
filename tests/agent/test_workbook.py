@@ -105,3 +105,19 @@ def test_apply_value_mapping_absent_value_raises_valueerror():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_add_column_creates_and_fills():
+    editor = WorkbookEditor({"S": pd.DataFrame({"a": [1, 2, 3]})})
+    n = editor.add_column("S", "count", 0)
+    assert n == 3
+    assert list(editor.sheets()["S"]["count"]) == [0, 0, 0]
+
+
+def test_add_column_existing_raises_valueerror():
+    editor = WorkbookEditor({"S": pd.DataFrame({"count": [1]})})
+    try:
+        editor.add_column("S", "count", 0)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass

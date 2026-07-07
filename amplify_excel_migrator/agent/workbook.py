@@ -56,6 +56,13 @@ class WorkbookEditor:
         df.loc[mask, column] = to_value
         return int(mask.sum())
 
+    def add_column(self, sheet_name: str, column: str, value: Any) -> int:
+        df = self._sheets[sheet_name]
+        if column in df.columns:
+            raise ValueError(f"Column '{column}' already exists in sheet '{sheet_name}'")
+        df[column] = value
+        return int(len(df))
+
     def save(self, path_or_buffer: Any) -> None:
         # Accepts a filesystem path or a binary file-like object (e.g. io.BytesIO) — both work with openpyxl,
         # so the web layer can stream the workbook to a download without a temp file.
