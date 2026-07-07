@@ -73,3 +73,35 @@ def test_save_accepts_a_binary_buffer():
     buf.seek(0)
     reloaded = pd.read_excel(buf, sheet_name="Reporter")
     assert list(reloaded.columns) == ["name", "country"]
+
+
+def test_apply_value_mapping_rewrites_all_matching_rows():
+    editor = WorkbookEditor({"S": pd.DataFrame({"species": ["#REF!", "cat", "#REF!"]})})
+    changed = editor.apply_value_mapping("S", "species", "#REF!", "UNKNOWN")
+    assert changed == 2
+    assert list(editor.sheets()["S"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+
+
+def test_apply_value_mapping_matches_blank_cells_when_from_value_is_none():
+    editor = WorkbookEditor({"S": pd.DataFrame({"species": ["cat", None, float("nan")]})})
+    changed = editor.apply_value_mapping("S", "species", None, "UNKNOWN")
+    assert changed == 2
+    assert list(editor.sheets()["S"]["species"]) == ["cat", "UNKNOWN", "UNKNOWN"]
+
+
+def test_apply_value_mapping_unknown_column_raises_keyerror():
+    editor = WorkbookEditor({"S": pd.DataFrame({"species": ["cat"]})})
+    try:
+        editor.apply_value_mapping("S", "nope", "cat", "dog")
+        assert False, "expected KeyError"
+    except KeyError:
+        pass
+
+
+def test_apply_value_mapping_absent_value_raises_valueerror():
+    editor = WorkbookEditor({"S": pd.DataFrame({"species": ["cat"]})})
+    try:
+        editor.apply_value_mapping("S", "species", "#REF!", "UNKNOWN")
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
