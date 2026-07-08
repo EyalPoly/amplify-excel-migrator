@@ -1065,3 +1065,138 @@ def test_value_fix_allowed_after_dry_run():
 
     assert result != _DRY_RUN_REQUIRED
     assert list(session.workbook.sheets()["Reporter"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+
+
+def test_mutation_invalidates_dry_run():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    session._dispatch("dry_run", {})
+    first = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+    second = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "again",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "cat",
+                    "to_value": "DOG",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert first != _DRY_RUN_REQUIRED  # first applied while fresh
+    assert second == _DRY_RUN_REQUIRED  # the applied mutation consumed freshness
+
+
+def test_rejected_proposal_preserves_freshness():
+    handler = RecordingApprovalHandler(
+        change_results=[ApprovalResult(approved_ids=[], rejected_ids=["Reporter:0:species"])],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    session._dispatch("dry_run", {})
+    session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 0, "column": "species", "proposed_value": "cat", "rationale": "r"}
+            ],
+        },
+    )
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result != _DRY_RUN_REQUIRED  # nothing was applied, so the dry_run is still fresh
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+
+
+def test_rename_is_ungated_but_invalidates():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        rename_results=[
+            ApprovalResult(approved_ids=["Reporter:Report type->observationMethod"], rejected_ids=[]),
+            ApprovalResult(approved_ids=["Reporter:name->country"], rejected_ids=[]),
+        ],
+    )
+    events = []
+    session = _make_rename_session([], handler, events)
+
+    # ungated: a rename applies with no prior dry_run
+    session._dispatch(
+        "propose_column_renames",
+        {
+            "summary": "fix headers",
+            "renames": [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+    assert "observationMethod" in session.workbook.sheets()["Reporter"].columns
+
+    # a fresh dry_run followed by an applied rename re-invalidates freshness
+    session._dispatch("dry_run", {})
+    session._dispatch(
+        "propose_column_renames",
+        {
+            "summary": "more headers",
+            "renames": [{"sheet_name": "Reporter", "current_name": "name", "new_name": "country", "rationale": "r"}],
+        },
+    )
+    blocked = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 0, "column": "country", "proposed_value": "v", "rationale": "r"}
+            ],
+        },
+    )
+
+    assert blocked == _DRY_RUN_REQUIRED  # the applied rename made the value-fix stale again

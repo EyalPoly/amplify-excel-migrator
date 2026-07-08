@@ -282,6 +282,8 @@ class AgentSession:
                 applied.append(change.id)
             else:
                 skipped.append(change.id)
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": skipped})
 
     def _propose_column_renames(self, args: Dict[str, Any]) -> str:
@@ -345,6 +347,8 @@ class AgentSession:
                 else:
                     rejected.append(rn.id)
 
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid})
 
     def _propose_value_mappings(self, args: Dict[str, Any]) -> str:
@@ -413,6 +417,8 @@ class AgentSession:
                 else:
                     rejected.append(m.id)
 
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid}, default=str)
 
     def _upload(self) -> str:
