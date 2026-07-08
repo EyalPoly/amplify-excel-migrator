@@ -130,6 +130,7 @@ class AgentSession:
         consecutive_nudges = 0
         last_error_sig = None
         repeat_count = 0
+        no_progress = 0
         for _ in range(max_turns):
             turn = self.provider.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
             if turn.text:
@@ -151,6 +152,7 @@ class AgentSession:
 
             messages.append(AssistantMessage(text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw))
             escalation = None
+            no_progress_guidance = None
             for call in turn.tool_calls:
                 if call.name == "finish":
                     self.emit(AgentEvent(kind="done", payload={"summary": call.arguments.get("summary", "")}))
@@ -162,6 +164,21 @@ class AgentSession:
                         tool_call_id=call.id, content=result_text, is_error=result_text.startswith("ERROR:")
                     )
                 )
+
+                if _made_no_progress(call.name, result_text):
+                    no_progress += 1
+                else:
+                    no_progress = 0
+                if no_progress >= abort_repeats:
+                    self.emit(
+                        AgentEvent(
+                            kind="error",
+                            payload={"message": f"Aborted: {no_progress} consecutive proposals applied no changes."},
+                        )
+                    )
+                    return
+                if no_progress == escalate_repeats:
+                    no_progress_guidance = _no_progress_message(no_progress)
 
                 if not result_text.startswith("ERROR:"):
                     last_error_sig = None
@@ -191,6 +208,8 @@ class AgentSession:
 
             if escalation:
                 messages.append(UserMessage(content=escalation))
+            if no_progress_guidance:
+                messages.append(UserMessage(content=no_progress_guidance))
 
         self.emit(AgentEvent(kind="error", payload={"message": f"Stopped after {max_turns} turns without finishing."}))
 
