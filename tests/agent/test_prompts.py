@@ -38,3 +38,10 @@ def test_prompt_requires_dry_run_before_value_fixes():
     assert "dry_run" in text
     assert "before any value fix" in text
     assert "after each applied batch" in text
+
+
+def test_prompt_guides_fk_candidate_mapping():
+    text = SYSTEM_PROMPT.lower()
+    assert "closest_existing" in text
+    assert "fk_not_found" in text
+    assert "candidate" in text

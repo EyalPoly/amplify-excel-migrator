@@ -140,7 +140,10 @@ required cells — the agent proposes bulk fixes at the `(column, value)` level 
 `dry_run` report hands it the exact column and value of each failure group, the human approves each
 mapping once, and every matching row is rewritten; mapping from a null `from_value` fills blank cells or
 creates and fills a missing required scalar field. Like every other edit, it passes through the
-human-approval gate and only approved mappings are applied.
+human-approval gate and only approved mappings are applied. For foreign-key values that match no
+existing entity, the `dry_run` report also lists the closest existing entities (`closest_existing`, each
+with its name and id), so the agent can map a misspelled or variant name to the right record instead of
+guessing.
 
 Because a value fix is only as good as the failures it targets, `propose_changes` and
 `propose_value_mappings` are blocked until a `dry_run` has run since the last workbook change: the first

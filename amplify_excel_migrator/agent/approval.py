@@ -1,6 +1,6 @@
 """Approval boundary: the agent never edits or uploads without going through this."""
 
-from typing import Dict, List, Protocol, Set
+from typing import Dict, List, Optional, Protocol, Set
 
 from amplify_excel_migrator.agent.models import (
     ApprovalResult,
@@ -35,8 +35,8 @@ class RecordingApprovalHandler:
         self,
         change_results: List[ApprovalResult],
         upload_selections: List[Set[str]],
-        rename_results: List[ApprovalResult] = None,
-        value_mapping_results: List[ApprovalResult] = None,
+        rename_results: Optional[List[ApprovalResult]] = None,
+        value_mapping_results: Optional[List[ApprovalResult]] = None,
     ):
         self._change_results = list(change_results)
         self._upload_selections = list(upload_selections)

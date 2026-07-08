@@ -760,6 +760,7 @@ def test_dry_run_groups_failures_by_field_error():
             "kind": "missing_required",
             "count": 2,
             "message": "group:None:missing_required",
+            "closest_existing": [],
         },
         {
             "column": "species",
@@ -767,6 +768,7 @@ def test_dry_run_groups_failures_by_field_error():
             "kind": "fk_not_found",
             "count": 1,
             "message": "species:#REF!:fk_not_found",
+            "closest_existing": [],
         },
     ]
     assert "total_parsing_failures" not in sheet
@@ -1405,3 +1407,43 @@ def test_value_mappings_missing_mappings_key_returns_error():
     assert result.startswith("ERROR:")
     assert "propose_value_mappings needs a 'summary' and a 'mappings' array" in result
     assert handler.seen_value_mapping_proposals == []
+
+
+def test_dry_run_exposes_closest_existing_on_fk_failure_group():
+    events = []
+    candidates = [{"name": "Qiryat Hayyim Beach", "id": "site-1", "score": 0.72}]
+    fe = FieldError(
+        column="site",
+        value="Kiryat Haim",
+        kind="fk_not_found",
+        message="'site': 'Kiryat Haim' does not exist",
+        closest_existing=candidates,
+    )
+    plan = MigrationPlan(
+        sheets=[
+            SheetPlan(
+                sheet_name="Observation",
+                status="ready",
+                skip_reason=None,
+                total_rows=1,
+                record_count=0,
+                records=[],
+                parsing_failures=[
+                    RecordFailure(
+                        primary_field="k",
+                        primary_field_value=0,
+                        error=fe.message,
+                        original_row={},
+                        field_errors=[fe],
+                    )
+                ],
+                parsed_model_structure={"fields": []},
+                row_dict_by_primary={},
+            )
+        ]
+    )
+
+    _dry_run_session(plan, events).run("go")
+
+    sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
+    assert sheet["failure_groups"][0]["closest_existing"] == candidates

@@ -40,7 +40,7 @@ class GraphQLClient:
         id_token = self.auth_provider.get_id_token()
         headers = {"Authorization": id_token, "Content-Type": "application/json"}
 
-        payload = {"query": query, "variables": variables or {}}
+        payload: Dict[str, Any] = {"query": query, "variables": variables or {}}
 
         context_msg = f" [{context}]" if context else ""
 
@@ -92,7 +92,7 @@ class GraphQLClient:
         id_token = self.auth_provider.get_id_token()
         headers = {"Authorization": id_token, "Content-Type": "application/json"}
 
-        payload = {"query": query, "variables": variables or {}}
+        payload: Dict[str, Any] = {"query": query, "variables": variables or {}}
 
         context_msg = f" [{context}]" if context else ""
 

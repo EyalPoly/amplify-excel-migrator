@@ -35,7 +35,10 @@ wrong value repeated across many rows (e.g. '#REF!' or a casing/enum mismatch), 
 — call propose_value_mappings ('in column C, map from_value X to to_value Y', which rewrites every \
 matching row; use from_value null to fill blank cells or to create and fill a missing required scalar \
 field). Reserve propose_changes for genuine one-off single-cell edits. Give each mapping or change a \
-rationale that names any assumption you made.
+rationale that names any assumption you made. For foreign-key failures (kind fk_not_found — a value that \
+matches no existing entity), dry_run attaches closest_existing: the nearest existing entities, each with \
+its name and id. Prefer a propose_value_mappings that maps the bad value to the best-matching candidate's \
+name; only flag and ask the human when no listed candidate is a plausible match.
 6. After approved changes are applied, call dry_run again to confirm, then call upload.
 7. Read the upload result. For any failed rows, propose targeted fixes and retry. When the migration \
 is complete and nothing remains to fix, call the finish tool with a short summary. Ending your message \

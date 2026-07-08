@@ -30,6 +30,7 @@ def test_groups_by_column_value_kind_with_counts():
             "kind": "missing_required",
             "count": 2,
             "message": "group:None:missing_required",
+            "closest_existing": [],
         },
         {
             "column": "species",
@@ -37,6 +38,7 @@ def test_groups_by_column_value_kind_with_counts():
             "kind": "fk_not_found",
             "count": 1,
             "message": "species:#REF!:fk_not_found",
+            "closest_existing": [],
         },
     ]
 
@@ -126,3 +128,24 @@ def test_failure_with_no_field_errors_counts_as_row_but_no_groups():
     assert result["total_failed_rows"] == 1
     assert result["distinct"] == 0
     assert result["groups"] == []
+
+
+def test_fk_group_carries_closest_existing_from_first_seen():
+    candidates = [{"name": "Qiryat Hayyim Beach", "id": "site-1", "score": 0.72}]
+    fe = FieldError(
+        column="site",
+        value="Kiryat Haim",
+        kind="fk_not_found",
+        message="'site': 'Kiryat Haim' does not exist",
+        closest_existing=candidates,
+    )
+
+    result = summarize_failures([_failure(fe)])
+
+    assert result["groups"][0]["closest_existing"] == candidates
+
+
+def test_non_fk_group_has_empty_closest_existing():
+    result = summarize_failures([_failure(_fe("depth", "bad", "parse"))])
+
+    assert result["groups"][0]["closest_existing"] == []

@@ -28,6 +28,7 @@ def summarize_failures(failures: List[RecordFailure], max_groups: int = 50) -> D
                     "kind": fe.kind,
                     "count": 1,
                     "message": fe.message,
+                    "closest_existing": fe.closest_existing,
                 }
             else:
                 group["count"] += 1
