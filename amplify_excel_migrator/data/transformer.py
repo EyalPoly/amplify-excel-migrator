@@ -8,16 +8,25 @@ import pandas as pd
 
 from amplify_excel_migrator.schema import FieldParser
 from amplify_excel_migrator.migration.models import FieldError
+from amplify_excel_migrator.data.similarity import closest
 
 logger = logging.getLogger(__name__)
 
 
 class FieldParseError(ValueError):
-    def __init__(self, message: str, column: Optional[str], value: Any, kind: str):
+    def __init__(
+        self,
+        message: str,
+        column: Optional[str],
+        value: Any,
+        kind: str,
+        closest_existing: Optional[List[Dict[str, Any]]] = None,
+    ):
         super().__init__(message)
         self.column = column
         self.value = value
         self.kind = kind
+        self.closest_existing = closest_existing or []
 
 
 class RowParseError(ValueError):
@@ -95,7 +104,11 @@ class DataTransformer:
                 if input_value is not None:
                     model_record[field["name"]] = input_value
             except FieldParseError as e:
-                field_errors.append(FieldError(column=e.column, value=e.value, kind=e.kind, message=str(e)))
+                field_errors.append(
+                    FieldError(
+                        column=e.column, value=e.value, kind=e.kind, message=str(e), closest_existing=e.closest_existing
+                    )
+                )
             except ValueError as e:
                 field_errors.append(FieldError(column=field["name"], value=None, kind="other", message=str(e)))
 
@@ -191,11 +204,16 @@ class DataTransformer:
             if record_id:
                 return record_id
             else:
+                candidates = [
+                    {"name": name, "id": lookup_dict[name], "score": round(score, 2)}
+                    for name, score in closest(value, lookup_dict.keys())
+                ]
                 raise FieldParseError(
                     f"'{column_name}': '{value}' does not exist",
                     column=column_name,
                     value=value,
                     kind="fk_not_found",
+                    closest_existing=candidates,
                 )
         else:
             raise ValueError(f"No pre-fetched data for '{column_name}'")

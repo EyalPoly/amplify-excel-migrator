@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 import pandas as pd
-from amplify_excel_migrator.data.transformer import DataTransformer
+from amplify_excel_migrator.data.transformer import DataTransformer, FieldParseError
 from amplify_excel_migrator.migration.models import FieldError
 
 
@@ -528,6 +528,51 @@ class TestStructuredFieldErrors:
         assert len(fes) == 1
         assert (fes[0].column, fes[0].value, fes[0].kind) == ("species", "#REF!", "fk_not_found")
 
+    def test_fk_field_error_carries_closest_existing_end_to_end(self, transformer):
+        df = pd.DataFrame([{"site": "Qiryat Hayyim Beac"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "siteId",
+                    "is_id": True,
+                    "is_required": True,
+                    "related_model": "Site",
+                    "is_list": False,
+                    "is_scalar": False,
+                    "is_custom_type": False,
+                }
+            ]
+        }
+        fk_cache = {"Site": {"lookup": {"Qiryat Hayyim Beach": "site-1"}}}
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "site", fk_cache)
+
+        fe = failed[0]["field_errors"][0]
+        assert fe.kind == "fk_not_found"
+        assert fe.closest_existing[0]["name"] == "Qiryat Hayyim Beach"
+        assert fe.closest_existing[0]["id"] == "site-1"
+
+    def test_non_fk_field_error_has_empty_closest_existing(self, transformer):
+        df = pd.DataFrame([{"other": "x"}])
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "group",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": True,
+                    "is_custom_type": False,
+                }
+            ]
+        }
+
+        _, _, failed = transformer.transform_rows_to_records(df, parsed_model, "group", {})
+
+        fe = failed[0]["field_errors"][0]
+        assert fe.kind == "missing_required"
+        assert fe.closest_existing == []
+
     def test_missing_required_produces_structured_field_error(self, transformer):
         df = pd.DataFrame([{"other": "x"}])
         parsed_model = {
@@ -1027,6 +1072,27 @@ class TestResolveForeignKey:
 
         with pytest.raises(ValueError, match="'author': 'John Doe' does not exist"):
             transformer._resolve_foreign_key(field, "John Doe", fk_cache)
+
+    def test_fk_not_found_attaches_ranked_closest_existing(self, transformer):
+        field = {"name": "siteId", "is_id": True, "is_required": True, "related_model": "Site"}
+        fk_cache = {"Site": {"lookup": {"Qiryat Hayyim Beach": "site-1", "Tel Aviv Port": "site-2"}}}
+
+        with pytest.raises(FieldParseError) as exc:
+            transformer._resolve_foreign_key(field, "Qiryat Hayyim Beac", fk_cache)
+
+        candidates = exc.value.closest_existing
+        assert candidates[0]["name"] == "Qiryat Hayyim Beach"
+        assert candidates[0]["id"] == "site-1"
+        assert 0.0 <= candidates[0]["score"] <= 1.0
+
+    def test_fk_not_found_candidates_empty_when_nothing_similar(self, transformer):
+        field = {"name": "siteId", "is_id": True, "is_required": True, "related_model": "Site"}
+        fk_cache = {"Site": {"lookup": {"Qiryat Hayyim Beach": "site-1"}}}
+
+        with pytest.raises(FieldParseError) as exc:
+            transformer._resolve_foreign_key(field, "zzzzzzzzz", fk_cache)
+
+        assert exc.value.closest_existing == []
 
     def test_raises_error_for_missing_required_fk(self, transformer):
         field = {
