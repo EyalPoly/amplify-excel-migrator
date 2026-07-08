@@ -233,7 +233,11 @@ class AgentSession:
             if name == "inspect_schema":
                 return json.dumps(self.schema_provider(model=args.get("model")))
             if name == "read_sheet":
-                return json.dumps(self.workbook.preview(args["sheet"], args.get("max_rows", 20)), default=str)
+                sheet = args["sheet"]
+                sheets = self.workbook.sheets()
+                if sheet not in sheets:
+                    return f"ERROR: sheet '{sheet}' not found. Available sheets: {sorted(sheets)}."
+                return json.dumps(self.workbook.preview(sheet, args.get("max_rows", 20)), default=str)
             if name == "dry_run":
                 return self._dry_run()
             if name == "propose_changes":

@@ -982,6 +982,19 @@ def test_repeated_identical_failure_escalates_then_aborts():
     assert injected
 
 
+def test_read_sheet_unknown_sheet_lists_available():
+    # A cryptic KeyError ("ERROR: 'Sheet1'") makes a small model hallucinate sheet names and spiral;
+    # listing the real sheets lets it recover, matching the value-mapping/rename error style.
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), [])
+
+    result = session._dispatch("read_sheet", {"sheet": "Sheet1"})
+
+    assert result.startswith("ERROR:")
+    assert "Sheet1" in result
+    assert "Available sheets" in result
+    assert "Reporter" in result
+
+
 def test_counter_resets_on_a_different_successful_call():
     turns = [
         _failing_propose_turn(),
