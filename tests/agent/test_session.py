@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from amplify_excel_migrator.agent.llm.base import AssistantTurn, LLMProvider, ToolCall
@@ -956,7 +958,10 @@ def test_propose_changes_valid_batch_still_emits_proposal():
 def test_repeated_identical_failure_escalates_then_aborts():
     from amplify_excel_migrator.agent.llm.base import UserMessage
 
-    provider = RepeatingRecorder(_failing_propose_turn())
+    # A non-proposal failing tool isolates the identical-args guard: the no-progress guard ignores
+    # non-proposal tools, so this exercises the identical-args escalate/abort path on its own.
+    failing_read = AssistantTurn(text="", tool_calls=[ToolCall("c1", "read_sheet", {"sheet": "Nope"})])
+    provider = RepeatingRecorder(failing_read)
     events = []
     session = _make_session(provider, RecordingApprovalHandler([], []), events)
 
@@ -964,7 +969,8 @@ def test_repeated_identical_failure_escalates_then_aborts():
 
     assert events[-1].kind == "error"
     assert "Aborted" in events[-1].payload["message"]
-    assert "propose_changes" in events[-1].payload["message"]
+    assert "read_sheet" in events[-1].payload["message"]
+    assert "identical arguments" in events[-1].payload["message"]
     # ended well before max_turns (only 3 generate() calls happened)
     assert len(provider.seen_messages) == 3
     # the escalation UserMessage was injected before the final generate()
@@ -1200,3 +1206,202 @@ def test_rename_is_ungated_but_invalidates():
     )
 
     assert blocked == _DRY_RUN_REQUIRED  # the applied rename made the value-fix stale again
+
+
+def test_made_no_progress_helper():
+    from amplify_excel_migrator.agent.session import _made_no_progress
+
+    # proposal that applied nothing -> True
+    assert _made_no_progress("propose_value_mappings", '{"applied": [], "rejected": [], "invalid": []}') is True
+    # proposal with an ERROR result -> True
+    assert _made_no_progress("propose_changes", "ERROR: blocked") is True
+    # proposal that applied at least one item -> False
+    assert _made_no_progress("propose_value_mappings", '{"applied": ["Reporter:species:#REF!->UNKNOWN"]}') is False
+    # non-proposal tools never count as no-progress
+    assert _made_no_progress("dry_run", '{"sheets": []}') is False
+    assert _made_no_progress("read_sheet", '{"rows": []}') is False
+    # a proposal whose result is not JSON -> False (don't guess)
+    assert _made_no_progress("propose_changes", "not json at all") is False
+
+
+class RecordingScriptedProvider(LLMProvider):
+    """Pops a fixed list of turns and records the messages seen on each generate()."""
+
+    def __init__(self, turns):
+        self._turns = list(turns)
+        self.seen_messages = []
+
+    def generate(self, system, messages, tools):
+        self.seen_messages.append(list(messages))
+        return self._turns.pop(0)
+
+
+def _invalid_mapping_turn(rationale, call_id):
+    # from_value null into 'group' (no column, not a schema field) -> rejected as invalid, applies nothing
+    return _mapping_turn(
+        [
+            {
+                "sheet_name": "Reporter",
+                "column": "group",
+                "from_value": None,
+                "to_value": "Unknown",
+                "rationale": rationale,
+            }
+        ],
+        call_id=call_id,
+    )
+
+
+def _apply_species_mapping_turn(call_id):
+    return _mapping_turn(
+        [
+            {
+                "sheet_name": "Reporter",
+                "column": "species",
+                "from_value": "#REF!",
+                "to_value": "UNKNOWN",
+                "rationale": "r",
+            }
+        ],
+        call_id=call_id,
+    )
+
+
+def test_aborts_after_consecutive_unproductive_proposals():
+    turns = [
+        _dry_run_turn(),
+        _invalid_mapping_turn("rationale one", "m1"),
+        _invalid_mapping_turn("rationale two", "m2"),
+        _invalid_mapping_turn("rationale three", "m3"),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go", escalate_repeats=2, abort_repeats=3)
+
+    assert events[-1].kind == "error"
+    msg = events[-1].payload["message"]
+    assert "Aborted" in msg and "no changes" in msg
+    assert "done" not in [e.kind for e in events]  # aborted before reaching finish
+
+
+def test_escalation_message_after_three_unproductive():
+    from amplify_excel_migrator.agent.llm.base import UserMessage
+
+    turns = [
+        _dry_run_turn(),
+        _invalid_mapping_turn("one", "m1"),
+        _invalid_mapping_turn("two", "m2"),
+        _invalid_mapping_turn("three", "m3"),
+        _finish_turn(),
+    ]
+    provider = RecordingScriptedProvider(turns)
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = AgentSession(
+        provider=provider,
+        orchestrator=RecordingOrchestrator(),
+        workbook=_mapping_workbook(),
+        approval_handler=handler,
+        schema_provider=lambda model=None: {"models": ["Reporter"]},
+        event_sink=events.append,
+    )
+
+    session.run("go", escalate_repeats=3, abort_repeats=5)
+
+    # by the final generate() (the finish turn) a no-progress guidance UserMessage has been injected
+    injected = [
+        m for m in provider.seen_messages[-1] if isinstance(m, UserMessage) and "applied no changes" in m.content
+    ]
+    assert injected
+    assert events[-1].kind == "done"  # escalation nudges, it does not abort
+
+
+def test_applied_mapping_resets_no_progress():
+    turns = [
+        _dry_run_turn(),
+        _invalid_mapping_turn("one", "m1"),
+        _invalid_mapping_turn("two", "m2"),
+        _apply_species_mapping_turn("m3"),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    session.run("go", escalate_repeats=2, abort_repeats=3)
+
+    assert not any(e.kind == "error" and "Aborted" in e.payload.get("message", "") for e in events)
+    assert events[-1].kind == "done"
+
+
+def test_dry_run_between_failures_resets_no_progress():
+    turns = [
+        _dry_run_turn("d0"),
+        _invalid_mapping_turn("one", "m1"),
+        _dry_run_turn("d1"),
+        _invalid_mapping_turn("two", "m2"),
+        _finish_turn(),
+    ]
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session(turns, handler, events)
+
+    # abort_repeats=2: without the interleaved dry_run, m1+m2 would be 2 consecutive -> abort
+    session.run("go", escalate_repeats=5, abort_repeats=2)
+
+    assert not any(e.kind == "error" and "Aborted" in e.payload.get("message", "") for e in events)
+    assert events[-1].kind == "done"
+
+
+def test_value_mapping_missing_to_value_is_invalid_not_crash():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+    session._dry_run_current = True
+
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {"sheet_name": "Reporter", "column": "species", "from_value": "#REF!", "rationale": "r"},  # no to_value
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                },
+            ],
+        },
+    )
+
+    assert not result.startswith("ERROR:")  # a mixed batch, not a whole-call failure
+    data = json.loads(result)
+    bad = [item for item in data["invalid"] if item.get("index") == 0]
+    assert bad and "to_value" in bad[0]["reason"]
+    assert data["applied"] == ["Reporter:species:#REF!->UNKNOWN"]  # valid sibling still processed
+
+
+def test_value_mappings_missing_mappings_key_returns_error():
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session([], handler, events)
+    session._dry_run_current = True
+
+    result = session._dispatch("propose_value_mappings", {"summary": "fix"})  # no 'mappings'
+
+    assert result.startswith("ERROR:")
+    assert "propose_value_mappings needs a 'summary' and a 'mappings' array" in result
+    assert handler.seen_value_mapping_proposals == []

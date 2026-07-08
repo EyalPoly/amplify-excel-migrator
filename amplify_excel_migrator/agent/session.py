@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from amplify_excel_migrator.agent.llm.base import (
     AssistantMessage,
@@ -41,12 +41,47 @@ _DRY_RUN_REQUIRED = (
 )
 
 
+_PROPOSAL_TOOLS = {"propose_changes", "propose_value_mappings", "propose_column_renames"}
+
+
+def _made_no_progress(name: str, result_text: str) -> bool:
+    if name not in _PROPOSAL_TOOLS:
+        return False
+    if result_text.startswith("ERROR:"):
+        return True
+    try:
+        data = json.loads(result_text)
+    except ValueError:
+        return False
+    return not data.get("applied")
+
+
+def _no_progress_message(count: int) -> str:
+    return (
+        f"Your last {count} proposals applied no changes. Re-run dry_run and map the (column, value) "
+        "groups it reports; if a required field has no data, you cannot proceed on it yet."
+    )
+
+
 def _escalation_message(tool: str, count: int, last_error: str) -> str:
     return (
         f"You have called `{tool}` with identical arguments {count} times and it keeps failing with: "
         f"{last_error}. Do not repeat the same call — change the arguments, use a different tool "
         "(e.g. dry_run to see the real problems, or propose_column_renames to fix headers), or call finish."
     )
+
+
+_REQUIRED_MAPPING_KEYS = ("sheet_name", "column", "from_value", "to_value", "rationale")
+
+
+def _validate_mapping_shape(args: Dict[str, Any]) -> Optional[str]:
+    if "summary" not in args or not isinstance(args.get("mappings"), list):
+        return (
+            "ERROR: propose_value_mappings needs a 'summary' and a 'mappings' array; each item is "
+            "{sheet_name, column, from_value, to_value, rationale} (from_value may be null; to_value "
+            "is the value to write)."
+        )
+    return None
 
 
 def _change_id(sheet: str, row: int, column: str) -> str:
@@ -108,6 +143,7 @@ class AgentSession:
         consecutive_nudges = 0
         last_error_sig = None
         repeat_count = 0
+        no_progress = 0
         for _ in range(max_turns):
             turn = self.provider.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
             if turn.text:
@@ -129,6 +165,7 @@ class AgentSession:
 
             messages.append(AssistantMessage(text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw))
             escalation = None
+            no_progress_guidance = None
             for call in turn.tool_calls:
                 if call.name == "finish":
                     self.emit(AgentEvent(kind="done", payload={"summary": call.arguments.get("summary", "")}))
@@ -140,6 +177,21 @@ class AgentSession:
                         tool_call_id=call.id, content=result_text, is_error=result_text.startswith("ERROR:")
                     )
                 )
+
+                if _made_no_progress(call.name, result_text):
+                    no_progress += 1
+                else:
+                    no_progress = 0
+                if no_progress >= abort_repeats:
+                    self.emit(
+                        AgentEvent(
+                            kind="error",
+                            payload={"message": f"Aborted: {no_progress} consecutive proposals applied no changes."},
+                        )
+                    )
+                    return
+                if no_progress == escalate_repeats:
+                    no_progress_guidance = _no_progress_message(no_progress)
 
                 if not result_text.startswith("ERROR:"):
                     last_error_sig = None
@@ -169,6 +221,8 @@ class AgentSession:
 
             if escalation:
                 messages.append(UserMessage(content=escalation))
+            if no_progress_guidance:
+                messages.append(UserMessage(content=no_progress_guidance))
 
         self.emit(AgentEvent(kind="error", payload={"message": f"Stopped after {max_turns} turns without finishing."}))
 
@@ -352,12 +406,31 @@ class AgentSession:
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid})
 
     def _propose_value_mappings(self, args: Dict[str, Any]) -> str:
-        mappings = [m for m in args["mappings"] if m["from_value"] != m["to_value"]]
+        shape_error = _validate_mapping_shape(args)
+        if shape_error:
+            return shape_error
+
+        invalid: List[Dict[str, Any]] = []
+        candidates: List[Dict[str, Any]] = []
+        for i, m in enumerate(args["mappings"]):
+            missing = [k for k in _REQUIRED_MAPPING_KEYS if k not in m]
+            if missing:
+                k = missing[0]
+                reason = (
+                    f"mapping is missing '{k}' (the value to write). Every mapping needs "
+                    "from_value (may be null) and to_value."
+                    if k in ("from_value", "to_value")
+                    else f"mapping is missing required '{k}'."
+                )
+                invalid.append({"index": i, "reason": reason})
+                continue
+            if m["from_value"] != m["to_value"]:
+                candidates.append(m)
+
         sheets = self.workbook.sheets()
-        invalid: List[Dict[str, str]] = []
         valid: List[ValueMapping] = []
 
-        for m in mappings:
+        for m in candidates:
             sheet, column = m["sheet_name"], m["column"]
             mid = _mapping_id(sheet, column, m["from_value"], m["to_value"])
             if sheet not in sheets:
