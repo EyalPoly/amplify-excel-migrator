@@ -109,7 +109,5 @@ def test_field_error_closest_existing_defaults_to_empty_list():
 
 def test_field_error_carries_closest_existing():
     candidates = [{"name": "Qiryat Hayyim Beach", "id": "site-1", "score": 0.72}]
-    fe = FieldError(
-        column="site", value="Kiryat Haim", kind="fk_not_found", message="m", closest_existing=candidates
-    )
+    fe = FieldError(column="site", value="Kiryat Haim", kind="fk_not_found", message="m", closest_existing=candidates)
     assert fe.closest_existing == candidates
