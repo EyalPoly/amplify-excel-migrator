@@ -10,6 +10,7 @@ class FieldError:
     value: Any
     kind: str
     message: str
+    closest_existing: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

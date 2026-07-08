@@ -100,3 +100,16 @@ def test_record_failure_carries_field_errors():
     fe = FieldError(column="group", value=None, kind="missing_required", message="Required field 'group' is missing")
     f = RecordFailure(primary_field="k", primary_field_value=1, error="e", original_row={}, field_errors=[fe])
     assert f.field_errors == [fe]
+
+
+def test_field_error_closest_existing_defaults_to_empty_list():
+    fe = FieldError(column="site", value="Kiryat Haim", kind="fk_not_found", message="m")
+    assert fe.closest_existing == []
+
+
+def test_field_error_carries_closest_existing():
+    candidates = [{"name": "Qiryat Hayyim Beach", "id": "site-1", "score": 0.72}]
+    fe = FieldError(
+        column="site", value="Kiryat Haim", kind="fk_not_found", message="m", closest_existing=candidates
+    )
+    assert fe.closest_existing == candidates
