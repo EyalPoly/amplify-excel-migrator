@@ -142,6 +142,12 @@ mapping once, and every matching row is rewritten; mapping from a null `from_val
 creates and fills a missing required scalar field. Like every other edit, it passes through the
 human-approval gate and only approved mappings are applied.
 
+Because a value fix is only as good as the failures it targets, `propose_changes` and
+`propose_value_mappings` are blocked until a `dry_run` has run since the last workbook change: the first
+value fix with no prior `dry_run` is refused, and any applied edit (including a column rename) invalidates
+an earlier `dry_run`, so the agent must re-run it before the next batch. Header renames themselves stay
+ungated, since they normally precede the first `dry_run`.
+
 When a proposed value edit is structurally invalid (unknown sheet or column, a missing or
 out-of-range `row`), `propose_changes` returns an instructive error naming the exact problem instead
 of a terse failure, so the model can self-correct. And if the model keeps issuing the *same* failing
