@@ -32,6 +32,15 @@ _NUDGE = (
 )
 
 
+_DRY_RUN_GATED = {"propose_changes", "propose_value_mappings"}
+
+_DRY_RUN_REQUIRED = (
+    "ERROR: run dry_run first — you must call dry_run to see the current "
+    "(column, value) failure groups before proposing value fixes. Changing the "
+    "workbook invalidates a prior dry_run, so re-run it after each batch of fixes."
+)
+
+
 def _escalation_message(tool: str, count: int, last_error: str) -> str:
     return (
         f"You have called `{tool}` with identical arguments {count} times and it keeps failing with: "
@@ -86,6 +95,7 @@ class AgentSession:
         self.emit = event_sink
         self._max_failure_groups = max_failure_groups
         self._max_nudges = max_nudges
+        self._dry_run_current = False
 
     def run(
         self,
@@ -163,6 +173,8 @@ class AgentSession:
         self.emit(AgentEvent(kind="error", payload={"message": f"Stopped after {max_turns} turns without finishing."}))
 
     def _dispatch(self, name: str, args: Dict[str, Any]) -> str:
+        if name in _DRY_RUN_GATED and not self._dry_run_current:
+            return _DRY_RUN_REQUIRED
         try:
             if name == "inspect_schema":
                 return json.dumps(self.schema_provider(model=args.get("model")))
@@ -193,6 +205,7 @@ class AgentSession:
         plan = orchestrator.build_plan()
         report = {"sheets": [self._sheet_report(s) for s in plan.sheets]}
         self.emit(AgentEvent(kind="dry_run", payload=report))
+        self._dry_run_current = True
         return json.dumps(report, default=str)
 
     def _sheet_report(self, sheet) -> Dict[str, Any]:
@@ -269,6 +282,8 @@ class AgentSession:
                 applied.append(change.id)
             else:
                 skipped.append(change.id)
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": skipped})
 
     def _propose_column_renames(self, args: Dict[str, Any]) -> str:
@@ -332,6 +347,8 @@ class AgentSession:
                 else:
                     rejected.append(rn.id)
 
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid})
 
     def _propose_value_mappings(self, args: Dict[str, Any]) -> str:
@@ -400,6 +417,8 @@ class AgentSession:
                 else:
                     rejected.append(m.id)
 
+        if applied:
+            self._dry_run_current = False
         return json.dumps({"applied": applied, "rejected": rejected, "invalid": invalid}, default=str)
 
     def _upload(self) -> str:

@@ -4,7 +4,7 @@ from amplify_excel_migrator.agent.llm.base import AssistantTurn, LLMProvider, To
 from amplify_excel_migrator.agent.workbook import WorkbookEditor
 from amplify_excel_migrator.agent.approval import RecordingApprovalHandler
 from amplify_excel_migrator.agent.models import ApprovalResult
-from amplify_excel_migrator.agent.session import AgentSession
+from amplify_excel_migrator.agent.session import AgentSession, _DRY_RUN_REQUIRED
 from amplify_excel_migrator.migration.models import (
     MigrationPlan,
     MigrationResult,
@@ -160,8 +160,13 @@ def _finish_turn():
     return AssistantTurn(text="done", tool_calls=[ToolCall("fin", "finish", {})])
 
 
+def _dry_run_turn(call_id="d0"):
+    return AssistantTurn(text="", tool_calls=[ToolCall(call_id, "dry_run", {})])
+
+
 def test_approved_value_mapping_rewrites_all_matching_rows():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [
                 {
@@ -191,6 +196,7 @@ def test_approved_value_mapping_rewrites_all_matching_rows():
 
 def test_null_from_value_fills_blank_cells():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [{"sheet_name": "Reporter", "column": "site", "from_value": None, "to_value": "UNKNOWN", "rationale": "r"}]
         ),
@@ -211,6 +217,7 @@ def test_null_from_value_fills_blank_cells():
 
 def test_rejected_value_mapping_is_not_applied():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [
                 {
@@ -239,6 +246,7 @@ def test_rejected_value_mapping_is_not_applied():
 
 def test_unknown_column_mapping_never_reaches_human():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [
                 {
@@ -264,6 +272,7 @@ def test_unknown_column_mapping_never_reaches_human():
 
 def test_absent_from_value_is_invalid_and_never_reaches_human():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [
                 {
@@ -288,6 +297,7 @@ def test_absent_from_value_is_invalid_and_never_reaches_human():
 
 def test_noop_mapping_is_dropped_before_the_gate():
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [{"sheet_name": "Reporter", "column": "species", "from_value": "cat", "to_value": "cat", "rationale": "r"}]
         ),
@@ -306,6 +316,7 @@ def test_noop_mapping_is_dropped_before_the_gate():
 def test_missing_scalar_field_is_created_and_filled():
     wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a", "b"]})})
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [{"sheet_name": "Reporter", "column": "count", "from_value": None, "to_value": 1, "rationale": "r"}]
         ),
@@ -332,6 +343,7 @@ def test_missing_scalar_field_is_created_and_filled():
 def test_missing_column_not_a_schema_field_is_invalid():
     wb = WorkbookEditor({"Reporter": pd.DataFrame({"name": ["a"]})})
     turns = [
+        _dry_run_turn(),
         _mapping_turn(
             [{"sheet_name": "Reporter", "column": "group", "from_value": None, "to_value": "x", "rationale": "r"}]
         ),
@@ -354,6 +366,7 @@ def test_missing_column_not_a_schema_field_is_invalid():
 
 def test_session_applies_approved_changes_then_uploads():
     turns = [
+        _dry_run_turn(),
         AssistantTurn(
             text="I'll fill the missing country.",
             tool_calls=[
@@ -399,6 +412,7 @@ def test_session_applies_approved_changes_then_uploads():
 
 def test_rejected_change_is_not_applied():
     turns = [
+        _dry_run_turn(),
         AssistantTurn(
             text="",
             tool_calls=[
@@ -820,6 +834,7 @@ def test_exceeding_max_nudges_stops_with_error():
 def test_propose_changes_missing_row_returns_instructive_error():
     events = []
     session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+    session._dry_run_current = True
 
     result = session._dispatch(
         "propose_changes",
@@ -838,6 +853,7 @@ def test_propose_changes_missing_row_returns_instructive_error():
 def test_propose_changes_unknown_column_hints_at_renames():
     events = []
     session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+    session._dry_run_current = True
 
     result = session._dispatch(
         "propose_changes",
@@ -865,6 +881,7 @@ def test_propose_changes_unknown_column_hints_at_renames():
 def test_propose_changes_unknown_sheet_lists_available():
     events = []
     session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+    session._dry_run_current = True
 
     result = session._dispatch(
         "propose_changes",
@@ -881,6 +898,7 @@ def test_propose_changes_unknown_sheet_lists_available():
 def test_propose_changes_row_out_of_range_is_rejected():
     events = []
     session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+    session._dry_run_current = True
 
     result = session._dispatch(
         "propose_changes",
@@ -898,6 +916,7 @@ def test_propose_changes_row_out_of_range_is_rejected():
 
 def test_propose_changes_valid_batch_still_emits_proposal():
     turns = [
+        _dry_run_turn(),
         AssistantTurn(
             text="",
             tool_calls=[
@@ -971,3 +990,213 @@ def test_counter_resets_on_a_different_successful_call():
 
     assert not any(e.kind == "error" and "Aborted" in e.payload.get("message", "") for e in events)
     assert events[-1].kind == "done"
+
+
+def test_propose_changes_blocked_before_dry_run():
+    events = []
+    session = _make_session(ScriptedProvider([]), RecordingApprovalHandler([], []), events)
+
+    result = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 1, "column": "country", "proposed_value": "EG", "rationale": "r"}
+            ],
+        },
+    )
+
+    assert result == _DRY_RUN_REQUIRED
+    assert session.workbook.cell("Reporter", 1, "country") == ""  # nothing mutated
+    assert "proposal" not in [e.kind for e in events]
+
+
+def test_propose_value_mappings_blocked_before_dry_run():
+    handler = RecordingApprovalHandler([], [])
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "x",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result == _DRY_RUN_REQUIRED
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["#REF!", "cat", "#REF!"]
+    assert handler.seen_value_mapping_proposals == []
+
+
+def test_value_fix_allowed_after_dry_run():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    session._dispatch("dry_run", {})
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result != _DRY_RUN_REQUIRED
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+
+
+def test_mutation_invalidates_dry_run():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    session._dispatch("dry_run", {})
+    first = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+    second = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "again",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "cat",
+                    "to_value": "DOG",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert first != _DRY_RUN_REQUIRED  # first applied while fresh
+    assert second == _DRY_RUN_REQUIRED  # the applied mutation consumed freshness
+
+
+def test_rejected_proposal_preserves_freshness():
+    handler = RecordingApprovalHandler(
+        change_results=[ApprovalResult(approved_ids=[], rejected_ids=["Reporter:0:species"])],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+
+    session._dispatch("dry_run", {})
+    session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 0, "column": "species", "proposed_value": "cat", "rationale": "r"}
+            ],
+        },
+    )
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+
+    assert result != _DRY_RUN_REQUIRED  # nothing was applied, so the dry_run is still fresh
+    assert list(session.workbook.sheets()["Reporter"]["species"]) == ["UNKNOWN", "cat", "UNKNOWN"]
+
+
+def test_rename_is_ungated_but_invalidates():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        rename_results=[
+            ApprovalResult(approved_ids=["Reporter:Report type->observationMethod"], rejected_ids=[]),
+            ApprovalResult(approved_ids=["Reporter:name->country"], rejected_ids=[]),
+        ],
+    )
+    events = []
+    session = _make_rename_session([], handler, events)
+
+    # ungated: a rename applies with no prior dry_run
+    session._dispatch(
+        "propose_column_renames",
+        {
+            "summary": "fix headers",
+            "renames": [
+                {
+                    "sheet_name": "Reporter",
+                    "current_name": "Report type",
+                    "new_name": "observationMethod",
+                    "rationale": "r",
+                }
+            ],
+        },
+    )
+    assert "observationMethod" in session.workbook.sheets()["Reporter"].columns
+
+    # a fresh dry_run followed by an applied rename re-invalidates freshness
+    session._dispatch("dry_run", {})
+    session._dispatch(
+        "propose_column_renames",
+        {
+            "summary": "more headers",
+            "renames": [{"sheet_name": "Reporter", "current_name": "name", "new_name": "country", "rationale": "r"}],
+        },
+    )
+    blocked = session._dispatch(
+        "propose_changes",
+        {
+            "summary": "x",
+            "changes": [
+                {"sheet_name": "Reporter", "row": 0, "column": "country", "proposed_value": "v", "rationale": "r"}
+            ],
+        },
+    )
+
+    assert blocked == _DRY_RUN_REQUIRED  # the applied rename made the value-fix stale again
