@@ -31,3 +31,10 @@ def test_prompt_prefers_value_mappings_for_failure_groups():
     text = SYSTEM_PROMPT.lower()
     assert "propose_value_mappings" in text
     assert "group" in text
+
+
+def test_prompt_requires_dry_run_before_value_fixes():
+    text = SYSTEM_PROMPT.lower()
+    assert "dry_run" in text
+    assert "before any value fix" in text
+    assert "after each applied batch" in text
