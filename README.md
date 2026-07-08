@@ -150,9 +150,16 @@ ungated, since they normally precede the first `dry_run`.
 
 When a proposed value edit is structurally invalid (unknown sheet or column, a missing or
 out-of-range `row`), `propose_changes` returns an instructive error naming the exact problem instead
-of a terse failure, so the model can self-correct. And if the model keeps issuing the *same* failing
-tool call, the loop escalates once with a corrective message and then aborts, rather than burning
-every turn on an identical mistake.
+of a terse failure, so the model can self-correct. A malformed `propose_value_mappings` call is just as
+legible: a call missing its `summary` or `mappings` array is refused with the expected shape, and a
+single mapping missing a required key (for example `to_value`) becomes a per-item `invalid` entry keyed
+by its list index while its valid siblings are still applied.
+
+Two loop guards keep a stuck agent from burning every turn. If the model keeps issuing the *same*
+failing tool call, the loop escalates once with a corrective message and then aborts. Separately, if a
+run of proposals each applies *no* changes — even when their arguments vary every time — the loop
+nudges the agent to re-run `dry_run` and, if it still makes no progress, aborts. Any productive step
+(an applied edit, or a `dry_run` between attempts) resets the counter.
 
 ### Quick Start
 
