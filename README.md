@@ -145,6 +145,12 @@ existing entity, the `dry_run` report also lists the closest existing entities (
 with its name and id), so the agent can map a misspelled or variant name to the right record instead of
 guessing.
 
+When a required value cannot be determined from the data and has no sensible default — for example a
+required foreign key with no column and no plausible candidate — the agent calls `ask_user` to ask the
+human a specific free-form question and uses the answer in a follow-up fix. Unlike edits and uploads,
+`ask_user` is not gated: it is an ordinary blocking round-trip that returns the human's answer to the
+model, and the agent is instructed to use it only as a last resort.
+
 Because a value fix is only as good as the failures it targets, `propose_changes` and
 `propose_value_mappings` are blocked until a `dry_run` has run since the last workbook change: the first
 value fix with no prior `dry_run` is refused, and any applied edit (including a column rename) invalidates
