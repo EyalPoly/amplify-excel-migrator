@@ -1358,3 +1358,50 @@ def test_dry_run_between_failures_resets_no_progress():
 
     assert not any(e.kind == "error" and "Aborted" in e.payload.get("message", "") for e in events)
     assert events[-1].kind == "done"
+
+
+def test_value_mapping_missing_to_value_is_invalid_not_crash():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        value_mapping_results=[ApprovalResult(approved_ids=["Reporter:species:#REF!->UNKNOWN"], rejected_ids=[])],
+    )
+    events = []
+    session = _make_mapping_session([], handler, events)
+    session._dry_run_current = True
+
+    result = session._dispatch(
+        "propose_value_mappings",
+        {
+            "summary": "fix",
+            "mappings": [
+                {"sheet_name": "Reporter", "column": "species", "from_value": "#REF!", "rationale": "r"},  # no to_value
+                {
+                    "sheet_name": "Reporter",
+                    "column": "species",
+                    "from_value": "#REF!",
+                    "to_value": "UNKNOWN",
+                    "rationale": "r",
+                },
+            ],
+        },
+    )
+
+    assert not result.startswith("ERROR:")  # a mixed batch, not a whole-call failure
+    data = json.loads(result)
+    bad = [item for item in data["invalid"] if item.get("index") == 0]
+    assert bad and "to_value" in bad[0]["reason"]
+    assert data["applied"] == ["Reporter:species:#REF!->UNKNOWN"]  # valid sibling still processed
+
+
+def test_value_mappings_missing_mappings_key_returns_error():
+    handler = RecordingApprovalHandler(change_results=[], upload_selections=[], value_mapping_results=[])
+    events = []
+    session = _make_mapping_session([], handler, events)
+    session._dry_run_current = True
+
+    result = session._dispatch("propose_value_mappings", {"summary": "fix"})  # no 'mappings'
+
+    assert result.startswith("ERROR:")
+    assert "propose_value_mappings needs a 'summary' and a 'mappings' array" in result
+    assert handler.seen_value_mapping_proposals == []
