@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from amplify_excel_migrator.agent.llm.base import AssistantTurn, LLMProvider, ToolCall
@@ -1200,3 +1202,19 @@ def test_rename_is_ungated_but_invalidates():
     )
 
     assert blocked == _DRY_RUN_REQUIRED  # the applied rename made the value-fix stale again
+
+
+def test_made_no_progress_helper():
+    from amplify_excel_migrator.agent.session import _made_no_progress
+
+    # proposal that applied nothing -> True
+    assert _made_no_progress("propose_value_mappings", '{"applied": [], "rejected": [], "invalid": []}') is True
+    # proposal with an ERROR result -> True
+    assert _made_no_progress("propose_changes", "ERROR: blocked") is True
+    # proposal that applied at least one item -> False
+    assert _made_no_progress("propose_value_mappings", '{"applied": ["Reporter:species:#REF!->UNKNOWN"]}') is False
+    # non-proposal tools never count as no-progress
+    assert _made_no_progress("dry_run", '{"sheets": []}') is False
+    assert _made_no_progress("read_sheet", '{"rows": []}') is False
+    # a proposal whose result is not JSON -> False (don't guess)
+    assert _made_no_progress("propose_changes", "not json at all") is False

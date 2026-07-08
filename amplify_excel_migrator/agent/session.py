@@ -41,6 +41,28 @@ _DRY_RUN_REQUIRED = (
 )
 
 
+_PROPOSAL_TOOLS = {"propose_changes", "propose_value_mappings", "propose_column_renames"}
+
+
+def _made_no_progress(name: str, result_text: str) -> bool:
+    if name not in _PROPOSAL_TOOLS:
+        return False
+    if result_text.startswith("ERROR:"):
+        return True
+    try:
+        data = json.loads(result_text)
+    except ValueError:
+        return False
+    return not data.get("applied")
+
+
+def _no_progress_message(count: int) -> str:
+    return (
+        f"Your last {count} proposals applied no changes. Re-run dry_run and map the (column, value) "
+        "groups it reports; if a required field has no data, you cannot proceed on it yet."
+    )
+
+
 def _escalation_message(tool: str, count: int, last_error: str) -> str:
     return (
         f"You have called `{tool}` with identical arguments {count} times and it keeps failing with: "
