@@ -60,3 +60,36 @@ def test_no_tool_call_yields_none_for_that_header():
     provider = SequenceProvider([None, None])
     result = HeaderResolver(provider).resolve("Observation", ["By"], CANDIDATES, {"By": ["u1"]})
     assert result == [HeaderMapping(header="By", field=None, confidence=0.0, rationale="resolver produced no output")]
+
+
+class CapturingProvider:
+    def __init__(self, args):
+        self._args = args
+        self.user = None
+
+    def generate(self, system, messages, tools):
+        self.user = messages[0].content
+        return AssistantTurn(text="", tool_calls=[ToolCall(id="1", name="submit_header_mapping", arguments=self._args)])
+
+
+def test_echoed_input_without_field_key_is_rejected_then_retried():
+    # qwen's failure mode: it parrots the input JSON back (keys sheet/header/samples), with no
+    # 'field' key. That must be rejected and retried, not accepted as a null mapping.
+    provider = SequenceProvider(
+        [
+            {"sheet": "Observation", "header": "By", "samples": ["u1"]},
+            {"field": "byUserId", "confidence": 0.8, "rationale": "author"},
+        ]
+    )
+    result = HeaderResolver(provider).resolve("Observation", ["By"], CANDIDATES, {"By": ["u1"]})
+    assert result == [HeaderMapping(header="By", field="byUserId", confidence=0.8, rationale="author")]
+    assert provider.calls == 2
+
+
+def test_user_prompt_is_prose_not_echobait_json():
+    provider = CapturingProvider({"field": None, "confidence": 0.0, "rationale": "x"})
+    HeaderResolver(provider).resolve("Observation", ["Report type"], CANDIDATES, {"Report type": ["camera"]})
+    u = provider.user
+    assert "Report type" in u  # the header
+    assert "byUserId" in u  # a candidate field name
+    assert '"schema_fields"' not in u  # NOT the parrotable JSON blob

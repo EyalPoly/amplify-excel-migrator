@@ -1,9 +1,10 @@
 """Header resolver: map each unmatched workbook header to a schema field with its own call.
 
 One small single-object call per header, not one batched array — small local models reliably
-emit a single object but fail to produce a large batched array in one structured output."""
+emit a single object but fail to produce a large batched array in one structured output. The
+prompt is prose, not a JSON blob: a JSON input is echo bait — qwen 7B parrots the input keys
+back as the tool arguments instead of filling the output schema."""
 
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +41,20 @@ class HeaderMapping:
     rationale: str
 
 
+def _prompt(header: str, samples: List[Any], candidate_fields: List[Dict[str, Any]]) -> str:
+    lines = [f'Column header to classify: "{header}"']
+    if samples:
+        lines.append("Sample values from that column: " + ", ".join(str(s) for s in samples))
+    lines.append("Candidate schema fields (name : type):")
+    for c in candidate_fields:
+        lines.append(f"- {c['name']} : {c.get('type')}")
+    lines.append(
+        "Call submit_header_mapping with field = the single best-matching field name (or null if "
+        "none fits), a confidence between 0 and 1, and a short rationale."
+    )
+    return "\n".join(lines)
+
+
 class HeaderResolver:
     def __init__(self, provider: LLMProvider):
         self._provider = provider
@@ -54,6 +69,8 @@ class HeaderResolver:
         field_names = {f["name"] for f in candidate_fields}
 
         def validate(args: Dict[str, Any]) -> Optional[str]:
+            if "field" not in args:
+                return "Return the result as field, confidence, rationale. 'field' is a field name or null."
             field = args.get("field")
             if field is not None and field not in field_names:
                 return "field must be exactly one of the given schema field names, or null."
@@ -61,15 +78,7 @@ class HeaderResolver:
 
         result: List[HeaderMapping] = []
         for header in unmatched_headers:
-            user = json.dumps(
-                {
-                    "sheet": sheet_name,
-                    "header": header,
-                    "samples": samples.get(header, []),
-                    "schema_fields": candidate_fields,
-                },
-                default=str,
-            )
+            user = _prompt(header, samples.get(header, []), candidate_fields)
             args = structured_call(self._provider, _SYSTEM, user, _TOOL, validate=validate)
             if args is None:
                 result.append(HeaderMapping(header, None, 0.0, "resolver produced no output"))
