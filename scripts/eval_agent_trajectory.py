@@ -17,7 +17,9 @@ import argparse
 import json
 import logging
 import os
+import re
 import time
+from difflib import SequenceMatcher
 from getpass import getpass
 from typing import Any, Dict, List, Set
 
@@ -37,12 +39,40 @@ from amplify_excel_migrator.data import DataTransformer, InMemoryExcelReader
 from amplify_excel_migrator.migration import MigrationOrchestrator
 from amplify_excel_migrator.schema import FieldParser
 
+# Known-correct header->field pairs that share no text overlap but a human with domain context
+# would approve. Keeps the plausibility gate from wrongly rejecting semantic-only renames.
+_KNOWN_SEMANTIC_RENAMES = {
+    ("code", "sequentialId"),
+    ("report type", "observationMethod"),
+    ("documentation", "mediaSourceId"),
+}
+
+
+def _norm(s: str) -> str:
+    s = re.sub(r"[\[\(].*?[\]\)]", "", s)  # drop [..]/(..) unit suffixes like 'Temp [C]'
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _plausible_rename(header: str, field: str) -> bool:
+    """A discerning human's rename check: approve when header and field are textually related
+    (substring or >=0.55 similarity, also against an is_id field's stripped name) or a known
+    semantic pair. Rejects clearly-wrong renames like 'Length (cm)' -> 'distance'."""
+    if (header.strip().lower(), field) in _KNOWN_SEMANTIC_RENAMES:
+        return True
+    h = _norm(header)
+    targets = [field] + ([field[:-2]] if field.endswith("Id") else [])
+    for target in (_norm(t) for t in targets):
+        if h and target and (h in target or target in h or SequenceMatcher(None, h, target).ratio() >= 0.55):
+            return True
+    return False
+
 
 class DiscerningReviewer:
     """Approves proposals that look correct, rejects the rest, logging every decision.
 
-    - renames: approved if they passed the session's pre-gate validation (target is a
-      real schema field). Each is logged so rename correctness can be eyeballed.
+    - renames: approved when the header plausibly maps to the target field (see
+      _plausible_rename) — a real human rejects clearly-wrong renames. Conservative on
+      semantic-only pairs not in the allowlist, which biases the score low rather than high.
     - value changes: for enum fields, approved only if the value is a valid enum
       member; otherwise approved when non-empty. Invalid enum values are rejected,
       which exercises the agent's re-propose loop.
@@ -54,11 +84,19 @@ class DiscerningReviewer:
         self.log: List[Dict[str, Any]] = []
 
     def review_renames(self, proposal: ColumnRenameProposal) -> ApprovalResult:
-        approved = []
+        approved, rejected = [], []
         for r in proposal.renames:
-            approved.append(r.id)
-            self.log.append({"kind": "rename", "id": r.id, "decision": "approved"})
-        return ApprovalResult(approved_ids=approved, rejected_ids=[])
+            ok = _plausible_rename(r.current_name, r.new_name)
+            (approved if ok else rejected).append(r.id)
+            self.log.append(
+                {
+                    "kind": "rename",
+                    "id": r.id,
+                    "decision": "approved" if ok else "rejected",
+                    "reason": "plausible" if ok else "header and field not plausibly related",
+                }
+            )
+        return ApprovalResult(approved_ids=approved, rejected_ids=rejected)
 
     def review_changes(self, proposal: ChangeProposal) -> ApprovalResult:
         approved, rejected = [], []
