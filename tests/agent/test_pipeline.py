@@ -46,9 +46,25 @@ class ApprovingHandler:
 
 
 def test_unmatched_headers_uses_camel_case():
-    unmatched, uncovered = unmatched_headers(["By", "count"], ["byUserId", "count"])
+    fields = [
+        {"name": "byUserId", "type": "ID", "is_required": True, "is_id": True},
+        {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+    ]
+    unmatched, uncovered = unmatched_headers(["By", "count"], fields)
     assert unmatched == ["By"]
     assert uncovered == ["byUserId"]
+
+
+def test_unmatched_headers_matches_fk_column_by_id_stripping():
+    # A 'Reporter' column resolves the is_id field 'reporterId' via Id-stripping — no rename needed,
+    # so it must NOT be reported as unmatched, and 'reporterId' must NOT be offered as a rename target.
+    fields = [
+        {"name": "reporterId", "type": "ID", "is_required": True, "is_id": True},
+        {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+    ]
+    unmatched, uncovered = unmatched_headers(["Reporter", "count"], fields)
+    assert unmatched == []
+    assert "reporterId" not in uncovered
 
 
 def test_reconcile_renames_approved_header():

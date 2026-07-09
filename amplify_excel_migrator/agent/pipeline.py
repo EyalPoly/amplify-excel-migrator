@@ -30,12 +30,29 @@ def fk_workbook_column(df: Any, group_column: str, bad_value: Any) -> Optional[s
     return None
 
 
-def unmatched_headers(columns: List[str], field_names: List[str]) -> Tuple[List[str], List[str]]:
-    """Split columns into those whose camelCase form is a schema field and those that are not."""
-    fields = set(field_names)
-    covered = {DataTransformer.to_camel_case(c) for c in columns if DataTransformer.to_camel_case(c) in fields}
-    unmatched = [c for c in columns if DataTransformer.to_camel_case(c) not in fields]
-    uncovered = [f for f in field_names if f not in covered]
+def unmatched_headers(columns: List[str], fields: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+    """Split columns into those the transformer already matches to a schema field and those it does not.
+
+    The transformer matches a column when its camelCase form equals a field name, OR (for is_id
+    foreign-key fields like 'reporterId') when the camelCase form equals the field name minus 'Id' —
+    so a 'Reporter' column resolves 'reporterId' with no rename. `uncovered` returns the field names
+    left unmatched, offered to the resolver as rename targets."""
+    field_names = {f["name"] for f in fields}
+    id_field_by_stripped = {
+        f["name"][:-2]: f["name"] for f in fields if f.get("is_id") and f["name"].endswith("Id")
+    }
+
+    covered_field_names: set = set()
+    unmatched: List[str] = []
+    for col in columns:
+        camel = DataTransformer.to_camel_case(col)
+        if camel in field_names:
+            covered_field_names.add(camel)
+        elif camel in id_field_by_stripped:
+            covered_field_names.add(id_field_by_stripped[camel])
+        else:
+            unmatched.append(col)
+    uncovered = [f["name"] for f in fields if f["name"] not in covered_field_names]
     return unmatched, uncovered
 
 
@@ -128,7 +145,7 @@ class PreparationPipeline:
         for sheet_name, df in self.workbook.sheets().items():
             fields = self._fields_for(sheet_name)
             field_names = [f["name"] for f in fields]
-            headers, uncovered = unmatched_headers(list(df.columns), field_names)
+            headers, uncovered = unmatched_headers(list(df.columns), fields)
             if not headers:
                 continue
             candidate_fields = [
