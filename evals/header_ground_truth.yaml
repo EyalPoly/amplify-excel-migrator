@@ -1,0 +1,53 @@
+# Ground truth for header reconciliation, used by scripts/eval_agent_trajectory.py.
+#
+# Maps each raw workbook header to the schema field it should be renamed to, or
+# `null` when no single rename is correct. The grader consults this file and nothing
+# else: it neither infers correctness from string similarity nor carries an inline
+# allowlist, so it can reject a wrong rename as readily as it approves a right one.
+#
+# A header absent from this file is scored as `unknown` (rejected, counted apart) —
+# add it here rather than teaching the grader to guess.
+#
+# Truth here is derived from each column's actual values, not from its name. The
+# `why` on every null (and every non-obvious mapping) records that evidence.
+
+Observation:
+  # Schema field names come from the migrated workbook (Observation_records.xlsx):
+  # id, sequentialId, localId, date, time, timeSpecifier, observationMethod,
+  # countryId, siteId, latitude, longitude, depth, distance, temperature,
+  # substrate, speciesId, count, individualGroups, pregnancy, groupId, reporterId,
+  # photographerId, byUserId, byUser, mediaSourceId, mediaPlatfrom (sic),
+  # mediaUrlLinks, description, comments, entryDate, checkDate, checkedByUser
+
+  Code: sequentialId              # values 1, 2, 3, 4 — a sequential counter, not a code
+  Date: date
+  Site: siteId
+  Species: speciesId
+  Count: count
+  Reporter: reporterId
+  Photographer: photographerId
+  Description: description
+  Comments: comments
+  EnterDate: entryDate
+  Pregnant: pregnancy
+  Max Depth [m]: depth
+  Distance [m]: distance
+  Temp [C]: temperature
+  Link: mediaUrlLinks
+
+  Time: timeSpecifier             # values Light, Night, Morning — a daypart, not a clock time
+  Report type: observationMethod  # values SCUBA diving, Freediving, Spearfishing
+  Media: mediaPlatfrom            # values FB, youtube, whatsapp — the platform (field is misspelled in the schema)
+  Documentation: mediaSourceId    # values P, V, PV — photo/video, the media source
+  By: byUser                      # values Shira, Adi — a name; byUserId is the FK, and 'By' carries no id
+  checked: checkDate              # values are dates, so checkDate, not checkedByUser
+
+  Lat Lon: null                   # why: one column holds both ('32.454866, 34.875972'); needs a split, not a rename
+  Stage: null                     # why: values Adult/Juvenile belong to nested individualGroups.stage
+  Sex: null                       # why: nested individualGroups.sex
+  Condition: null                 # why: nested individualGroups.condition
+  Common name Hebrew: null        # why: schema has no Hebrew-name field
+  Length (cm): null               # why: fish length; `distance` is the horizontal distance in 'Distance [m]'
+  Disk length: null               # why: no corresponding schema field
+  Width: null                     # why: no corresponding schema field
+  Photo use: null                 # why: credit/permission text; no corresponding schema field
