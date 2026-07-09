@@ -38,9 +38,7 @@ def unmatched_headers(columns: List[str], fields: List[Dict[str, Any]]) -> Tuple
     so a 'Reporter' column resolves 'reporterId' with no rename. `uncovered` returns the field names
     left unmatched, offered to the resolver as rename targets."""
     field_names = {f["name"] for f in fields}
-    id_field_by_stripped = {
-        f["name"][:-2]: f["name"] for f in fields if f.get("is_id") and f["name"].endswith("Id")
-    }
+    id_field_by_stripped = {f["name"][:-2]: f["name"] for f in fields if f.get("is_id") and f["name"].endswith("Id")}
 
     covered_field_names: set = set()
     unmatched: List[str] = []
@@ -155,6 +153,12 @@ class PreparationPipeline:
             ]
             samples = {h: [v for v in df[h].dropna().unique().tolist()[:5]] for h in headers}
             mappings = self.header_resolver.resolve(sheet_name, headers, candidate_fields, samples)
+            self.emit(
+                AgentEvent(
+                    kind="header_resolution",
+                    payload={"sheet": sheet_name, "mappings": [vars(m) for m in mappings]},
+                )
+            )
 
             seen_targets: set = set()
             valid: List[ColumnRename] = []
@@ -216,6 +220,19 @@ class PreparationPipeline:
             for sheet_name, group in actionable:
                 key = (sheet_name, group["column"], str(group["value"]))
                 res = self.fk_resolver.resolve(sheet_name, group["column"], group["value"], group["closest_existing"])
+                self.emit(
+                    AgentEvent(
+                        kind="fk_resolution",
+                        payload={
+                            "sheet": sheet_name,
+                            "column": group["column"],
+                            "value": group["value"],
+                            "action": res.action if res else "no_output",
+                            "to_value": res.to_value if res else None,
+                            "rationale": res.rationale if res else "",
+                        },
+                    )
+                )
                 if res is None:
                     continue
                 if res.action == "map":

@@ -256,3 +256,50 @@ def test_run_end_to_end_uploads_when_clean():
     assert report.final_clean is True
     assert report.uploaded == 1
     assert orch.executed_selected == {"Observation"}
+
+
+def test_reconcile_emits_header_resolution_event():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"By": ["u1"], "count": [3]})})
+    approval = ApprovingHandler()
+    resolver = FakeHeaderResolver([HeaderMapping("By", "byUserId", 0.8, "author")])
+    events = []
+    pipe = PreparationPipeline(
+        provider=None,
+        orchestrator=None,
+        workbook=wb,
+        approval_handler=approval,
+        schema_provider=_schema_provider,
+        event_sink=events.append,
+        header_resolver=resolver,
+        fk_resolver=None,
+    )
+
+    pipe._reconcile_headers()
+
+    header_events = [e for e in events if e.kind == "header_resolution"]
+    assert len(header_events) == 1
+    assert header_events[0].payload["sheet"] == "Observation"
+    assert header_events[0].payload["mappings"] == [
+        {"header": "By", "field": "byUserId", "confidence": 0.8, "rationale": "author"}
+    ]
+
+
+def test_resolve_loop_emits_fk_resolution_event():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"reporterId": ["Drorr"], "count": [1]})})
+    candidates = [{"name": "Dror Gilat", "id": "id-1", "score": 0.7}]
+    clean = _plan("Observation", [])
+    orch = FakeOrchestrator([_plan("Observation", [_fk_failure("reporter", "Drorr", candidates)]), clean])
+    approval = ApprovingValueHandler()
+    fk = FakeFkResolver([FkResolution("map", "Dror Gilat", 0.7, "typo")])
+    events = []
+    pipe = PreparationPipeline(None, orch, wb, approval, _schema_provider, events.append, None, fk)
+    pipe._needs_create, pipe._needs_human = [], []
+
+    pipe._resolve_failures()
+
+    fk_events = [e for e in events if e.kind == "fk_resolution"]
+    assert len(fk_events) == 1
+    assert fk_events[0].payload["action"] == "map"
+    assert fk_events[0].payload["to_value"] == "Dror Gilat"
+    assert fk_events[0].payload["column"] == "reporter"
+    assert fk_events[0].payload["value"] == "Drorr"
