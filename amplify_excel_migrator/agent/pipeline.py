@@ -38,7 +38,9 @@ def unmatched_headers(columns: List[str], fields: List[Dict[str, Any]]) -> Tuple
     so a 'Reporter' column resolves 'reporterId' with no rename. `uncovered` returns the field names
     left unmatched, offered to the resolver as rename targets."""
     field_names = {f["name"] for f in fields}
-    id_field_by_stripped = {f["name"][:-2]: f["name"] for f in fields if f.get("is_id") and f["name"].endswith("Id")}
+    id_field_by_stripped = {
+        f["name"][:-2]: f["name"] for f in fields if f.get("is_id") and f["name"].endswith("Id") and len(f["name"]) > 2
+    }
 
     covered_field_names: set = set()
     unmatched: List[str] = []
@@ -142,7 +144,6 @@ class PreparationPipeline:
         unresolved: List[Dict[str, Any]] = []
         for sheet_name, df in self.workbook.sheets().items():
             fields = self._fields_for(sheet_name)
-            field_names = [f["name"] for f in fields]
             headers, uncovered = unmatched_headers(list(df.columns), fields)
             if not headers:
                 continue
@@ -160,11 +161,14 @@ class PreparationPipeline:
                 )
             )
 
+            # Only an uncovered field is a legal target: a covered one is already fed by some column
+            # (possibly via Id-stripping, e.g. 'Reporter' -> reporterId), so renaming onto it would
+            # leave two columns writing the same field.
+            rename_targets = set(uncovered)
             seen_targets: set = set()
             valid: List[ColumnRename] = []
-            columns = list(df.columns)
             for m in mappings:
-                if m.field is None or m.field not in field_names or m.field in columns or m.field in seen_targets:
+                if m.field is None or m.field not in rename_targets or m.field in seen_targets:
                     unresolved.append({"sheet": sheet_name, "header": m.header, "samples": samples.get(m.header, [])})
                     continue
                 seen_targets.add(m.field)

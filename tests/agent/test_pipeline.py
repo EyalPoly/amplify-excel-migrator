@@ -67,6 +67,45 @@ def test_unmatched_headers_matches_fk_column_by_id_stripping():
     assert "reporterId" not in uncovered
 
 
+def test_unmatched_headers_ignores_field_named_only_id():
+    # 'Id'[:-2] is '', which must not become a stripped-FK key that a blank column header matches.
+    fields = [{"name": "Id", "type": "ID", "is_required": True, "is_id": True}]
+    unmatched, uncovered = unmatched_headers([""], fields)
+    assert unmatched == [""]
+    assert uncovered == ["Id"]
+
+
+def test_reconcile_rejects_rename_onto_field_a_column_already_covers():
+    # 'Reporter' already feeds reporterId via Id-stripping, so renaming 'Notes' onto reporterId
+    # would leave two columns writing the same field.
+    def schema_provider(model=None):
+        return {
+            "fields": [
+                {"name": "reporterId", "type": "ID", "is_required": True, "is_id": True},
+                {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+            ]
+        }
+
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"Reporter": ["x"], "Notes": ["y"]})})
+    approval = ApprovingHandler()
+    pipe = PreparationPipeline(
+        provider=None,
+        orchestrator=None,
+        workbook=wb,
+        approval_handler=approval,
+        schema_provider=schema_provider,
+        event_sink=lambda e: None,
+        header_resolver=FakeHeaderResolver([HeaderMapping("Notes", "reporterId", 0.9, "wrong")]),
+        fk_resolver=None,
+    )
+
+    unresolved = pipe._reconcile_headers()
+
+    assert list(wb.sheets()["Observation"].columns) == ["Reporter", "Notes"]
+    assert unresolved == [{"sheet": "Observation", "header": "Notes", "samples": ["y"]}]
+    assert approval.seen_rename_proposals == []
+
+
 def test_reconcile_renames_approved_header():
     wb = WorkbookEditor({"Observation": pd.DataFrame({"By": ["u1"], "count": [3]})})
     approval = ApprovingHandler()
