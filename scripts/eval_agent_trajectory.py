@@ -5,6 +5,9 @@ Real pieces: OpenAICompatibleProvider (local qwen) + live AmplifyClient (schema 
 FK lookups, read-only) + WorkbookEditor(raw file). Simulated pieces: a discerning
 approval reviewer and a stateful mock uploader (no real writes).
 
+Renames are scored against --ground-truth (evals/header_ground_truth.yaml), not against
+any heuristic in this file, so the grader holds no answer key of its own.
+
 Run it yourself in a real terminal (needs the Cognito password via getpass):
     .venv/bin/python scripts/eval_agent_trajectory.py \
         --excel "/mnt/c/Users/10eya/Downloads/med data 1-5000.xlsx" \
@@ -19,7 +22,8 @@ import logging
 import os
 import time
 from getpass import getpass
-from typing import Any, Dict, List, Set
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -38,27 +42,76 @@ from amplify_excel_migrator.migration import MigrationOrchestrator
 from amplify_excel_migrator.schema import FieldParser
 
 
+class GroundTruth:
+    """Header -> correct schema field (or None when no rename is correct), per sheet.
+
+    Loaded from a fixture the grader does not otherwise inspect, so the grader can reject a
+    wrong rename as readily as it approves a right one. A header the fixture doesn't cover is
+    `unknown`: rejected, but counted apart, so a gap in the fixture reads as a gap rather than
+    as agent error."""
+
+    def __init__(self, by_sheet: Dict[str, Dict[str, Optional[str]]]):
+        self._by_sheet = {s: {self._key(h): f for h, f in headers.items()} for s, headers in by_sheet.items()}
+
+    @staticmethod
+    def _key(header: str) -> str:
+        return header.strip().lower()
+
+    def lookup(self, sheet: str, header: str) -> "tuple[bool, Optional[str]]":
+        """Return (known, expected_field)."""
+        headers = self._by_sheet.get(sheet, {})
+        key = self._key(header)
+        if key not in headers:
+            return False, None
+        return True, headers[key]
+
+    def judge(self, sheet: str, header: str, new_name: str) -> "tuple[str, str]":
+        known, expected = self.lookup(sheet, header)
+        if not known:
+            return "unknown", f"no ground truth for header '{header}' in sheet '{sheet}'"
+        if expected is None:
+            return "rejected", f"no rename of '{header}' is correct"
+        if expected == new_name:
+            return "approved", f"matches ground truth '{expected}'"
+        return "rejected", f"ground truth is '{expected}', not '{new_name}'"
+
+
+def load_ground_truth(path: str) -> GroundTruth:
+    try:
+        import yaml
+    except ImportError:
+        raise SystemExit("PyYAML is required: `uv pip install --python .venv/bin/python pyyaml`")
+    fixture = Path(path)
+    if not fixture.is_file():
+        raise SystemExit(f"Ground-truth fixture not found: {path}. Renames cannot be scored without it.")
+    data = yaml.safe_load(fixture.read_text()) or {}
+    return GroundTruth({sheet: headers or {} for sheet, headers in data.items()})
+
+
 class DiscerningReviewer:
     """Approves proposals that look correct, rejects the rest, logging every decision.
 
-    - renames: approved if they passed the session's pre-gate validation (target is a
-      real schema field). Each is logged so rename correctness can be eyeballed.
+    - renames: approved only when the target field matches the ground-truth fixture for that
+      header. An uncovered header is rejected and counted as `unknown`, which biases the score
+      low rather than high.
     - value changes: for enum fields, approved only if the value is a valid enum
       member; otherwise approved when non-empty. Invalid enum values are rejected,
       which exercises the agent's re-propose loop.
     - upload: approves every ready sheet so the mock uploader runs.
     """
 
-    def __init__(self, field_enum_values: Dict[str, Set[str]]):
+    def __init__(self, field_enum_values: Dict[str, Set[str]], ground_truth: GroundTruth):
         self.field_enum_values = field_enum_values
+        self.ground_truth = ground_truth
         self.log: List[Dict[str, Any]] = []
 
     def review_renames(self, proposal: ColumnRenameProposal) -> ApprovalResult:
-        approved = []
+        approved, rejected = [], []
         for r in proposal.renames:
-            approved.append(r.id)
-            self.log.append({"kind": "rename", "id": r.id, "decision": "approved"})
-        return ApprovalResult(approved_ids=approved, rejected_ids=[])
+            decision, reason = self.ground_truth.judge(r.sheet_name, r.current_name, r.new_name)
+            (approved if decision == "approved" else rejected).append(r.id)
+            self.log.append({"kind": "rename", "id": r.id, "decision": decision, "reason": reason})
+        return ApprovalResult(approved_ids=approved, rejected_ids=rejected)
 
     def review_changes(self, proposal: ChangeProposal) -> ApprovalResult:
         approved, rejected = [], []
@@ -206,7 +259,14 @@ def score(events: List[Dict[str, Any]], reviewer: DiscerningReviewer) -> Dict[st
         last = dry_runs[-1]["payload"]["sheets"]
         last_dry_before_upload_clean = all(s.get("total_failed_rows", 0) == 0 for s in last)
 
+    rename_decisions = [d["decision"] for d in reviewer.log if d["kind"] == "rename"]
+
     return {
+        "rename_accuracy": {
+            "approved": rename_decisions.count("approved"),
+            "rejected": rename_decisions.count("rejected"),
+            "unknown": rename_decisions.count("unknown"),
+        },
         "finished": kinds[-1] == "done" if kinds else False,
         "exit_reason": _exit_reason(events),
         "tool_call_sequence": tool_calls,
@@ -290,6 +350,11 @@ def main() -> None:
     p.add_argument("--max-turns", type=int, default=40)
     p.add_argument("--out", default="scripts/trajectory_output.json")
     p.add_argument(
+        "--ground-truth",
+        default="evals/header_ground_truth.yaml",
+        help="Fixture of correct header->field renames. Renames are scored against it alone.",
+    )
+    p.add_argument(
         "--turn-delay",
         type=float,
         default=0.0,
@@ -302,6 +367,8 @@ def main() -> None:
     # trajectory anyway, so quiet the noise; keep genuine warnings from the rest of the package.
     logging.getLogger("amplify_excel_migrator").setLevel(logging.WARNING)
     logging.getLogger("amplify_excel_migrator.agent.session").setLevel(logging.CRITICAL)
+
+    ground_truth = load_ground_truth(args.ground_truth)
 
     cfg = ConfigManager().load()
     if not cfg:
@@ -346,7 +413,7 @@ def main() -> None:
         provider = _PacedProvider(provider, args.turn_delay)
 
     events: List[Dict[str, Any]] = []
-    reviewer = DiscerningReviewer(field_enum_values)
+    reviewer = DiscerningReviewer(field_enum_values, ground_truth)
     session = AgentSession(
         provider=provider,
         orchestrator=orchestrator,
@@ -383,6 +450,7 @@ def main() -> None:
     print(f"finished: {s['finished']}  exit_reason: {s['exit_reason']}")
     print(f"tool sequence: {' -> '.join(s['tool_call_sequence'])}")
     print(f"counts: {s['counts']}")
+    print(f"renames: {s['rename_accuracy']}")
     print(
         f"schema_before_edits: {s['schema_inspected_before_edits']}  no_upload_before_dry_run: {s['no_upload_before_dry_run']}  final_dry_run_clean: {s['final_dry_run_clean']}"
     )

@@ -134,7 +134,7 @@ def main() -> None:
     }
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2, default=str)
-    print(json.dumps(out["score"], ensure_ascii=False, indent=2))
+    print(json.dumps(out["score"], ensure_ascii=False, indent=2, default=str))
 
 
 if __name__ == "__main__":

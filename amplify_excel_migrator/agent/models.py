@@ -72,5 +72,8 @@ class ApprovalResult:
 
 @dataclass
 class AgentEvent:
-    kind: str  # "message" | "tool_call" | "proposal" | "dry_run" | "question" | "upload_result" | "done" | "error"
+    """A trajectory record. `kind` is an open label chosen by the emitter, not a closed set —
+    sinks must tolerate kinds they don't know."""
+
+    kind: str
     payload: Dict[str, Any]

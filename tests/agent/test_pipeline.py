@@ -46,9 +46,64 @@ class ApprovingHandler:
 
 
 def test_unmatched_headers_uses_camel_case():
-    unmatched, uncovered = unmatched_headers(["By", "count"], ["byUserId", "count"])
+    fields = [
+        {"name": "byUserId", "type": "ID", "is_required": True, "is_id": True},
+        {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+    ]
+    unmatched, uncovered = unmatched_headers(["By", "count"], fields)
     assert unmatched == ["By"]
     assert uncovered == ["byUserId"]
+
+
+def test_unmatched_headers_matches_fk_column_by_id_stripping():
+    # A 'Reporter' column resolves the is_id field 'reporterId' via Id-stripping — no rename needed,
+    # so it must NOT be reported as unmatched, and 'reporterId' must NOT be offered as a rename target.
+    fields = [
+        {"name": "reporterId", "type": "ID", "is_required": True, "is_id": True},
+        {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+    ]
+    unmatched, uncovered = unmatched_headers(["Reporter", "count"], fields)
+    assert unmatched == []
+    assert "reporterId" not in uncovered
+
+
+def test_unmatched_headers_ignores_field_named_only_id():
+    # 'Id'[:-2] is '', which must not become a stripped-FK key that a blank column header matches.
+    fields = [{"name": "Id", "type": "ID", "is_required": True, "is_id": True}]
+    unmatched, uncovered = unmatched_headers([""], fields)
+    assert unmatched == [""]
+    assert uncovered == ["Id"]
+
+
+def test_reconcile_rejects_rename_onto_field_a_column_already_covers():
+    # 'Reporter' already feeds reporterId via Id-stripping, so renaming 'Notes' onto reporterId
+    # would leave two columns writing the same field.
+    def schema_provider(model=None):
+        return {
+            "fields": [
+                {"name": "reporterId", "type": "ID", "is_required": True, "is_id": True},
+                {"name": "count", "type": "Int", "is_required": True, "is_id": False},
+            ]
+        }
+
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"Reporter": ["x"], "Notes": ["y"]})})
+    approval = ApprovingHandler()
+    pipe = PreparationPipeline(
+        provider=None,
+        orchestrator=None,
+        workbook=wb,
+        approval_handler=approval,
+        schema_provider=schema_provider,
+        event_sink=lambda e: None,
+        header_resolver=FakeHeaderResolver([HeaderMapping("Notes", "reporterId", 0.9, "wrong")]),
+        fk_resolver=None,
+    )
+
+    unresolved = pipe._reconcile_headers()
+
+    assert list(wb.sheets()["Observation"].columns) == ["Reporter", "Notes"]
+    assert unresolved == [{"sheet": "Observation", "header": "Notes", "samples": ["y"]}]
+    assert approval.seen_rename_proposals == []
 
 
 def test_reconcile_renames_approved_header():
@@ -240,3 +295,50 @@ def test_run_end_to_end_uploads_when_clean():
     assert report.final_clean is True
     assert report.uploaded == 1
     assert orch.executed_selected == {"Observation"}
+
+
+def test_reconcile_emits_header_resolution_event():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"By": ["u1"], "count": [3]})})
+    approval = ApprovingHandler()
+    resolver = FakeHeaderResolver([HeaderMapping("By", "byUserId", 0.8, "author")])
+    events = []
+    pipe = PreparationPipeline(
+        provider=None,
+        orchestrator=None,
+        workbook=wb,
+        approval_handler=approval,
+        schema_provider=_schema_provider,
+        event_sink=events.append,
+        header_resolver=resolver,
+        fk_resolver=None,
+    )
+
+    pipe._reconcile_headers()
+
+    header_events = [e for e in events if e.kind == "header_resolution"]
+    assert len(header_events) == 1
+    assert header_events[0].payload["sheet"] == "Observation"
+    assert header_events[0].payload["mappings"] == [
+        {"header": "By", "field": "byUserId", "confidence": 0.8, "rationale": "author"}
+    ]
+
+
+def test_resolve_loop_emits_fk_resolution_event():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"reporterId": ["Drorr"], "count": [1]})})
+    candidates = [{"name": "Dror Gilat", "id": "id-1", "score": 0.7}]
+    clean = _plan("Observation", [])
+    orch = FakeOrchestrator([_plan("Observation", [_fk_failure("reporter", "Drorr", candidates)]), clean])
+    approval = ApprovingValueHandler()
+    fk = FakeFkResolver([FkResolution("map", "Dror Gilat", 0.7, "typo")])
+    events = []
+    pipe = PreparationPipeline(None, orch, wb, approval, _schema_provider, events.append, None, fk)
+    pipe._needs_create, pipe._needs_human = [], []
+
+    pipe._resolve_failures()
+
+    fk_events = [e for e in events if e.kind == "fk_resolution"]
+    assert len(fk_events) == 1
+    assert fk_events[0].payload["action"] == "map"
+    assert fk_events[0].payload["to_value"] == "Dror Gilat"
+    assert fk_events[0].payload["column"] == "reporter"
+    assert fk_events[0].payload["value"] == "Drorr"

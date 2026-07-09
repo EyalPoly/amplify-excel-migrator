@@ -45,6 +45,7 @@ setup(
             "twine>=4.0.0",
             "mypy>=1.0.0",
             "types-requests>=2.31.0",
+            "PyYAML>=6.0",  # eval scripts read their fixtures from YAML
         ],
     },
     entry_points={
