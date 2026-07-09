@@ -86,3 +86,108 @@ def test_reconcile_drops_mapping_to_nonexistent_field():
 
     assert {"sheet": "Observation", "header": "By", "samples": ["u1"]} in unresolved
     assert "By" in wb.sheets()["Observation"].columns  # not renamed
+
+
+from amplify_excel_migrator.agent.pipeline import fk_workbook_column
+from amplify_excel_migrator.agent.resolvers.fk import FkResolution
+from amplify_excel_migrator.migration.models import FieldError, MigrationPlan, RecordFailure, SheetPlan
+
+
+class FakeOrchestrator:
+    """Returns scripted plans in order; records execute() calls."""
+
+    def __init__(self, plans):
+        self._plans = list(plans)
+        self.executed = []
+
+    def build_plan(self):
+        return self._plans.pop(0) if len(self._plans) > 1 else self._plans[0]
+
+    def execute(self, plan, selected_sheets=None):
+        self.executed.append(selected_sheets)
+        raise AssertionError("execute not expected in these tests")
+
+
+class FakeFkResolver:
+    def __init__(self, resolutions):
+        self._resolutions = list(resolutions)
+        self.calls = 0
+
+    def resolve(self, sheet_name, column, bad_value, closest_existing):
+        self.calls += 1
+        return self._resolutions.pop(0)
+
+
+class ApprovingValueHandler(ApprovingHandler):
+    def __init__(self):
+        super().__init__()
+        self.seen_value_mapping_proposals = []
+
+    def review_value_mappings(self, proposal):
+        self.seen_value_mapping_proposals.append(proposal)
+        return ApprovalResult(approved_ids=[m.id for m in proposal.mappings], rejected_ids=[])
+
+
+def _fk_failure(column, value, candidates):
+    fe = FieldError(column=column, value=value, kind="fk_not_found", message="x", closest_existing=candidates)
+    return RecordFailure(primary_field="k", primary_field_value=1, error="e", original_row={}, field_errors=[fe])
+
+
+def _plan(sheet_name, failures):
+    return MigrationPlan(
+        sheets=[
+            SheetPlan(
+                sheet_name=sheet_name,
+                status="ready",
+                skip_reason=None,
+                total_rows=1,
+                record_count=0,
+                records=[],
+                parsing_failures=failures,
+                parsed_model_structure={"fields": []},
+                row_dict_by_primary={},
+            )
+        ]
+    )
+
+
+def test_fk_workbook_column_prefers_id_suffix():
+    df = pd.DataFrame({"reporterId": ["דודו"], "count": [1]})
+    assert fk_workbook_column(df, "reporter", "דודו") == "reporterId"
+
+
+def test_fk_workbook_column_falls_back_to_value_scan():
+    df = pd.DataFrame({"who": ["דודו"], "count": [1]})
+    assert fk_workbook_column(df, "reporter", "דודו") == "who"
+
+
+def test_resolve_loop_maps_fk_group():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"reporterId": ["Drorr"], "count": [1]})})
+    candidates = [{"name": "Dror Gilat", "id": "id-1", "score": 0.7}]
+    clean = _plan("Observation", [])
+    orch = FakeOrchestrator([_plan("Observation", [_fk_failure("reporter", "Drorr", candidates)]), clean])
+    approval = ApprovingValueHandler()
+    fk = FakeFkResolver([FkResolution("map", "Dror Gilat", 0.7, "typo")])
+    pipe = PreparationPipeline(None, orch, wb, approval, _schema_provider, lambda e: None, None, fk)
+    pipe._needs_create, pipe._needs_human = [], []
+
+    pipe._resolve_failures()
+
+    assert wb.sheets()["Observation"]["reporterId"].tolist() == ["Dror Gilat"]
+    assert len(approval.seen_value_mapping_proposals) == 1
+
+
+def test_resolve_loop_records_create_and_stops():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"reporterId": ["New Person"], "count": [1]})})
+    candidates = [{"name": "Dror Gilat", "id": "id-1", "score": 0.3}]
+    failing = _plan("Observation", [_fk_failure("reporter", "New Person", candidates)])
+    orch = FakeOrchestrator([failing])  # same plan every round → stall guard must stop it
+    approval = ApprovingValueHandler()
+    fk = FakeFkResolver([FkResolution("create", None, 0.9, "new"), FkResolution("create", None, 0.9, "new")])
+    pipe = PreparationPipeline(None, orch, wb, approval, _schema_provider, lambda e: None, None, fk)
+    pipe._needs_create, pipe._needs_human = [], []
+
+    pipe._resolve_failures()
+
+    assert pipe._needs_create == [{"sheet": "Observation", "column": "reporter", "value": "New Person"}]
+    assert fk.calls == 1  # stopped after the zero-progress round; no duplicate recording
