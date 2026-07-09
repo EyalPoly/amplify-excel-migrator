@@ -191,3 +191,52 @@ def test_resolve_loop_records_create_and_stops():
 
     assert pipe._needs_create == [{"sheet": "Observation", "column": "reporter", "value": "New Person"}]
     assert fk.calls == 1  # stopped after the zero-progress round; no duplicate recording
+
+
+from amplify_excel_migrator.migration.models import MigrationResult, SheetResult
+
+
+class UploadingOrchestrator:
+    def __init__(self, plans, total_success):
+        self._plans = list(plans)
+        self._total_success = total_success
+        self.executed_selected = None
+
+    def build_plan(self):
+        return self._plans.pop(0) if len(self._plans) > 1 else self._plans[0]
+
+    def execute(self, plan, selected_sheets=None):
+        self.executed_selected = selected_sheets
+        return MigrationResult(
+            sheets=[SheetResult(sheet_name="Observation", success_count=self._total_success, failures=[])],
+            total_success=self._total_success,
+        )
+
+
+class FullHandler(ApprovingValueHandler):
+    def review_upload(self, ready):
+        return set(ready)
+
+
+def test_run_end_to_end_uploads_when_clean():
+    wb = WorkbookEditor({"Observation": pd.DataFrame({"byUserId": ["u1"], "count": [1]})})
+    clean = _plan("Observation", [])
+    clean.sheets[0].record_count = 1
+    orch = UploadingOrchestrator([clean], total_success=1)
+    approval = FullHandler()
+    pipe = PreparationPipeline(
+        None,
+        orch,
+        wb,
+        approval,
+        _schema_provider,
+        lambda e: None,
+        FakeHeaderResolver([]),
+        FakeFkResolver([]),
+    )
+
+    report = pipe.run()
+
+    assert report.final_clean is True
+    assert report.uploaded == 1
+    assert orch.executed_selected == {"Observation"}

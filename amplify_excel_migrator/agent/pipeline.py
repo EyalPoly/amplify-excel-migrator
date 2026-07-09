@@ -84,6 +84,41 @@ class PreparationPipeline:
         self._needs_create: List[Dict[str, Any]] = []
         self._needs_human: List[Dict[str, Any]] = []
 
+    def run(self) -> PipelineReport:
+        self._needs_create = []
+        self._needs_human = []
+        unresolved_headers = self._reconcile_headers()
+        self._resolve_failures()
+
+        final_plan = self.orchestrator.build_plan()
+        ready = {s.sheet_name: s.record_count for s in final_plan.sheets if s.status == "ready" and s.record_count}
+        uploaded = 0
+        if ready:
+            selected = self.approval.review_upload(ready)
+            result = self.orchestrator.execute(final_plan, selected_sheets=selected)
+            uploaded = result.total_success
+            self.emit(AgentEvent(kind="upload_result", payload={"total_success": uploaded}))
+
+        remaining_groups: List[Dict[str, Any]] = []
+        failed_total = 0
+        for sheet in final_plan.sheets:
+            summary = summarize_failures(sheet.parsing_failures, self.max_failure_groups)
+            failed_total += summary["total_failed_rows"]
+            for group in summary["groups"]:
+                if not (group["kind"] == "fk_not_found" and group["closest_existing"]):
+                    remaining_groups.append({"sheet": sheet.sheet_name, **group})
+
+        report = PipelineReport(
+            uploaded=uploaded,
+            final_clean=failed_total == 0,
+            needs_create=self._needs_create,
+            needs_human=self._needs_human,
+            unresolved_headers=unresolved_headers,
+            remaining_groups=remaining_groups,
+        )
+        self.emit(AgentEvent(kind="report", payload=vars(report)))
+        return report
+
     def _fields_for(self, sheet_name: str) -> List[Dict[str, Any]]:
         fields: List[Dict[str, Any]] = (self.schema_provider(model=sheet_name) or {}).get("fields", [])
         return fields
