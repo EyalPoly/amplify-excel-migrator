@@ -170,6 +170,15 @@ run of proposals each applies *no* changes — even when their arguments vary ev
 nudges the agent to re-run `dry_run` and, if it still makes no progress, aborts. Any productive step
 (an applied edit, or a `dry_run` between attempts) resets the counter.
 
+### Deterministic preparation pipeline (experimental)
+
+Alongside the conversational agent, `PreparationPipeline` runs the migration as a fixed
+sequence and calls the LLM only for the decisions no rule can make: mapping messy headers to
+schema fields, and resolving foreign-key values that match no existing record. Every proposal
+is human-approved; termination is bounded (no agentic loop). Unresolved items — new entities
+to create in Amplify, ambiguous FKs, and unmapped headers — are reported for a follow-up.
+Measure it with `scripts/eval_pipeline.py` (same flags as `scripts/eval_agent_trajectory.py`).
+
 ### Quick Start
 
 ```bash
