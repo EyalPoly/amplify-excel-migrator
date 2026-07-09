@@ -72,5 +72,5 @@ class ApprovalResult:
 
 @dataclass
 class AgentEvent:
-    kind: str  # "message" | "tool_call" | "proposal" | "dry_run" | "upload_result" | "done" | "error"
+    kind: str  # "message" | "tool_call" | "proposal" | "dry_run" | "question" | "upload_result" | "done" | "error"
     payload: Dict[str, Any]

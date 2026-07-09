@@ -10,6 +10,7 @@ def test_expected_tools_present():
         "upload",
         "propose_column_renames",
         "propose_value_mappings",
+        "ask_user",
         "finish",
     ]
 
@@ -61,3 +62,23 @@ def test_propose_value_mappings_schema_shape():
     assert set(spec.input_schema["required"]) == {"summary", "mappings"}
     required_item = set(spec.input_schema["properties"]["mappings"]["items"]["required"])
     assert required_item == {"sheet_name", "column", "from_value", "to_value", "rationale"}
+
+
+def test_ask_user_tool_present_and_not_gated():
+    assert "ask_user" in tool_names()
+    assert "ask_user" not in GATED_TOOLS
+
+
+def test_ask_user_schema_requires_question():
+    spec = next(s for s in TOOL_SPECS if s.name == "ask_user")
+    props = spec.input_schema["properties"]
+    assert props["question"]["type"] == "string"
+    assert spec.input_schema["required"] == ["question"]
+    assert spec.input_schema["additionalProperties"] is False
+
+
+def test_ask_user_not_in_dry_run_or_proposal_sets():
+    from amplify_excel_migrator.agent.session import _DRY_RUN_GATED, _PROPOSAL_TOOLS
+
+    assert "ask_user" not in _DRY_RUN_GATED
+    assert "ask_user" not in _PROPOSAL_TOOLS

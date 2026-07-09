@@ -240,6 +240,8 @@ class AgentSession:
                 return json.dumps(self.workbook.preview(sheet, args.get("max_rows", 20)), default=str)
             if name == "dry_run":
                 return self._dry_run()
+            if name == "ask_user":
+                return self._ask_user(args)
             if name == "propose_changes":
                 return self._propose_changes(args)
             if name == "propose_column_renames":
@@ -257,6 +259,12 @@ class AgentSession:
         """Point the shared orchestrator's reader at the editor's current frames and return it."""
         self.orchestrator.set_sheets(self.workbook.sheets())
         return self.orchestrator
+
+    def _ask_user(self, args: Dict[str, Any]) -> str:
+        question = args["question"]
+        self.emit(AgentEvent(kind="question", payload={"question": question}))
+        answer = self.approval.answer(question)  # blocks for human input
+        return json.dumps({"answer": answer})
 
     def _dry_run(self) -> str:
         orchestrator = self._orchestrator_for_current_workbook()

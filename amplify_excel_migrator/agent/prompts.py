@@ -38,7 +38,11 @@ field). Reserve propose_changes for genuine one-off single-cell edits. Give each
 rationale that names any assumption you made. For foreign-key failures (kind fk_not_found — a value that \
 matches no existing entity), dry_run attaches closest_existing: the nearest existing entities, each with \
 its name and id. Prefer a propose_value_mappings that maps the bad value to the best-matching candidate's \
-name; only flag and ask the human when no listed candidate is a plausible match.
+name; only flag and ask the human when no listed candidate is a plausible match. When you cannot \
+determine a required value from the data and it has no sensible default — for example a required foreign \
+key with no column and no candidate (a placeholder would not resolve) — call ask_user with a specific \
+question, then use the human's answer in a follow-up propose_value_mappings. Ask only as a last resort; \
+prefer concrete proposals.
 6. After approved changes are applied, call dry_run again to confirm, then call upload.
 7. Read the upload result. For any failed rows, propose targeted fixes and retry. When the migration \
 is complete and nothing remains to fix, call the finish tool with a short summary. Ending your message \

@@ -1460,3 +1460,45 @@ def test_dry_run_exposes_closest_existing_on_fk_failure_group():
 
     sheet = next(e for e in events if e.kind == "dry_run").payload["sheets"][0]
     assert sheet["failure_groups"][0]["closest_existing"] == candidates
+
+
+def test_ask_user_emits_question_and_returns_answer():
+    events = []
+    handler = RecordingApprovalHandler([], [], answers=["group-42"])
+    session = _make_session(ScriptedProvider([]), handler, events)
+
+    result = session._dispatch("ask_user", {"question": "What is a valid group id?"})
+
+    assert json.loads(result) == {"answer": "group-42"}
+    assert handler.seen_questions == ["What is a valid group id?"]
+    assert any(e.kind == "question" and e.payload["question"] == "What is a valid group id?" for e in events)
+
+
+def test_ask_user_is_not_terminal_and_feeds_answer_back():
+    ask_turn = AssistantTurn(text="", tool_calls=[ToolCall("q1", "ask_user", {"question": "Valid group id?"})])
+    finish_turn = AssistantTurn(text="done", tool_calls=[ToolCall("f1", "finish", {})])
+
+    class Capturing(LLMProvider):
+        def __init__(self, turns):
+            self._turns = list(turns)
+            self.seen_messages = []
+
+        def generate(self, system, messages, tools):
+            self.seen_messages.append(list(messages))
+            return self._turns.pop(0)
+
+    provider = Capturing([ask_turn, finish_turn])
+    events = []
+    handler = RecordingApprovalHandler([], [], answers=["grp-7"])
+    session = _make_session(provider, handler, events)
+
+    session.run("go")
+
+    # run reached finish (done event), so ask_user did not end the run
+    assert events[-1].kind == "done"
+    # the human's answer was fed back to the model on the next generate() as a tool result
+    from amplify_excel_migrator.agent.llm.base import ToolResultMessage
+
+    second_call_messages = provider.seen_messages[1]
+    tool_results = [m for m in second_call_messages if isinstance(m, ToolResultMessage)]
+    assert any('"answer": "grp-7"' in m.content for m in tool_results)

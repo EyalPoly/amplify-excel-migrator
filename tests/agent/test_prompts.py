@@ -45,3 +45,9 @@ def test_prompt_guides_fk_candidate_mapping():
     assert "closest_existing" in text
     assert "fk_not_found" in text
     assert "candidate" in text
+
+
+def test_prompt_mentions_ask_user_for_undeterminable_values():
+    text = SYSTEM_PROMPT.lower()
+    assert "ask_user" in text
+    assert "cannot determine" in text

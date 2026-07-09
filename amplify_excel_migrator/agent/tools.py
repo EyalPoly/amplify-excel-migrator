@@ -138,6 +138,22 @@ TOOL_SPECS: List[ToolSpec] = [
         },
     ),
     ToolSpec(
+        name="ask_user",
+        description=(
+            "Ask the human a free-form question when you need information you cannot determine yourself "
+            "— e.g. a valid value for a required field that has no data, or an ambiguous decision. "
+            "Returns the human's answer. Ask sparingly; prefer proposing concrete actions."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The question to ask the human."},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolSpec(
         name="finish",
         description="Call when the migration is complete and nothing remains to fix. This ends the session.",
         input_schema={

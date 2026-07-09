@@ -84,3 +84,16 @@ def test_value_mapping_proposal_lists_ids():
         ],
     )
     assert proposal.mapping_ids() == ["Reporter:species:#REF!->UNKNOWN", "Reporter:species:None->UNKNOWN"]
+
+
+def test_recording_handler_answers_and_records_questions():
+    handler = RecordingApprovalHandler(
+        change_results=[],
+        upload_selections=[],
+        answers=["group-42"],
+    )
+
+    answer = handler.answer("What is a valid group id?")
+
+    assert answer == "group-42"
+    assert handler.seen_questions == ["What is a valid group id?"]
