@@ -1,7 +1,34 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
+
+
+def _parse_requirements() -> dict[str, list[str]]:
+    buckets: dict[str, list[str]] = {"core": [], "agent": [], "dev": []}
+    section = "core"
+    for raw in (Path(__file__).parent / "requirements.txt").read_text().splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            lowered = line.lower()
+            if "agent" in lowered:
+                section = "agent"
+            elif "dev" in lowered:
+                section = "dev"
+            elif "core" in lowered:
+                section = "core"
+            continue
+        buckets[section].append(line)
+    return buckets
+
+
+_requirements = _parse_requirements()
 
 setup(
     name="amplify-excel-migrator",
@@ -15,38 +42,17 @@ setup(
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8",
-    install_requires=[
-        "pandas>=1.3.0",
-        "requests>=2.26.0",
-        "boto3>=1.18.0",
-        "pycognito>=2023.5.0",
-        "PyJWT>=2.0.0",
-        "aiohttp>=3.8.0",
-        "openpyxl>=3.0.0",
-        "inflect>=7.0.0",
-        "amplify-auth>=0.1.0",
-    ],
+    python_requires=">=3.11",
+    install_requires=_requirements["core"],
     extras_require={
-        "agent": [
-            "anthropic>=0.40.0",
-            "openai>=1.40.0",
-        ],
-        "dev": [
-            "pytest>=8.0.0",
-            "pytest-cov>=4.1.0",
-            "pytest-mock>=3.12.0",
-            "pytest-asyncio>=0.21.0",
-            "setuptools>=80.0.0",
-            "wheel>=0.40.0",
-            "twine>=4.0.0",
-            "mypy>=1.0.0",
-            "types-requests>=2.31.0",
-            "PyYAML>=6.0",  # eval scripts read their fixtures from YAML
-        ],
+        "agent": _requirements["agent"],
+        "dev": _requirements["dev"],
     },
     entry_points={
         "console_scripts": [
