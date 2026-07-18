@@ -1,7 +1,11 @@
 """Tests for ExcelReader class"""
 
+import warnings
+import zipfile
+
 import pytest
 from unittest.mock import patch, MagicMock
+import openpyxl
 import pandas as pd
 from amplify_excel_migrator.data.excel_reader import ExcelReader, InMemoryExcelReader
 
@@ -123,3 +127,60 @@ class TestInMemoryExcelReader:
         reader.set_sheets(new_sheets)
 
         assert reader.read_all_sheets() is new_sheets
+
+
+def _workbook_with_unknown_extension(path):
+    openpyxl.Workbook().save(path)
+    ext = (
+        '<extLst><ext uri="{DEADBEEF-0000-0000-0000-000000000000}" '
+        'xmlns:x="http://example.com/unknown"><x:foo/></ext></extLst>'
+    )
+    sheet = "xl/worksheets/sheet1.xml"
+    with zipfile.ZipFile(path) as zf:
+        contents = {name: zf.read(name) for name in zf.namelist()}
+    contents[sheet] = contents[sheet].decode("utf-8").replace("</worksheet>", ext + "</worksheet>").encode("utf-8")
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in contents.items():
+            zf.writestr(name, data)
+
+
+class TestOpenpyxlExtensionWarningSuppressed:
+    """Regression: openpyxl's 'Unknown extension' warning must not leak to users."""
+
+    def test_read_all_sheets_suppresses_extension_warning(self, tmp_path):
+        path = tmp_path / "unknown_ext.xlsx"
+        _workbook_with_unknown_extension(path)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            ExcelReader(str(path)).read_all_sheets()
+
+        messages = [str(w.message) for w in caught]
+        assert not any("Unknown extension is not supported" in m for m in messages)
+
+    def test_read_sheet_suppresses_extension_warning(self, tmp_path):
+        path = tmp_path / "unknown_ext.xlsx"
+        _workbook_with_unknown_extension(path)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            ExcelReader(str(path)).read_sheet("Sheet")
+
+        messages = [str(w.message) for w in caught]
+        assert not any("Unknown extension is not supported" in m for m in messages)
+
+    def test_unrelated_warnings_still_surface(self, tmp_path):
+        path = tmp_path / "unknown_ext.xlsx"
+        _workbook_with_unknown_extension(path)
+
+        from amplify_excel_migrator.data.excel_reader import (
+            _suppress_openpyxl_extension_warning,
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with _suppress_openpyxl_extension_warning():
+                warnings.warn("some unrelated warning", UserWarning)
+
+        messages = [str(w.message) for w in caught]
+        assert "some unrelated warning" in messages
