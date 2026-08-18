@@ -32,7 +32,7 @@ _requirements = _parse_requirements()
 
 setup(
     name="amplify-excel-migrator",
-    version="1.21.3",
+    version="1.21.4",
     author="Eyal Politansky",
     author_email="10eyal10@gmail.com",
     description="A CLI tool to migrate Excel data to AWS Amplify",
