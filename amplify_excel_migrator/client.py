@@ -21,12 +21,18 @@ class AmplifyClient:
         api_endpoint: str,
         auth_provider: Optional[AuthenticationProvider] = None,
         composite_unique_fields: Optional[Dict[str, List[str]]] = None,
+        enable_duplicate_check: bool = True,
     ):
         self.api_endpoint = api_endpoint
         self._auth_provider = auth_provider
 
         self._client = GraphQLClient(api_endpoint, auth_provider)
-        self._executor = QueryExecutor(self._client, batch_size=20, composite_unique_fields=composite_unique_fields)
+        self._executor = QueryExecutor(
+            self._client,
+            batch_size=20,
+            composite_unique_fields=composite_unique_fields,
+            enable_duplicate_check=enable_duplicate_check,
+        )
 
     @property
     def auth_provider(self) -> Optional[AuthenticationProvider]:

@@ -89,6 +89,13 @@ class ConfigManager:
 
         return self.prompt_for_value(prompt_text, default, secret)
 
+    @staticmethod
+    def coerce_bool(value: Any) -> bool:
+        """Normalize a config value to a real bool, tolerating hand-edited string values."""
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "yes", "1", "y"}
+        return bool(value)
+
     def exists(self) -> bool:
         return self.config_path.exists()
 

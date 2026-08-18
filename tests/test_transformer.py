@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 from amplify_excel_migrator.data.transformer import DataTransformer, FieldParseError
 from amplify_excel_migrator.migration.models import FieldError
+from amplify_excel_migrator.schema import FieldParser
 
 
 @pytest.fixture
@@ -139,6 +140,34 @@ class TestTransformRowsToRecords:
 
         assert len(records) == 1
         assert records[0]["name"] == "John"
+
+    def test_row_dict_by_primary_keyed_by_parsed_value_not_raw(self):
+        """Regression: a raw primary-field value that differs from its parsed form
+        (e.g. surrounding whitespace) must not orphan the row lookup used to
+        reconstruct failed-record exports."""
+        df = pd.DataFrame({"name": [" John ", "Jane"], "age": [25, 30]})
+        parsed_model = {
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "String",
+                    "is_id": False,
+                    "is_required": True,
+                    "is_list": False,
+                    "is_scalar": True,
+                    "is_enum": False,
+                }
+            ]
+        }
+        transformer = DataTransformer(field_parser=FieldParser())
+
+        records, row_dict, failed = transformer.transform_rows_to_records(df, parsed_model, "name", {})
+
+        assert len(failed) == 0
+        assert records[0]["name"] == "John"
+        assert "John" in row_dict
+        assert " John " not in row_dict
+        assert row_dict["John"]["age"] == 25
 
 
 class TestTransformRowToRecord:

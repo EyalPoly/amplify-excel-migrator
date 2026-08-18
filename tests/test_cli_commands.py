@@ -92,6 +92,41 @@ class TestCmdShow:
         captured = capsys.readouterr()
         assert str(test_config_file) in captured.out
 
+    def test_show_displays_duplicate_detection_enabled_by_default(self, capsys, tmp_path, sample_config):
+        """No enable_duplicate_check key in config should display as enabled (the runtime default)."""
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            cmd_show()
+
+        captured = capsys.readouterr()
+        assert "Duplicate detection:  enabled" in captured.out
+
+    def test_show_displays_duplicate_detection_disabled(self, capsys, tmp_path, sample_config):
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump({**sample_config, "enable_duplicate_check": False}, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            cmd_show()
+
+        captured = capsys.readouterr()
+        assert "Duplicate detection:  disabled" in captured.out
+
 
 class TestCmdConfig:
     """Test 'config' command"""
@@ -112,7 +147,8 @@ class TestCmdConfig:
             "us-east-1_test",
             "test-client",
             "admin@test.com",
-            "no",
+            "no",  # fill_unknown
+            "yes",  # enable duplicate detection
             "no",  # configure composite keys → decline
         ]
 
@@ -126,6 +162,7 @@ class TestCmdConfig:
             saved_config = json.load(f)
             assert saved_config["excel_path"] == "test.xlsx"
             assert saved_config["username"] == "admin@test.com"
+            assert saved_config["enable_duplicate_check"] is True
 
     def test_config_saves_to_correct_location(self, capsys, tmp_path):
         """Test that config is saved to the correct location"""
@@ -142,7 +179,8 @@ class TestCmdConfig:
             "pool",
             "client",
             "user",
-            "no",
+            "no",  # fill_unknown
+            "yes",  # enable duplicate detection
             "no",  # configure composite keys → decline
         ]
 
@@ -167,8 +205,8 @@ class TestCmdConfig:
             self._config = {}
 
         # sample_config has no fill_unknown so default is "no" — FK loop skipped
-        # final "" declines the composite-keys prompt (default "no")
-        inputs = ["", "", "", "", "", "", "", ""]
+        # duplicate detection defaults to "yes"; final "" declines composite-keys (default "no")
+        inputs = ["", "", "", "", "", "", "", "", ""]
 
         with patch.object(ConfigManager, "__init__", init_mock):
             with patch("builtins.input", side_effect=inputs):
@@ -200,6 +238,7 @@ class TestCmdConfig:
             "Site",  # FK loop: model name
             "site-id",
             "",  # FK loop: finish
+            "yes",  # enable duplicate detection
             "no",  # configure composite keys → decline
         ]
 
@@ -236,6 +275,7 @@ class TestCmdConfig:
             "Reporter",  # update existing
             "new-reporter-id",
             "",  # finish loop
+            "yes",  # enable duplicate detection
             "no",  # configure composite keys → decline
         ]
 
@@ -265,6 +305,7 @@ class TestCmdConfig:
             "client",
             "user",
             "no",  # fill_unknown → no FK loop
+            "yes",  # enable duplicate detection
             "yes",  # configure composite keys → triggers loop
             "Observation",  # composite loop: model name
             "country",  # fields (comma-separated)
@@ -296,6 +337,7 @@ class TestCmdConfig:
             "client",
             "user",
             "no",  # fill_unknown
+            "yes",  # enable duplicate detection
             "yes",  # configure composite
             "Observation",
             "sequentialId, country",
@@ -310,6 +352,82 @@ class TestCmdConfig:
             saved = json.load(f)
 
         assert saved["composite_unique_fields"]["Observation"] == ["sequentialId", "country"]
+
+    def test_config_disables_duplicate_check(self, tmp_path):
+        """Answering 'no' to duplicate detection saves False and skips the composite prompt."""
+        test_config_file = tmp_path / "config.json"
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = [
+            "test.xlsx",
+            "https://test.com",
+            "us-east-1",
+            "pool",
+            "client",
+            "user",
+            "no",  # fill_unknown
+            "no",  # disable duplicate detection
+        ]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["enable_duplicate_check"] is False
+        assert saved.get("composite_unique_fields", {}) == {}
+
+    def test_config_disabling_duplicate_check_preserves_existing_composite_fields(self, tmp_path, sample_config):
+        """Disabling duplicate detection keeps composite keys around for when it's re-enabled."""
+        test_config_file = tmp_path / "config.json"
+        existing = {**sample_config, "composite_unique_fields": {"Observation": ["country"]}}
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(test_config_file, "w") as f:
+            json.dump(existing, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = ["", "", "", "", "", "", "", "no"]  # accept defaults, then disable duplicate detection
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["enable_duplicate_check"] is False
+        assert saved["composite_unique_fields"] == {"Observation": ["country"]}
+
+    def test_config_re_disabling_duplicate_check_stays_no_on_rerun(self, tmp_path, sample_config):
+        """Re-running config after disabling duplicate detection shows/keeps it as 'no', not 'yes'."""
+        test_config_file = tmp_path / "config.json"
+        existing = {**sample_config, "enable_duplicate_check": False, "composite_unique_fields": {}}
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(test_config_file, "w") as f:
+            json.dump(existing, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        inputs = ["", "", "", "", "", "", "", ""]  # accept all defaults, including duplicate-detection default
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["enable_duplicate_check"] is False
 
 
 class TestCmdMigrate:
@@ -425,6 +543,89 @@ class TestCmdMigrate:
 
                             # Verify getpass was called (for password prompt)
                             mock_getpass.assert_called()
+
+    def test_migrate_forwards_enable_duplicate_check_to_client(self, tmp_path, sample_config):
+        """cmd_migrate reads enable_duplicate_check from config and forwards it to AmplifyClient."""
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump({**sample_config, "enable_duplicate_check": False}, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("amplify_excel_migrator.cli.commands.AmplifyClient") as mock_amplify_client_class:
+                    with patch("amplify_excel_migrator.cli.commands.ExcelReader"):
+                        with patch(
+                            "amplify_excel_migrator.cli.commands.MigrationOrchestrator"
+                        ) as mock_orchestrator_class:
+                            with patch(
+                                "amplify_excel_migrator.core.config.getpass",
+                                return_value="password123",
+                            ):
+                                mock_auth_instance = MagicMock()
+                                mock_auth_instance.authenticate.return_value = True
+                                mock_auth_provider_class.return_value = mock_auth_instance
+
+                                mock_orchestrator_instance = MagicMock()
+                                mock_orchestrator_class.return_value = mock_orchestrator_instance
+                                from amplify_excel_migrator.migration.models import MigrationPlan, MigrationResult
+
+                                mock_orchestrator_instance.build_plan.return_value = MigrationPlan(sheets=[])
+                                mock_orchestrator_instance.execute.return_value = MigrationResult(
+                                    sheets=[], total_success=0
+                                )
+
+                                cmd_migrate()
+
+                                mock_amplify_client_class.assert_called_once()
+                                assert mock_amplify_client_class.call_args[1]["enable_duplicate_check"] is False
+
+    def test_migrate_coerces_hand_edited_string_fill_unknown(self, tmp_path, sample_config):
+        """A hand-edited config value like the string "false" must not be treated as truthy."""
+        test_config_file = tmp_path / "config.json"
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(test_config_file, "w") as f:
+            json.dump({**sample_config, "fill_unknown": "false"}, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("amplify_excel_migrator.cli.commands.AmplifyClient"):
+                    with patch("amplify_excel_migrator.cli.commands.ExcelReader"):
+                        with patch("amplify_excel_migrator.cli.commands.DataTransformer") as mock_transformer_class:
+                            with patch(
+                                "amplify_excel_migrator.cli.commands.MigrationOrchestrator"
+                            ) as mock_orchestrator_class:
+                                with patch(
+                                    "amplify_excel_migrator.core.config.getpass",
+                                    return_value="password123",
+                                ):
+                                    mock_auth_instance = MagicMock()
+                                    mock_auth_instance.authenticate.return_value = True
+                                    mock_auth_provider_class.return_value = mock_auth_instance
+
+                                    mock_orchestrator_instance = MagicMock()
+                                    mock_orchestrator_class.return_value = mock_orchestrator_instance
+                                    from amplify_excel_migrator.migration.models import MigrationPlan, MigrationResult
+
+                                    mock_orchestrator_instance.build_plan.return_value = MigrationPlan(sheets=[])
+                                    mock_orchestrator_instance.execute.return_value = MigrationResult(
+                                        sheets=[], total_success=0
+                                    )
+
+                                    cmd_migrate()
+
+                                    mock_transformer_class.assert_called_once()
+                                    assert mock_transformer_class.call_args[1]["fill_unknown"] is False
 
     def test_migrate_stops_if_authentication_fails(self, tmp_path, sample_config):
         """Test that migrate stops if authentication fails"""

@@ -324,12 +324,20 @@ Run `amplify-migrator show` to confirm everything was picked up.
 
 Both options are off by default and designed for re-migration runs against the exported failed-records file, not for the initial clean migration.
 
-### Composite duplicate detection
+### Duplicate detection
 
-By default a record is considered an existing duplicate if another record shares the model's
-primary/secondary-index field. When the same field value can legitimately repeat across groups
-(e.g. `sequentialId` reused per country), add discriminator fields so a record only counts as a
-duplicate when **all** of them also match.
+By default, every record is checked against existing Amplify data before it's created, and skipped
+if it's already there. Disable this entirely by answering `no` to "Enable duplicate detection
+before creating records" in `amplify-migrator config`, or set `"enable_duplicate_check": false` in
+`~/.amplify-migrator/config.json`. Any configured composite keys are left untouched while disabled,
+so they're ready to use again once you re-enable it.
+
+#### Composite duplicate detection
+
+With duplicate detection on, a record is considered an existing duplicate if another record shares
+the model's primary/secondary-index field. When the same field value can legitimately repeat across
+groups (e.g. `sequentialId` reused per country), add discriminator fields so a record only counts as
+a duplicate when **all** of them also match.
 
 Configure it interactively with `amplify-migrator config` (answer `yes` to "Configure composite
 duplicate-detection keys", then enter the model name and comma-separated fields), or edit
@@ -337,6 +345,7 @@ duplicate-detection keys", then enter the model name and comma-separated fields)
 
 ```json
 {
+  "enable_duplicate_check": true,
   "composite_unique_fields": {
     "Observation": ["country"]
   }
