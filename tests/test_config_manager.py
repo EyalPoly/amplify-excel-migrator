@@ -279,6 +279,28 @@ class TestConfigManagerGetOrPrompt:
         assert result == "test_data.xlsx"
 
 
+class TestConfigManagerCoerceBool:
+    """Test ConfigManager.coerce_bool() static method"""
+
+    def test_real_true_bool_passes_through(self):
+        assert ConfigManager.coerce_bool(True) is True
+
+    def test_real_false_bool_passes_through(self):
+        assert ConfigManager.coerce_bool(False) is False
+
+    @pytest.mark.parametrize("value", ["true", "True", "yes", "Yes", "1", "y"])
+    def test_truthy_strings_coerce_to_true(self, value):
+        assert ConfigManager.coerce_bool(value) is True
+
+    @pytest.mark.parametrize("value", ["false", "False", "no", "0", "n", ""])
+    def test_falsy_strings_coerce_to_false(self, value):
+        """A hand-edited string like 'false' must not be treated as truthy."""
+        assert ConfigManager.coerce_bool(value) is False
+
+    def test_none_coerces_to_false(self):
+        assert ConfigManager.coerce_bool(None) is False
+
+
 class TestConfigManagerExists:
     """Test ConfigManager.exists() method"""
 

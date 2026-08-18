@@ -341,3 +341,17 @@ def test_amplify_client_forwards_composite_unique_fields():
         composite_unique_fields={"Observation": ["country"]},
     )
     assert client._executor.composite_unique_fields == {"Observation": ["country"]}
+
+
+def test_amplify_client_enable_duplicate_check_defaults_to_true():
+    from amplify_excel_migrator.client import AmplifyClient
+
+    client = AmplifyClient(api_endpoint="https://example.com/graphql")
+    assert client._executor.enable_duplicate_check is True
+
+
+def test_amplify_client_forwards_enable_duplicate_check():
+    from amplify_excel_migrator.client import AmplifyClient
+
+    client = AmplifyClient(api_endpoint="https://example.com/graphql", enable_duplicate_check=False)
+    assert client._executor.enable_duplicate_check is False

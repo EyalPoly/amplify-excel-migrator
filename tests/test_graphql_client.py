@@ -45,6 +45,14 @@ class TestGraphQLClientInit:
         assert client.api_endpoint == "https://test.com/graphql"
         assert client.auth_provider == mock_auth_provider
 
+    def test_initializes_with_default_timeout(self):
+        client = GraphQLClient(api_endpoint="https://test.com/graphql")
+        assert client.timeout == 30
+
+    def test_initializes_with_custom_timeout(self):
+        client = GraphQLClient(api_endpoint="https://test.com/graphql", timeout=5)
+        assert client.timeout == 5
+
 
 class TestRequest:
     """Test synchronous request method"""
@@ -75,6 +83,7 @@ class TestRequest:
             "https://test.api.com/graphql",
             headers={"Authorization": "test-token", "Content-Type": "application/json"},
             json={"query": "{ getUser { id } }", "variables": {}},
+            timeout=client.timeout,
         )
 
     @patch("amplify_excel_migrator.graphql.client.requests.post")

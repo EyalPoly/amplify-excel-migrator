@@ -39,6 +39,14 @@ class TestQueryExecutorInit:
         executor = QueryExecutor(mock_client)
         assert executor.composite_unique_fields == {}
 
+    def test_enable_duplicate_check_defaults_to_true(self, mock_client):
+        executor = QueryExecutor(mock_client)
+        assert executor.enable_duplicate_check is True
+
+    def test_enable_duplicate_check_can_be_disabled(self, mock_client):
+        executor = QueryExecutor(mock_client, enable_duplicate_check=False)
+        assert executor.enable_duplicate_check is False
+
 
 class TestCompositeMatching:
     """Test composite duplicate-key helpers"""
@@ -393,6 +401,50 @@ class TestUploadPassesCompositeFields:
         executor.upload_batch_async = fake_batch
         executor.upload([{"sequentialId": 1, "countryId": "c"}], "Observation", {"fields": []})
         assert captured["composite_fields"] == ["country"]
+
+
+class TestUploadBatchAsyncDuplicateCheckToggle:
+    """upload_batch_async should honor enable_duplicate_check"""
+
+    @pytest.mark.asyncio
+    async def test_skips_duplicate_check_when_disabled(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, enable_duplicate_check=False)
+        executor.check_record_exists_async = AsyncMock()
+        executor.create_record_async = AsyncMock(return_value={"id": "1"})
+
+        batch = [{"title": "Story 1"}, {"title": "Story 2"}]
+        success, error, failed = await executor.upload_batch_async(batch, "Story", "title", False)
+
+        executor.check_record_exists_async.assert_not_called()
+        assert executor.create_record_async.call_count == 2
+        assert success == 2
+        assert error == 0
+        assert failed == []
+
+    @pytest.mark.asyncio
+    async def test_runs_duplicate_check_when_enabled(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, enable_duplicate_check=True)
+        record = {"title": "Story 1"}
+        executor.check_record_exists_async = AsyncMock(return_value=record)
+        executor.create_record_async = AsyncMock(return_value={"id": "1"})
+
+        success, error, failed = await executor.upload_batch_async([record], "Story", "title", False)
+
+        executor.check_record_exists_async.assert_called_once()
+        assert success == 1
+        assert error == 0
+
+    @pytest.mark.asyncio
+    async def test_duplicate_still_skipped_when_check_enabled(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, enable_duplicate_check=True)
+        executor.check_record_exists_async = AsyncMock(return_value=None)  # duplicate found
+        executor.create_record_async = AsyncMock()
+
+        success, error, failed = await executor.upload_batch_async([{"title": "Story 1"}], "Story", "title", False)
+
+        executor.create_record_async.assert_not_called()
+        assert success == 0
+        assert error == 1
 
 
 class TestBuildForeignKeyLookups:

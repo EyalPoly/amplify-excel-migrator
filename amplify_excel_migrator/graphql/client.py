@@ -24,9 +24,15 @@ class GraphQLError(Exception):
 
 
 class GraphQLClient:
-    def __init__(self, api_endpoint: str, auth_provider: Optional[AuthenticationProvider] = None):
+    def __init__(
+        self,
+        api_endpoint: str,
+        auth_provider: Optional[AuthenticationProvider] = None,
+        timeout: float = 30,
+    ):
         self.api_endpoint = api_endpoint
         self.auth_provider = auth_provider
+        self.timeout = timeout
 
     def request(
         self,
@@ -45,7 +51,7 @@ class GraphQLClient:
         context_msg = f" [{context}]" if context else ""
 
         try:
-            response = requests.post(self.api_endpoint, headers=headers, json=payload)
+            response = requests.post(self.api_endpoint, headers=headers, json=payload, timeout=self.timeout)
 
             if response.status_code == 200:
                 result: Dict[str, Any] = response.json()

@@ -62,12 +62,13 @@ class DataTransformer:
             row_count += 1
             primary_field_value = row_dict.get(primary_field, f"Row {row_count}")
 
-            row_dict_by_primary[str(primary_field_value)] = row_dict.copy()
-
             try:
                 record = self.transform_row_to_record(row_dict, parsed_model_structure, fk_lookup_cache)
                 if record:
                     records.append(record)
+                    # Key by the parsed value (not the raw one) so upload-failure lookups,
+                    # which report the parsed value, always find their original row.
+                    row_dict_by_primary[str(record.get(primary_field, primary_field_value))] = row_dict.copy()
             except Exception as e:
                 error_msg = str(e)
                 if isinstance(e, RowParseError):

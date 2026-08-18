@@ -43,7 +43,7 @@ def cmd_show(args=None):
     print(f"User Pool ID:         {cached_config.get('user_pool_id', 'N/A')}")
     print(f"Client ID:            {cached_config.get('client_id', 'N/A')}")
     print(f"Admin Username:       {cached_config.get('username', 'N/A')}")
-    print(f"Fill unknown:         {cached_config.get('fill_unknown', False)}")
+    print(f"Fill unknown:         {ConfigManager.coerce_bool(cached_config.get('fill_unknown', False))}")
     default_fk = cached_config.get("default_fk_values", {})
     if default_fk:
         print(f"Default FK values:")
@@ -51,6 +51,8 @@ def cmd_show(args=None):
             print(f"  {model}: {fk_id}")
     else:
         print(f"Default FK values:    (none)")
+    duplicate_check_enabled = ConfigManager.coerce_bool(cached_config.get("enable_duplicate_check", True))
+    print(f"Duplicate detection:  {'enabled' if duplicate_check_enabled else 'disabled'}")
     composite = cached_config.get("composite_unique_fields", {})
     if composite:
         print("Composite unique fields:")
@@ -73,7 +75,7 @@ def cmd_config(args=None):
     config_manager = ConfigManager()
     cached_config = config_manager.load()
 
-    current_fill_unknown = "yes" if cached_config.get("fill_unknown", False) else "no"
+    current_fill_unknown = "yes" if ConfigManager.coerce_bool(cached_config.get("fill_unknown", False)) else "no"
 
     config = {
         **cached_config,
@@ -107,27 +109,41 @@ def cmd_config(args=None):
                 default_fk_values[model] = fk_id
         config["default_fk_values"] = default_fk_values
 
-    current_composite = "yes" if cached_config.get("composite_unique_fields") else "no"
-    configure_composite = (
-        config_manager.prompt_for_value("Configure composite duplicate-detection keys (yes/no)", current_composite)
+    current_enable_duplicate_check = (
+        "yes" if ConfigManager.coerce_bool(cached_config.get("enable_duplicate_check", True)) else "no"
+    )
+    enable_duplicate_check = (
+        config_manager.prompt_for_value(
+            "Enable duplicate detection before creating records (yes/no)", current_enable_duplicate_check
+        )
         .strip()
         .lower()
         == "yes"
     )
-    if configure_composite:
-        print("\nComposite duplicate keys (extra fields that must also match to count as a duplicate):")
-        print("  Enter model name then comma-separated fields, or press Enter to finish.")
-        composite_unique_fields = dict(cached_config.get("composite_unique_fields", {}))
-        while True:
-            model = input("  Model name (or Enter to finish): ").strip()
-            if not model:
-                break
-            current_fields = ", ".join(composite_unique_fields.get(model, []))
-            raw = config_manager.prompt_for_value(f"  Fields for {model} (comma-separated)", current_fields)
-            fields = [f.strip() for f in raw.split(",") if f.strip()]
-            if fields:
-                composite_unique_fields[model] = fields
-        config["composite_unique_fields"] = composite_unique_fields
+    config["enable_duplicate_check"] = enable_duplicate_check
+
+    if enable_duplicate_check:
+        current_composite = "yes" if cached_config.get("composite_unique_fields") else "no"
+        configure_composite = (
+            config_manager.prompt_for_value("Configure composite duplicate-detection keys (yes/no)", current_composite)
+            .strip()
+            .lower()
+            == "yes"
+        )
+        if configure_composite:
+            print("\nComposite duplicate keys (extra fields that must also match to count as a duplicate):")
+            print("  Enter model name then comma-separated fields, or press Enter to finish.")
+            composite_unique_fields = dict(cached_config.get("composite_unique_fields", {}))
+            while True:
+                model = input("  Model name (or Enter to finish): ").strip()
+                if not model:
+                    break
+                current_fields = ", ".join(composite_unique_fields.get(model, []))
+                raw = config_manager.prompt_for_value(f"  Fields for {model} (comma-separated)", current_fields)
+                fields = [f.strip() for f in raw.split(",") if f.strip()]
+                if fields:
+                    composite_unique_fields[model] = fields
+            config["composite_unique_fields"] = composite_unique_fields
 
     config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
@@ -247,11 +263,13 @@ def cmd_migrate(args=None):
     )
 
     composite_unique_fields = cached_config.get("composite_unique_fields", {})
+    enable_duplicate_check = ConfigManager.coerce_bool(cached_config.get("enable_duplicate_check", True))
 
     amplify_client = AmplifyClient(
         api_endpoint=api_endpoint,
         auth_provider=auth_provider,
         composite_unique_fields=composite_unique_fields,
+        enable_duplicate_check=enable_duplicate_check,
     )
 
     if not auth_provider.authenticate(username, password):
@@ -259,7 +277,7 @@ def cmd_migrate(args=None):
 
     field_parser = FieldParser()
     default_fk_values = cached_config.get("default_fk_values", {})
-    fill_unknown = cached_config.get("fill_unknown", False)
+    fill_unknown = ConfigManager.coerce_bool(cached_config.get("fill_unknown", False))
 
     orchestrator = MigrationOrchestrator(
         excel_reader=ExcelReader(excel_path),

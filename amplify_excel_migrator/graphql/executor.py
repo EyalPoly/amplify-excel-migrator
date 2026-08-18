@@ -20,12 +20,14 @@ class QueryExecutor:
         client: GraphQLClient,
         batch_size: int = 20,
         composite_unique_fields: Optional[Dict[str, List[str]]] = None,
+        enable_duplicate_check: bool = True,
     ):
         self.client = client
         self.batch_size = batch_size
         self.records_cache: Dict[str, List[Dict]] = {}
         self.schema = SchemaIntrospector(client)
         self.composite_unique_fields: Dict[str, List[str]] = composite_unique_fields or {}
+        self.enable_duplicate_check = bool(enable_duplicate_check)
 
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         return self.schema.get_model_structure(model_type)
@@ -323,37 +325,41 @@ class QueryExecutor:
         composite_fields: Optional[List[str]] = None,
     ) -> tuple[int, int, List[Dict]]:
         async with aiohttp.ClientSession() as session:
-            duplicate_checks = [
-                self.check_record_exists_async(
-                    session,
-                    model_name,
-                    primary_field,
-                    record[primary_field],
-                    is_secondary_index,
-                    record,
-                    field_type,
-                    composite_fields,
-                )
-                for record in batch
-            ]
-            check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
-
-            filtered_batch: List[Dict] = []
             failed_records: List[Dict] = []
+            filtered_batch: List[Dict]
 
-            for i, result in enumerate(check_results):
-                if isinstance(result, BaseException):
-                    error_msg = str(result)
-                    failed_records.append(
-                        {
-                            "primary_field": primary_field,
-                            "primary_field_value": batch[i].get(primary_field, "Unknown"),
-                            "error": f"Duplicate check error: {error_msg}",
-                        }
+            if self.enable_duplicate_check:
+                duplicate_checks = [
+                    self.check_record_exists_async(
+                        session,
+                        model_name,
+                        primary_field,
+                        record[primary_field],
+                        is_secondary_index,
+                        record,
+                        field_type,
+                        composite_fields,
                     )
-                    logger.error(f"Error checking duplicate: {result}")
-                elif result is not None:
-                    filtered_batch.append(result)
+                    for record in batch
+                ]
+                check_results = await asyncio.gather(*duplicate_checks, return_exceptions=True)
+
+                filtered_batch = []
+                for i, result in enumerate(check_results):
+                    if isinstance(result, BaseException):
+                        error_msg = str(result)
+                        failed_records.append(
+                            {
+                                "primary_field": primary_field,
+                                "primary_field_value": batch[i].get(primary_field, "Unknown"),
+                                "error": f"Duplicate check error: {error_msg}",
+                            }
+                        )
+                        logger.error(f"Error checking duplicate: {result}")
+                    elif result is not None:
+                        filtered_batch.append(result)
+            else:
+                filtered_batch = batch
 
             if not filtered_batch:
                 return 0, len(batch), failed_records
