@@ -406,6 +406,31 @@ class TestCmdConfig:
         assert saved["enable_duplicate_check"] is False
         assert saved["composite_unique_fields"] == {"Observation": ["country"]}
 
+    def test_config_declining_composite_prompt_clears_existing_fields(self, tmp_path, sample_config):
+        """Answering 'no' to the composite-keys prompt turns them off, not just skips editing."""
+        test_config_file = tmp_path / "config.json"
+        existing = {**sample_config, "composite_unique_fields": {"Observation": ["country"]}}
+        test_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(test_config_file, "w") as f:
+            json.dump(existing, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        # accept defaults through duplicate detection (stays enabled), then decline composite keys
+        inputs = ["", "", "", "", "", "", "", "", "no"]
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("builtins.input", side_effect=inputs):
+                cmd_config()
+
+        with open(test_config_file) as f:
+            saved = json.load(f)
+
+        assert saved["enable_duplicate_check"] is True
+        assert saved["composite_unique_fields"] == {}
+
     def test_config_re_disabling_duplicate_check_stays_no_on_rerun(self, tmp_path, sample_config):
         """Re-running config after disabling duplicate detection shows/keeps it as 'no', not 'yes'."""
         test_config_file = tmp_path / "config.json"

@@ -144,6 +144,8 @@ def cmd_config(args=None):
                 if fields:
                     composite_unique_fields[model] = fields
             config["composite_unique_fields"] = composite_unique_fields
+        else:
+            config["composite_unique_fields"] = {}
 
     config_manager.save(config)
     print("\n✅ Configuration saved successfully!")
