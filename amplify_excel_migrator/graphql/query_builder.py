@@ -186,6 +186,38 @@ query IntrospectModel {{
         return query.strip()
 
     @staticmethod
+    def build_mutation_args_introspection_query() -> str:
+        query = """
+query IntrospectMutations {
+  __type(name: "Mutation") {
+    fields {
+      name
+      args {
+        name
+        type {
+          name
+          kind
+          ofType {
+            name
+            kind
+            ofType {
+              name
+              kind
+              ofType {
+                name
+                kind
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+        return query.strip()
+
+    @staticmethod
     def build_schema_introspection_query() -> str:
         query = """
 query IntrospectSchema {

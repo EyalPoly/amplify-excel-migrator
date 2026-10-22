@@ -399,3 +399,25 @@ class TestMutationBuilderEdgeCases:
 
         assert variables["input"]["description"] is None
         assert variables["input"]["age"] == 0  # 0 should be preserved, not treated as falsy
+
+
+class TestBuildCustomMutation:
+    """Test MutationBuilder.build_custom_mutation() method"""
+
+    def test_declares_and_passes_each_arg(self):
+        mutation = MutationBuilder.build_custom_mutation(
+            "submitObservation",
+            {"sequentialId": "Int!", "substrate": "[String]", "teamSlug": "String"},
+            return_fields=["id", "sequentialId"],
+        )
+
+        assert mutation.startswith(
+            "mutation SubmitObservation($sequentialId: Int!, $substrate: [String], $teamSlug: String)"
+        )
+        assert "submitObservation(sequentialId: $sequentialId, substrate: $substrate, teamSlug: $teamSlug)" in mutation
+        assert "sequentialId\n" in mutation
+
+    def test_defaults_return_field_to_id(self):
+        mutation = MutationBuilder.build_custom_mutation("reviewObservation", {"id": "ID!"})
+
+        assert "reviewObservation(id: $id) {\n        id\n  }" in mutation

@@ -363,3 +363,85 @@ class TestGetListQueryName:
         result = introspector.get_list_query_name("User")
 
         assert result in ["listUser", "listUsers"]
+
+
+class TestGetMutationArgs:
+    """Test get_mutation_args method"""
+
+    MUTATION_TYPE = {
+        "data": {
+            "__type": {
+                "fields": [
+                    {
+                        "name": "submitObservation",
+                        "args": [
+                            {"name": "teamSlug", "type": {"kind": "SCALAR", "name": "String", "ofType": None}},
+                            {
+                                "name": "sequentialId",
+                                "type": {"kind": "NON_NULL", "name": None, "ofType": {"kind": "SCALAR", "name": "Int"}},
+                            },
+                            {
+                                "name": "individualGroups",
+                                "type": {
+                                    "kind": "LIST",
+                                    "name": None,
+                                    "ofType": {"kind": "INPUT_OBJECT", "name": "IndividualGroupInput"},
+                                },
+                            },
+                            {
+                                "name": "mediaUrlLinks",
+                                "type": {
+                                    "kind": "NON_NULL",
+                                    "name": None,
+                                    "ofType": {
+                                        "kind": "LIST",
+                                        "name": None,
+                                        "ofType": {
+                                            "kind": "NON_NULL",
+                                            "name": None,
+                                            "ofType": {"kind": "SCALAR", "name": "AWSURL"},
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    {"name": "createSpecies", "args": []},
+                ]
+            }
+        }
+    }
+
+    def test_renders_arg_types(self, introspector, mock_client):
+        mock_client.request.return_value = self.MUTATION_TYPE
+
+        assert introspector.get_mutation_args("submitObservation") == {
+            "teamSlug": "String",
+            "sequentialId": "Int!",
+            "individualGroups": "[IndividualGroupInput]",
+            "mediaUrlLinks": "[AWSURL!]!",
+        }
+
+    def test_returns_none_for_unknown_mutation(self, introspector, mock_client):
+        mock_client.request.return_value = self.MUTATION_TYPE
+
+        assert introspector.get_mutation_args("submitSpecies") is None
+
+    def test_returns_empty_dict_for_mutation_without_args(self, introspector, mock_client):
+        mock_client.request.return_value = self.MUTATION_TYPE
+
+        assert introspector.get_mutation_args("createSpecies") == {}
+
+    def test_introspects_mutation_type_once(self, introspector, mock_client):
+        mock_client.request.return_value = self.MUTATION_TYPE
+
+        introspector.get_mutation_args("submitObservation")
+        introspector.get_mutation_args("createSpecies")
+
+        assert mock_client.request.call_count == 1
+
+    def test_retries_after_failed_introspection(self, introspector, mock_client):
+        mock_client.request.side_effect = [None, self.MUTATION_TYPE]
+
+        assert introspector.get_mutation_args("submitObservation") is None
+        assert introspector.get_mutation_args("submitObservation") is not None

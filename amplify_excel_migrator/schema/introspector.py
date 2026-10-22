@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class SchemaIntrospector:
     def __init__(self, client: GraphQLClient):
         self.client = client
+        self._mutation_args: Optional[Dict[str, Dict[str, str]]] = None
 
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         query = QueryBuilder.build_introspection_query(model_type)
@@ -50,6 +51,28 @@ class SchemaIntrospector:
                 if values:
                     enums[type_info["name"]] = values
         return enums
+
+    def get_mutation_args(self, mutation_name: str) -> Optional[Dict[str, str]]:
+        """Return the mutation's arguments as {name: GraphQL type, e.g. "Int!"}, or None if it doesn't exist."""
+        if not self._mutation_args:
+            self._mutation_args = self._load_mutation_args()
+        return self._mutation_args.get(mutation_name)
+
+    def _load_mutation_args(self) -> Dict[str, Dict[str, str]]:
+        response = self.client.request(QueryBuilder.build_mutation_args_introspection_query())
+        mutation_type = (response or {}).get("data", {}).get("__type") or {}
+        return {
+            field["name"]: {arg["name"]: self._render_type(arg["type"]) for arg in field.get("args") or []}
+            for field in mutation_type.get("fields") or []
+        }
+
+    @classmethod
+    def _render_type(cls, type_ref: Dict[str, Any]) -> str:
+        if type_ref["kind"] == "NON_NULL":
+            return f"{cls._render_type(type_ref['ofType'])}!"
+        if type_ref["kind"] == "LIST":
+            return f"[{cls._render_type(type_ref['ofType'])}]"
+        return str(type_ref["name"])
 
     def get_primary_field_name(self, model_name: str, parsed_model_structure: Dict[str, Any]) -> tuple[str, bool, str]:
         secondary_index = self._get_secondary_index(model_name)

@@ -9,6 +9,7 @@ import aiohttp
 from .client import GraphQLClient
 from .query_builder import QueryBuilder
 from .mutation_builder import MutationBuilder
+from .team_scope import TeamResolver, TeamScope, detect_team_scope
 from amplify_excel_migrator.schema import SchemaIntrospector
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class QueryExecutor:
         self.schema = SchemaIntrospector(client)
         self.composite_unique_fields: Dict[str, List[str]] = composite_unique_fields or {}
         self.enable_duplicate_check = bool(enable_duplicate_check)
+        self.team_resolver = TeamResolver(self)
 
     def get_model_structure(self, model_type: str) -> Dict[str, Any]:
         return self.schema.get_model_structure(model_type)
@@ -246,6 +248,71 @@ class QueryExecutor:
 
         return None
 
+    async def submit_record_async(
+        self,
+        session: aiohttp.ClientSession,
+        data: Dict,
+        model_name: str,
+        primary_field: str,
+        team_scope: TeamScope,
+    ) -> Optional[Dict]:
+        submit_mutation = str(team_scope.submit_mutation)
+        variables = team_scope.submit_variables(data, self.team_resolver.require_slug(data))
+        mutation = MutationBuilder.build_custom_mutation(
+            submit_mutation,
+            {name: team_scope.submit_args[name] for name in variables},
+            return_fields=["id", primary_field],
+        )
+
+        context = f"{model_name}: {primary_field}={data.get(primary_field)}"
+        result = await self.client.request_async(session, mutation, variables, context)
+
+        created: Optional[Dict] = result["data"].get(submit_mutation) if result and "data" in result else None
+        if not created:
+            logger.error(f'Failed to submit {model_name} with {primary_field}="{data.get(primary_field)}"')
+            return None
+
+        logger.info(f'Submitted {model_name} with {primary_field}="{data.get(primary_field)}" (ID: {created["id"]})')
+
+        if team_scope.review_mutation:
+            await self._review_record_async(session, created["id"], model_name, team_scope, context)
+
+        return created
+
+    async def _review_record_async(
+        self,
+        session: aiohttp.ClientSession,
+        record_id: str,
+        model_name: str,
+        team_scope: TeamScope,
+        context: str,
+    ) -> None:
+        review_mutation = str(team_scope.review_mutation)
+        mutation = MutationBuilder.build_custom_mutation(review_mutation, team_scope.review_args)
+        failure = f"Created {model_name} {record_id} but {review_mutation} failed"
+
+        try:
+            result = await self.client.request_async(session, mutation, {"id": record_id}, context)
+        except Exception as e:
+            raise RuntimeError(f"{failure}: {e}") from e
+
+        if not (result and (result.get("data") or {}).get(review_mutation)):
+            raise RuntimeError(f"{failure}: no data returned")
+
+    async def _create_scoped_async(
+        self,
+        session: aiohttp.ClientSession,
+        data: Dict,
+        model_name: str,
+        primary_field: str,
+        team_scope: Optional[TeamScope],
+    ) -> Optional[Dict]:
+        if team_scope and team_scope.submit_mutation:
+            return await self.submit_record_async(session, data, model_name, primary_field, team_scope)
+        if team_scope and team_scope.stamp_editor_groups:
+            data = self.team_resolver.with_editor_groups(data)
+        return await self.create_record_async(session, data, model_name, primary_field)
+
     @staticmethod
     def _resolve_composite_keys(composite_fields: List[str], record: Dict) -> List[str]:
         resolved = []
@@ -323,6 +390,7 @@ class QueryExecutor:
         is_secondary_index: bool,
         field_type: str = "String",
         composite_fields: Optional[List[str]] = None,
+        team_scope: Optional[TeamScope] = None,
     ) -> tuple[int, int, List[Dict]]:
         async with aiohttp.ClientSession() as session:
             failed_records: List[Dict] = []
@@ -365,7 +433,8 @@ class QueryExecutor:
                 return 0, len(batch), failed_records
 
             create_tasks = [
-                self.create_record_async(session, record, model_name, primary_field) for record in filtered_batch
+                self._create_scoped_async(session, record, model_name, primary_field, team_scope)
+                for record in filtered_batch
             ]
             create_results = await asyncio.gather(*create_tasks, return_exceptions=True)
 
@@ -412,6 +481,7 @@ class QueryExecutor:
             return 0, len(records), []
 
         composite_fields = self.composite_unique_fields.get(model_name, [])
+        team_scope = self._team_scope_for(model_name, parsed_model_structure, records)
 
         for i in range(0, len(records), self.batch_size):
             batch = records[i : i + self.batch_size]
@@ -419,7 +489,7 @@ class QueryExecutor:
 
             batch_success, batch_error, batch_failed_records = asyncio.run(
                 self.upload_batch_async(
-                    batch, model_name, primary_field, is_secondary_index, field_type, composite_fields
+                    batch, model_name, primary_field, is_secondary_index, field_type, composite_fields, team_scope
                 )
             )
             success_count += batch_success
@@ -431,6 +501,29 @@ class QueryExecutor:
             )
 
         return success_count, error_count, all_failed_records
+
+    def _team_scope_for(
+        self, model_name: str, parsed_model_structure: Dict[str, Any], records: List[Dict]
+    ) -> Optional[TeamScope]:
+        field_names = [field["name"] for field in parsed_model_structure["fields"]]
+        team_scope = detect_team_scope(self.schema, model_name, field_names)
+        if not team_scope:
+            return None
+
+        if team_scope.submit_mutation:
+            logger.info(f"{model_name} is team-scoped: creating via {team_scope.submit_mutation}")
+            dropped = team_scope.dropped_fields(records)
+            if dropped:
+                logger.warning(
+                    f"{team_scope.submit_mutation} does not accept {', '.join(dropped)}; "
+                    "these values will not be migrated"
+                )
+            if team_scope.review_mutation:
+                logger.info(f"Created {model_name} records will be approved via {team_scope.review_mutation}")
+        else:
+            logger.info(f"{model_name} is team-scoped: stamping editorGroups from each record's group")
+
+        return team_scope
 
     def create_record(
         self,
