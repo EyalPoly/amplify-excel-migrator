@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from amplify_excel_migrator.client import AmplifyClient
-from amplify_excel_migrator.core import ConfigManager
+from amplify_excel_migrator.core import ConfigManager, SUPER_ADMINS
 from amplify_excel_migrator.schema import FieldParser, SchemaExporter
 from amplify_excel_migrator.data import ExcelReader, DataTransformer
 from amplify_excel_migrator.migration import (
@@ -18,6 +18,10 @@ from amplify_excel_migrator.migration import (
     MigrationOrchestrator,
 )
 from amplify_auth import CognitoAuthProvider
+
+
+def _admin_group_name(config) -> str:
+    return config.get("admin_group_name") or SUPER_ADMINS
 
 
 def cmd_show(args=None):
@@ -43,6 +47,7 @@ def cmd_show(args=None):
     print(f"User Pool ID:         {cached_config.get('user_pool_id', 'N/A')}")
     print(f"Client ID:            {cached_config.get('client_id', 'N/A')}")
     print(f"Admin Username:       {cached_config.get('username', 'N/A')}")
+    print(f"Required group:       {_admin_group_name(cached_config)}")
     print(f"Fill unknown:         {ConfigManager.coerce_bool(cached_config.get('fill_unknown', False))}")
     default_fk = cached_config.get("default_fk_values", {})
     if default_fk:
@@ -262,6 +267,7 @@ def cmd_migrate(args=None):
         user_pool_id=user_pool_id,
         client_id=client_id,
         region=region,
+        admin_group_name=_admin_group_name(cached_config),
     )
 
     composite_unique_fields = cached_config.get("composite_unique_fields", {})
@@ -327,6 +333,7 @@ def cmd_export_schema(args=None):
         user_pool_id=user_pool_id,
         client_id=client_id,
         region=region,
+        admin_group_name=_admin_group_name(cached_config),
     )
 
     amplify_client = AmplifyClient(
@@ -384,6 +391,7 @@ def cmd_export_data(args=None):
         user_pool_id=user_pool_id,
         client_id=client_id,
         region=region,
+        admin_group_name=_admin_group_name(cached_config),
     )
 
     amplify_client = AmplifyClient(

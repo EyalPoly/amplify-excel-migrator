@@ -243,7 +243,7 @@ Admin Password: ********
 - Python 3.8+
 - AWS Amplify GraphQL API
 - AWS Cognito User Pool
-- Admin access to the Cognito User Pool
+- A Cognito user in the `SUPER_ADMINS` group (configurable via `admin_group_name`)
 
 ## Features
 
@@ -257,6 +257,7 @@ Admin Password: ********
 - **Configuration caching** - Save your setup, reuse it for multiple migrations
 - **MFA support** - Works with multi-factor authentication
 - **Admin group validation** - Ensures proper authorization before migration
+- **Team-scoped permissions** - Creates records through team-aware mutations and stamps team groups where the backend requires them
 
 ### Performance
 - **Async uploads** - Fast parallel uploads with configurable batch size
@@ -356,6 +357,31 @@ Field names may be given as the relation name (`country`) or the FK column (`cou
 resolve to the stored `countryId`. Run `amplify-migrator show` to confirm. Omit the key (default)
 for unchanged single-field behaviour.
 
+### Team-scoped permissions
+
+The migrator authenticates as a member of `SUPER_ADMINS`, the all-teams role of the team-based
+permission model (Cognito groups `SUPER_ADMINS`, `<TEAM>_USER`, `<TEAM>_ADMIN`). To require a
+different group, set `admin_group_name` in `~/.amplify-migrator/config.json`:
+
+```json
+{
+  "admin_group_name": "SUPER_ADMINS"
+}
+```
+
+Team-scoped models are detected from the schema and handled automatically during `migrate`; the
+row's team comes from its `group` column (the `Group` record's `slug`, or its upper-cased name if
+the slug is unset):
+
+- **Models written through a `submit<Model>` mutation with a `teamSlug` argument** (e.g.
+  `Observation`) are created through that mutation instead of the generated `create<Model>`, which
+  the backend denies. Only the columns the mutation accepts are sent; any others (e.g. `checkDate`,
+  `checkedByUser`, `reviewStatus`) are listed in a warning and not migrated. If a `review<Model>`
+  mutation exists, each created record is approved right after it is created; a record whose
+  approval fails is reported as a failure that names the created ID, so it can be approved in the app.
+- **Models with both `editorGroups` and `groupId` fields** (e.g. `SpeciesCommonName`) get
+  `editorGroups` set to the team's `<TEAM>_USER` / `<TEAM>_ADMIN` groups unless the sheet provides it.
+
 ## Troubleshooting
 
 ### Authentication & AWS Configuration
@@ -363,7 +389,7 @@ for unchanged single-field behaviour.
 **Authentication Errors:**
 - Verify your Cognito User Pool ID and Client ID are correct
 - Ensure your username and password are valid
-- Check that your user is in the ADMINS group
+- Check that your user is in the SUPER_ADMINS group (or the group set as `admin_group_name`)
 
 **MFA Issues:**
 - Enable MFA in your Cognito User Pool settings if required
@@ -375,7 +401,8 @@ for unchanged single-field behaviour.
 - Or use `aws configure` to set up your default profile
 
 **Permission Errors:**
-- Add your user to the ADMINS group in Cognito User Pool
+- Add your user to the SUPER_ADMINS group in Cognito User Pool
+- A row failing with `Cannot resolve the team of groupId` means its `group` value matches no `Group` record with a slug or name
 - Contact your AWS administrator if you don't have permission
 
 ### Excel Format & Validation Issues

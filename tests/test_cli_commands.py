@@ -92,6 +92,20 @@ class TestCmdShow:
         captured = capsys.readouterr()
         assert str(test_config_file) in captured.out
 
+    def test_show_displays_required_group_defaulting_to_super_admins(self, capsys, tmp_path, sample_config):
+        test_config_file = tmp_path / "config.json"
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            cmd_show()
+
+        assert "Required group:       SUPER_ADMINS" in capsys.readouterr().out
+
     def test_show_displays_duplicate_detection_enabled_by_default(self, capsys, tmp_path, sample_config):
         """No enable_duplicate_check key in config should display as enabled (the runtime default)."""
         test_config_file = tmp_path / "config.json"
@@ -522,11 +536,31 @@ class TestCmdMigrate:
                             assert call_args[1]["client_id"] == "test-client-id"
                             assert call_args[1]["region"] == "us-east-1"
 
+                            assert call_args[1]["admin_group_name"] == "SUPER_ADMINS"
+
                             # Verify authenticate was called
                             mock_auth_instance.authenticate.assert_called_once_with("test@example.com", "password123")
 
                             # Verify the headless plan/execute flow was driven
                             mock_orchestrator_instance.build_plan.assert_called_once()
+
+    def test_migrate_uses_configured_admin_group(self, tmp_path, sample_config):
+        test_config_file = tmp_path / "config.json"
+        with open(test_config_file, "w") as f:
+            json.dump({**sample_config, "admin_group_name": "ISRAEL_ADMIN"}, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_auth.CognitoAuthProvider") as mock_auth_provider_class:
+                with patch("amplify_excel_migrator.core.config.getpass", return_value="password123"):
+                    mock_auth_provider_class.return_value.authenticate.return_value = False
+
+                    cmd_migrate()
+
+        assert mock_auth_provider_class.call_args[1]["admin_group_name"] == "ISRAEL_ADMIN"
 
     def test_migrate_prompts_for_password(self, tmp_path, sample_config):
         """Test that migrate command always prompts for password"""
@@ -738,6 +772,29 @@ class TestCmdExportData:
 
         captured = capsys.readouterr()
         assert "Exported" not in captured.out
+
+    def test_export_data_requires_super_admins_by_default(self, tmp_path, sample_config):
+        test_config_file = tmp_path / "config.json"
+        with open(test_config_file, "w") as f:
+            json.dump(sample_config, f)
+
+        def init_mock(self, config_path=None):
+            self.config_path = test_config_file
+            self._config = {}
+
+        args = MagicMock()
+        args.model = ["Reporter"]
+        args.output = None
+        args.all = False
+
+        with patch.object(ConfigManager, "__init__", init_mock):
+            with patch("amplify_excel_migrator.cli.commands.CognitoAuthProvider") as mock_auth_class:
+                with patch("amplify_excel_migrator.core.config.getpass", return_value="pw"):
+                    mock_auth_class.return_value.authenticate.return_value = False
+
+                    cmd_export_data(args)
+
+        assert mock_auth_class.call_args[1]["admin_group_name"] == "SUPER_ADMINS"
 
     def test_export_data_exports_records_to_excel(self, tmp_path, sample_config):
         test_config_file = tmp_path / "config.json"

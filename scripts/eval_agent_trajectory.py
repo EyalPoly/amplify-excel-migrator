@@ -375,11 +375,13 @@ def main() -> None:
         raise SystemExit("No config found. Run 'amplify-migrator config' first.")
 
     from amplify_auth import CognitoAuthProvider
+    from amplify_excel_migrator.core import SUPER_ADMINS
 
     auth = CognitoAuthProvider(
         user_pool_id=cfg["user_pool_id"],
         client_id=cfg["client_id"],
         region=cfg["region"],
+        admin_group_name=cfg.get("admin_group_name") or SUPER_ADMINS,
     )
     if not auth.authenticate(cfg["username"], getpass("Admin Password: ")):
         raise SystemExit("Authentication failed.")

@@ -394,7 +394,9 @@ class TestUploadPassesCompositeFields:
         executor.get_primary_field_name = MagicMock(return_value=("sequentialId", True, "Int"))
         captured = {}
 
-        async def fake_batch(batch, model_name, primary_field, is_secondary_index, field_type, composite_fields):
+        async def fake_batch(
+            batch, model_name, primary_field, is_secondary_index, field_type, composite_fields, team_scope=None
+        ):
             captured["composite_fields"] = composite_fields
             return (len(batch), 0, [])
 
@@ -535,3 +537,202 @@ class TestBuildForeignKeyLookups:
         assert len(result) == 1
         assert "Reporter" in result
         executor.get_primary_field_name.assert_called_once()
+
+
+class TestTeamScopedCreates:
+    """Team-scoped models: submit via custom mutation + approve, or stamp editorGroups"""
+
+    SUBMIT_ARGS = {"teamSlug": "String", "sequentialId": "Int!", "speciesId": "ID!"}
+
+    @pytest.fixture
+    def submit_scope(self):
+        from amplify_excel_migrator.graphql.team_scope import TeamScope
+
+        return TeamScope(
+            submit_mutation="submitObservation",
+            submit_args=self.SUBMIT_ARGS,
+            review_mutation="reviewObservation",
+            review_args={"id": "ID!"},
+        )
+
+    @pytest.fixture
+    def team_executor(self, mock_client):
+        executor = QueryExecutor(mock_client, batch_size=10, enable_duplicate_check=False)
+        executor.team_resolver.slug_for = MagicMock(side_effect=lambda gid: {"g-isr": "ISRAEL"}.get(gid))
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_submit_sends_accepted_args_with_team_slug_then_reviews(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock(
+            side_effect=[
+                {"data": {"submitObservation": {"id": "obs-1", "sequentialId": 7}}},
+                {"data": {"reviewObservation": {"id": "obs-1"}}},
+            ]
+        )
+        record = {"sequentialId": 7, "speciesId": "sp-1", "groupId": "g-isr", "checkDate": "2024-01-01T00:00:00Z"}
+
+        created = await team_executor.submit_record_async(
+            MagicMock(), record, "Observation", "sequentialId", submit_scope
+        )
+
+        assert created == {"id": "obs-1", "sequentialId": 7}
+        submit_call, review_call = team_executor.client.request_async.call_args_list
+        _, submit_mutation, submit_variables, _ = submit_call.args
+        assert "submitObservation(sequentialId: $sequentialId, speciesId: $speciesId, teamSlug: $teamSlug)" in (
+            submit_mutation
+        )
+        assert "$sequentialId: Int!" in submit_mutation
+        assert submit_variables == {"sequentialId": 7, "speciesId": "sp-1", "teamSlug": "ISRAEL"}
+        _, review_mutation, review_variables, _ = review_call.args
+        assert "reviewObservation(id: $id)" in review_mutation
+        assert review_variables == {"id": "obs-1"}
+
+    @pytest.mark.asyncio
+    async def test_submit_without_review_mutation_does_not_review(self, team_executor, submit_scope):
+        submit_scope.review_mutation = None
+        team_executor.client.request_async = AsyncMock(
+            return_value={"data": {"submitObservation": {"id": "obs-1", "sequentialId": 7}}}
+        )
+
+        await team_executor.submit_record_async(
+            MagicMock(), {"sequentialId": 7, "groupId": "g-isr"}, "Observation", "sequentialId", submit_scope
+        )
+
+        assert team_executor.client.request_async.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_submit_returning_no_data_skips_review(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock(return_value={"data": {"submitObservation": None}})
+
+        created = await team_executor.submit_record_async(
+            MagicMock(), {"sequentialId": 7, "groupId": "g-isr"}, "Observation", "sequentialId", submit_scope
+        )
+
+        assert created is None
+        assert team_executor.client.request_async.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_team_raises_before_any_request(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock()
+
+        with pytest.raises(ValueError, match="g-unknown"):
+            await team_executor.submit_record_async(
+                MagicMock(), {"sequentialId": 7, "groupId": "g-unknown"}, "Observation", "sequentialId", submit_scope
+            )
+
+        team_executor.client.request_async.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_review_error_raises_with_created_id(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock(
+            side_effect=[
+                {"data": {"submitObservation": {"id": "obs-1", "sequentialId": 7}}},
+                Exception("Unauthorized"),
+            ]
+        )
+
+        with pytest.raises(RuntimeError, match="Created Observation obs-1 but reviewObservation failed: Unauthorized"):
+            await team_executor.submit_record_async(
+                MagicMock(), {"sequentialId": 7, "groupId": "g-isr"}, "Observation", "sequentialId", submit_scope
+            )
+
+    @pytest.mark.asyncio
+    async def test_review_without_data_raises(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock(
+            side_effect=[
+                {"data": {"submitObservation": {"id": "obs-1", "sequentialId": 7}}},
+                {"data": {"reviewObservation": None}},
+            ]
+        )
+
+        with pytest.raises(RuntimeError, match="no data returned"):
+            await team_executor.submit_record_async(
+                MagicMock(), {"sequentialId": 7, "groupId": "g-isr"}, "Observation", "sequentialId", submit_scope
+            )
+
+    @pytest.mark.asyncio
+    async def test_batch_reports_review_failure_as_record_failure(self, team_executor, submit_scope):
+        team_executor.client.request_async = AsyncMock(
+            side_effect=[
+                {"data": {"submitObservation": {"id": "obs-1", "sequentialId": 7}}},
+                Exception("Unauthorized"),
+            ]
+        )
+
+        success, error, failed = await team_executor.upload_batch_async(
+            [{"sequentialId": 7, "groupId": "g-isr"}],
+            "Observation",
+            "sequentialId",
+            True,
+            team_scope=submit_scope,
+        )
+
+        assert (success, error) == (0, 1)
+        assert failed[0]["primary_field_value"] == 7
+        assert "obs-1" in failed[0]["error"]
+
+    @pytest.mark.asyncio
+    async def test_batch_stamps_editor_groups_for_stamp_scope(self, team_executor):
+        from amplify_excel_migrator.graphql.team_scope import TeamScope
+
+        team_executor.create_record_async = AsyncMock(return_value={"id": "scn-1"})
+
+        success, _, _ = await team_executor.upload_batch_async(
+            [{"name": "Blue shark", "groupId": "g-isr"}],
+            "SpeciesCommonName",
+            "name",
+            False,
+            team_scope=TeamScope(stamp_editor_groups=True),
+        )
+
+        assert success == 1
+        sent = team_executor.create_record_async.call_args.args[1]
+        assert sent["editorGroups"] == ["ISRAEL_USER", "ISRAEL_ADMIN"]
+
+    @pytest.mark.asyncio
+    async def test_batch_without_scope_creates_record_unchanged(self, team_executor):
+        team_executor.create_record_async = AsyncMock(return_value={"id": "sp-1"})
+        record = {"name": "Blue shark"}
+
+        await team_executor.upload_batch_async([record], "Species", "name", False)
+
+        assert team_executor.create_record_async.call_args.args[1] is record
+
+    def test_upload_detects_scope_and_passes_it_to_batches(self, team_executor, caplog):
+        team_executor.get_primary_field_name = MagicMock(return_value=("sequentialId", True, "Int"))
+        team_executor.schema.get_mutation_args = MagicMock(
+            side_effect=lambda name: {
+                "submitObservation": self.SUBMIT_ARGS,
+                "reviewObservation": {"id": "ID!"},
+            }.get(name)
+        )
+        captured = {}
+
+        async def fake_batch(*args):
+            captured["team_scope"] = args[-1]
+            return (1, 0, [])
+
+        team_executor.upload_batch_async = fake_batch
+        with caplog.at_level("WARNING"):
+            team_executor.upload(
+                [{"sequentialId": 1, "groupId": "g-isr", "checkedByUser": "a@b.c"}],
+                "Observation",
+                {"fields": [{"name": "sequentialId"}, {"name": "groupId"}]},
+            )
+
+        assert captured["team_scope"].submit_mutation == "submitObservation"
+        assert "does not accept checkedByUser" in caplog.text
+
+    def test_upload_passes_no_scope_for_plain_models(self, team_executor):
+        team_executor.get_primary_field_name = MagicMock(return_value=("name", False, "String"))
+        team_executor.schema.get_mutation_args = MagicMock(return_value=None)
+        captured = {}
+
+        async def fake_batch(*args):
+            captured["team_scope"] = args[-1]
+            return (1, 0, [])
+
+        team_executor.upload_batch_async = fake_batch
+        team_executor.upload([{"name": "Blue shark"}], "Species", {"fields": [{"name": "name"}]})
+
+        assert captured["team_scope"] is None

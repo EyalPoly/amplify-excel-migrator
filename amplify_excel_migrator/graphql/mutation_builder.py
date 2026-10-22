@@ -64,6 +64,29 @@ mutation Delete{model_name}($input: Delete{model_name}Input!) {{
         return mutation.strip()
 
     @staticmethod
+    def build_custom_mutation(
+        mutation_name: str,
+        arg_types: Dict[str, str],
+        return_fields: Optional[List[str]] = None,
+    ) -> str:
+        if return_fields is None:
+            return_fields = ["id"]
+
+        fields_str = "\n".join(f"        {field}" for field in return_fields)
+        operation_name = mutation_name[0].upper() + mutation_name[1:]
+        declarations = ", ".join(f"${name}: {arg_type}" for name, arg_type in arg_types.items())
+        arguments = ", ".join(f"{name}: ${name}" for name in arg_types)
+
+        mutation = f"""
+mutation {operation_name}({declarations}) {{
+  {mutation_name}({arguments}) {{
+{fields_str}
+  }}
+}}
+"""
+        return mutation.strip()
+
+    @staticmethod
     def build_create_variables(input_data: Dict[str, Any]) -> Dict[str, Any]:
         return {"input": input_data}
 
